@@ -5,7 +5,7 @@ import { createClient, type SupportedStorage } from "@supabase/supabase-js";
 // Routed through the Kong API gateway, never the raw Supabase project URL -
 // Kong proxies GoTrue's /auth/v1/* paths, same contract useOtpAuth.ts targets.
 const GATEWAY_URL =
-  process.env.EXPO_PUBLIC_GATEWAY_URL || "https://api.sahayak.in";
+  process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000"; // adb reverse tcp:8000 (pnpm adb:reverse) makes this reach the host
 
 // No anon key provisioned yet for Kong's GoTrue proxy - named placeholder,
 // not silently blank.

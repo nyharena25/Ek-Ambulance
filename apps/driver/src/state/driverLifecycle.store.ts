@@ -66,6 +66,11 @@ function ensurePublisherFor(missionId: string | null) {
   previous?.teardown();
 }
 
+/** Live GPS pings ride the same publisher the lifecycle wire events use; a no-op when no mission is active. */
+export function publishDriverTelemetry(ping: Parameters<DriverTelemetryPublisher["publish"]>[0]): void {
+  publisher?.publish(ping);
+}
+
 function contextFields(context: DriverLifecycleContext) {
   return {
     driverId: context.driverId,

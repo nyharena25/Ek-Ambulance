@@ -11,6 +11,7 @@ export interface RequestEventPayload {
   jurisdiction: Jurisdiction;
   requestedAt: string;               // ISO 8601
   idempotencyKey: string;            // uuid v4; server dedupes mission creation on this key
+  distanceKm?: number;               // the routed distance the patient was quoted; defaults to DEFAULT_DISPATCH_DISTANCE_KM
 }
 
 export interface SubmitTriagePayload {

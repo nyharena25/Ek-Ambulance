@@ -1,5 +1,4 @@
 import { useRef } from "react";
-import { Animated } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   MissionTrackingScreen,
@@ -14,6 +13,7 @@ import {
   TriageSymptomFlag,
   DEFAULT_DISPATCH_DISTANCE_KM,
   computeItemizedStatutoryFare,
+  type GeoPoint,
 } from "@sahayak/domain";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 import { usePatientAuthStore } from "../../src/state/patientAuth.store";
@@ -22,6 +22,10 @@ import {
   type MissionLifecycleEventType,
 } from "../../src/hooks/useMissionChannel";
 import { translateLifecycleEvent } from "../../src/services/missionLifecycleBridge";
+import type { DriverMarkerHandle } from "../../src/components";
+import { useDrivingRoute } from "../../src/hooks/useDrivingRoute";
+import { DEFAULT_PICKUP, DISPATCH_HUB, findHospital, parseCoordinate } from "../../src/services/mapGeo.core";
+
 
 /**
  * Single dynamic route for every post-match mission phase (tracking,
@@ -43,6 +47,8 @@ export default function BookingMissionTrackingRoute() {
     vehicleType?: string;
     jurisdiction?: string;
     address?: string;
+    lat?: string;
+    lon?: string;
     symptom?: string;
     state?: string;
     hospitalName?: string;
@@ -69,14 +75,9 @@ export default function BookingMissionTrackingRoute() {
   const isStoreWarm = currentState !== "idle";
   const missionId = context.missionId || params.id || "MSN-DL-2026-8921";
 
-  // Zero-re-render marker rotation: mutated directly from the raw per-ping
-  // callback via .setValue(), bound to the existing driverHeadingIndicator
-  // transform in both screens. Neither screen's driver marker has ever
-  // actually moved from lat/lon (both use a fixed-pixel mock map canvas
-  // with no real map projection), so only heading needs a ref here -
-  // adding a position ValueXY with nothing real to project it onto would
-  // be inventing map-projection logic that wasn't asked for.
-  const driverHeadingAnim = useRef(new Animated.Value(0)).current;
+  // Live pings glide the native map marker through this handle; no screen re-renders per ping.
+  const driverMarkerRef = useRef<DriverMarkerHandle>(null);
+  const lastDriverRef = useRef<GeoPoint | null>(null);
 
   const handleLifecycleEvent = (event: MissionLifecycleEventType, eventMissionId: string) => {
     send(translateLifecycleEvent(event, eventMissionId));
@@ -93,9 +94,8 @@ export default function BookingMissionTrackingRoute() {
     // emitter so the flow stays testable without forcing a login.
     authToken: sessionAccessToken,
     onTelemetryReceived: (telemetry) => {
-      if (telemetry.heading !== undefined) {
-        driverHeadingAnim.setValue(telemetry.heading);
-      }
+      lastDriverRef.current = telemetry;
+      driverMarkerRef.current?.moveTo(telemetry, telemetry.heading);
     },
     onLifecycleEvent: handleLifecycleEvent,
   });
@@ -117,6 +117,13 @@ export default function BookingMissionTrackingRoute() {
   const missionState: PatientLifecycleState = isStoreWarm
     ? currentState
     : (params.state as PatientLifecycleState) || "tracking";
+
+  const pickup = parseCoordinate(params.lat, params.lon, DEFAULT_PICKUP);
+  const hospital = findHospital(params.hospitalName || "Jai Prakash Narayan Apex Trauma Center, AIIMS");
+  const dispatchHub = DISPATCH_HUB[jurisdiction] ?? DISPATCH_HUB.DL;
+  const isTransportLeg = missionState === "transporting";
+  const route = useDrivingRoute(isTransportLeg ? pickup : dispatchHub, isTransportLeg ? hospital.coordinate : pickup);
+  const mapProps = { pickup, route, driverMarkerRef, driverStart: lastDriverRef.current ?? (isTransportLeg ? pickup : dispatchHub) };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -171,7 +178,7 @@ export default function BookingMissionTrackingRoute() {
         wardStatus={params.wardStatus || "Trauma ICU Alerted - Bed Held"}
         initialLanguage="en"
         onBack={handleBack}
-        driverHeadingAnim={driverHeadingAnim}
+        {...mapProps}
         liveSpeedKmh={throttledTelemetry?.speed ?? null}
         onSimulateHospitalArrival={mockControls?.triggerMissionCompleted}
       />
@@ -182,11 +189,10 @@ export default function BookingMissionTrackingRoute() {
     <MissionTrackingScreen
       missionId={missionId}
       vehicleType={vehicleType}
-      pickupAddress={pickupAddress}
       triagedSymptom={triagedSymptom}
       initialLanguage="en"
       onBack={handleBack}
-      driverHeadingAnim={driverHeadingAnim}
+      {...mapProps}
       liveSpeedKmh={throttledTelemetry?.speed ?? null}
       driverHasArrived={context.driverHasArrived}
       onSimulateDriverArrival={mockControls?.triggerDriverArrived}

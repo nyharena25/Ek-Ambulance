@@ -98,7 +98,7 @@ export const driverAuthStrings: Record<SupportedLanguage, DriverAuthTranslation>
 
     invalidOtpError: "The code you entered is incorrect or has expired. Please try again.",
     rateLimitError: "Too many attempts. Please wait before requesting another code.",
-    networkError: "Network error. Please check your connection and try again.",
+    networkError: "Network connection unavailable. Operating in local demo mode.",
     genericError: "Something went wrong. Please try again.",
     unauthorizedRoleError:
       "Unauthorized: This phone number is not registered as an active ambulance driver.",
@@ -155,7 +155,7 @@ export const driverAuthStrings: Record<SupportedLanguage, DriverAuthTranslation>
 
     invalidOtpError: "आपके द्वारा दर्ज कोड गलत है या समाप्त हो चुका है। कृपया पुनः प्रयास करें।",
     rateLimitError: "बहुत अधिक प्रयास। कृपया दूसरा कोड मांगने से पहले प्रतीक्षा करें।",
-    networkError: "नेटवर्क त्रुटि। कृपया अपना कनेक्शन जांचें और पुनः प्रयास करें।",
+    networkError: "नेटवर्क कनेक्शन उपलब्ध नहीं है। लोकल डेमो मोड में चल रहा है।",
     genericError: "कुछ गलत हो गया। कृपया पुनः प्रयास करें।",
     unauthorizedRoleError:
       "अनधिकृत: यह फ़ोन नंबर एम्बुलेंस चालक के रूप में पंजीकृत नहीं है।",

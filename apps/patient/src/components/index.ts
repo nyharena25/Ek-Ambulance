@@ -1,2 +1,3 @@
 export { default as AppIcon, type IconRef, type AppIconProps } from "./AppIcon";
-export { MapViewPort, type MapViewPortProps } from "./MapViewPort";
+export { default as DescribeEmergencyPanel } from "./DescribeEmergencyPanel";
+export { MapViewPort, type MapViewPortProps, type DriverMarkerHandle } from "./MapViewPort";

@@ -20,7 +20,7 @@ import { driverTransportStrings } from "../i18n/driverTransportStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
-import { AppIcon } from "../components";
+import { AppIcon, NavigateInGoogleMapsButton } from "../components";
 export interface InTransitHospitalScreenProps {
   missionId?: string;
   initialLanguage?: SupportedLanguage;
@@ -236,6 +236,12 @@ export default function InTransitHospitalScreen({
           </Text>
         </Pressable>
       </View>
+
+      <NavigateInGoogleMapsButton
+        destination={hospitalCoordinates || { latitude: 28.5355, longitude: 77.391 }}
+        target="hospital"
+        language={language}
+      />
 
       {/* ER INTEGRATION ALERT BANNER */}
       <View style={styles.erAlertBanner}>

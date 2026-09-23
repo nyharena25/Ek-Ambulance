@@ -15,7 +15,7 @@ import { createClient, type SupportedStorage } from "@supabase/supabase-js";
  * the two are not actually in conflict once the base URL is the gateway.
  */
 const GATEWAY_URL =
-  process.env.EXPO_PUBLIC_GATEWAY_URL || "https://api.ekambulance.in";
+  process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000"; // adb reverse tcp:8000 (pnpm adb:reverse) makes this reach the host
 
 /**
  * No real anon/publishable key exists yet - Kong's GoTrue proxy issues its

@@ -22,10 +22,31 @@ export type { MissionTelemetryPing };
 
 export { missionChannelName };
 
-const GATEWAY_URL = process.env.EXPO_PUBLIC_GATEWAY_URL || "https://api.sahayak.in";
+export interface LocationFix {
+  latitude: number;
+  longitude: number;
+  /** Degrees; expo-location reports -1 / null when unknown. */
+  heading?: number | null;
+  /** Metres per second, as expo-location reports it; the wire ping carries km/h. */
+  speed?: number | null;
+}
+
+export function locationToPing(fix: LocationFix, now: Date = new Date()): MissionTelemetryPing {
+  const validHeading = typeof fix.heading === "number" && Number.isFinite(fix.heading) && fix.heading >= 0;
+  const validSpeed = typeof fix.speed === "number" && Number.isFinite(fix.speed) && fix.speed >= 0;
+  return {
+    latitude: fix.latitude,
+    longitude: fix.longitude,
+    heading: validHeading ? Math.round(fix.heading as number) % 360 : undefined,
+    speed: validSpeed ? Math.round((fix.speed as number) * 3.6 * 10) / 10 : undefined,
+    timestamp: now.toISOString(),
+  };
+}
+
+const GATEWAY_URL = process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000";
 const CENTRIFUGO_WS_URL =
   process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL ||
-  "wss://realtime.sahayak.in/connection/websocket";
+  "ws://localhost:8001/connection/websocket";
 
 /**
  * POST /realtime/token with { scope: "mission:{missionId}", role: "publisher" }
@@ -206,7 +227,7 @@ export function mountDriverTelemetryPublisher(
  * polyline and calls onPing on the same cadence a real throttled publisher
  * would, so enRouteToPatient/transporting screens can be exercised on an
  * emulator without a live Centrifugo/GPS backend. __DEV__-guarded at the
- * call site (useGpsPublisher.ts), not here - same convention as
+ * call site, not here - same convention as
  * missionChannel.service.ts's createMockMissionChannel.
  */
 export interface MockTelemetryEmitterControls {

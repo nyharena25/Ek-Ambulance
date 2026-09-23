@@ -1,0 +1,74 @@
+# Local data plane: Redis + Centrifugo + Kong (+ a dev-only token minter behind Kong).
+# Host ports: Kong 8000 (EXPO_PUBLIC_GATEWAY_URL), Centrifugo 8001 (EXPO_PUBLIC_CENTRIFUGO_WS_URL),
+# Redis 6379 (loopback only). Centrifugo listens on 8000 inside its container; it is
+# remapped to 8001 because Kong owns 8000 and the apps' gateway default is :8000.
+name: sahayak-data-plane
+
+x-hmac-secret: &hmac_secret ${CENTRIFUGO_HMAC_SECRET:-dev-only-hmac-secret-change-me-0123456789abcdef}
+
+services:
+  redis:
+    image: redis:7-alpine
+    # AOF for durability of presence/geo state; volatile-lru so only TTL'd presence keys can be evicted,
+    # never the driver GEO sets.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    command: ["centrifugo", "--config=/centrifugo/config.json"]
+    environment:
+      CENTRIFUGO_TOKEN_HMAC_SECRET_KEY: *hmac_secret
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./docker/centrifugo.json:/centrifugo/config.json:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Dev-only stand-in for the not-yet-built backend's POST /realtime/token.
+  token-mint:
+    image: node:22-alpine
+    command: ["node", "/app/server.mjs"]
+    environment:
+      HMAC_SECRET: *hmac_secret
+    volumes:
+      - ./docker/mock-gateway/server.mjs:/app/server.mjs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  kong:
+    image: kong:3.8
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: "off"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./docker/kong.yml:/kong/kong.yml:ro
+    depends_on:
+      token-mint:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis-data:

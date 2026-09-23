@@ -11,6 +11,10 @@
     "dev:patient": "pnpm --filter @sahayak/patient dev",
     "dev:driver": "pnpm --filter @sahayak/driver dev",
     "dev:all": "turbo run dev --filter=@sahayak/patient --filter=@sahayak/driver",
+    "adb:reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8082 tcp:8082 && adb reverse tcp:8000 tcp:8000 && adb reverse tcp:8001 tcp:8001",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down",
+    "test:schema": "node --experimental-strip-types supabase/tests/schema_validation.test.ts",
     "preflight": "turbo run typecheck lint test --force"
   },
   "devDependencies": {

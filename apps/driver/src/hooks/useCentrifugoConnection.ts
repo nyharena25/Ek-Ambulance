@@ -38,7 +38,7 @@ export function useCentrifugoConnection({
     setError,
   } = useDriverConnectionStore();
 
-  const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync queued pings to server
   const syncQueuedPings = useCallback(

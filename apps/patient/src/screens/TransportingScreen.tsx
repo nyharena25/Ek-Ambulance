@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, type Ref } from "react";
 import {
   View,
   Text,
@@ -7,24 +7,25 @@ import {
   Platform,
   StatusBar,
   Pressable,
-  Animated,
   ScrollView,
   Linking,
   Share,
   Alert,
 } from "react-native";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import { AIS125VehicleType } from "@sahayak/domain";
+import { AIS125VehicleType, type GeoPoint } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { transportingStrings } from "../i18n/transportingStrings";
 
-import { AppIcon, MapViewPort } from "../components";
+import { AppIcon, MapViewPort, type DriverMarkerHandle } from "../components";
+import type { MapRoute } from "../hooks/useDrivingRoute";
+import { DEFAULT_PICKUP, findHospital } from "../services/mapGeo.core";
+
 export interface TransportingScreenProps {
   missionId?: string;
   patientName?: string;
   vehicleType?: AIS125VehicleType;
   hospitalName?: string;
-  hospitalWard?: string;
   wardStatus?: string;
   initialLanguage?: SupportedLanguage;
   onCallCrew?: () => void;
@@ -34,11 +35,13 @@ export interface TransportingScreenProps {
    *  machine, mocking hospital arrival ahead of Centrifugo. Mirrors
    *  ActiveMatchingScreen.onSimulateMatch. */
   onSimulateHospitalArrival?: () => void;
-  /** Zero-re-render marker rotation, owned by booking/[id].tsx (the single
-   *  useMissionChannel subscription site) and mutated directly via
-   *  .setValue() on every raw telemetry ping. Optional so the screen still
-   *  renders sensibly when previewed standalone. */
-  driverHeadingAnim?: Animated.Value;
+  /** Where the transport leg started; the map centres here before the route fits. */
+  pickup?: GeoPoint;
+  /** OSRM route pickup -> hospital, fetched once by booking/[id].tsx. */
+  route?: MapRoute | null;
+  /** Live pings move the marker through this handle, so no screen re-renders per ping. */
+  driverMarkerRef?: Ref<DriverMarkerHandle>;
+  driverStart?: GeoPoint;
   /** Safe-for-text live speed, throttled upstream to at most one update
    *  every ~2s - see useMissionChannel's throttledTelemetry. */
   liveSpeedKmh?: number | null;
@@ -60,62 +63,29 @@ export default function TransportingScreen({
   patientName = "Patient",
   vehicleType = "TYPE_D_ALS",
   hospitalName = "Jai Prakash Narayan Apex Trauma Center, AIIMS",
-  hospitalWard = "Trauma ICU & Resuscitation Bay",
   wardStatus = "Trauma ICU Alerted - Bed Held",
   initialLanguage = "en",
   onCallCrew,
   onCall108,
   onBack,
   onSimulateHospitalArrival,
-  driverHeadingAnim,
+  pickup = DEFAULT_PICKUP,
+  route,
+  driverMarkerRef,
+  driverStart = pickup,
   liveSpeedKmh,
 }: TransportingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Marker rotation: a fallback local Animated.Value when no ref is
-  // supplied (standalone preview), otherwise the caller's ref is used
-  // directly so booking/[id].tsx's single telemetry subscription drives it.
-  const fallbackHeadingAnim = useRef(new Animated.Value(135)).current;
-  const headingAnim = driverHeadingAnim ?? fallbackHeadingAnim;
-  const headingRotation = headingAnim.interpolate({
-    inputRange: [0, 360],
-    outputRange: ["0deg", "360deg"],
-  });
-
-  // ETA/distance were never real telemetry fields (DriverTelemetry is
-  // {latitude, longitude, heading, speed, timestamp} - no eta/distance) -
-  // the previous fake-decrementing values simulated progress that wasn't
-  // derived from anything real. Kept as static illustrative figures rather
-  // than invented distance/ETA math with no known hospital coordinate;
-  // flagged in HANDOVER.
+  // ETA/distance are still static illustrative figures: DriverTelemetry carries no eta/distance and the
+  // route's own distance/duration is not wired in yet (HANDOVER §23).
   const etaMinutes = 14;
   const distanceKm = 8.4;
 
   const strings = transportingStrings[language];
 
-  // ---------------------------------------------------------------------------
-  // HOSPITAL BEACON PULSE ANIMATION
-  // ---------------------------------------------------------------------------
-  const hospitalPulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const pulseAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(hospitalPulse, {
-          toValue: 1.25,
-          duration: 1100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(hospitalPulse, {
-          toValue: 1.0,
-          duration: 1100,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulseAnim.start();
-    return () => pulseAnim.stop();
-  }, [hospitalPulse]);
+  const hospital = findHospital(hospitalName);
 
   // ---------------------------------------------------------------------------
   // FAMILY EMERGENCY SHARE HANDLERS (WHATSAPP & SMS)
@@ -275,6 +245,7 @@ export default function TransportingScreen({
       </View>
 
       <ScrollView
+        nestedScrollEnabled
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -283,7 +254,15 @@ export default function TransportingScreen({
             TOP HALF: LIVE AMBULANCE TO HOSPITAL ROUTE MAP
            =================================================================== */}
         <MapViewPort
-          canvasWidth={620}
+          pickup={pickup}
+          destination={hospital}
+          route={route}
+          center={pickup}
+          fitRoute
+          driverMarkerRef={driverMarkerRef}
+          driverStart={driverStart}
+          speedLabel={strings.speedText(liveSpeedKmh ?? 58)}
+          onCall108={handleCall108}
           overlays={
             <>
               {/* Centrifugo WebSocket Live Status Pill */}
@@ -313,60 +292,7 @@ export default function TransportingScreen({
               </View>
             </>
           }
-        >
-          {/* City Street Grid & Green Area Background Mockup */}
-          <View style={styles.mapRingRoadCorridor} />
-          <View style={styles.mapHospitalCampus} />
-
-          {/* Roadway Grid Lines */}
-          <View style={[styles.mapAvenue, { top: 60 }]} />
-          <View style={[styles.mapAvenue, { top: 155 }]} />
-          <View style={[styles.mapCrossStreet, { left: 85 }]} />
-          <View style={[styles.mapCrossStreet, { left: 240 }]} />
-
-          {/* ROUTE POLYLINE (GREEN CORRIDOR PRIORITY ROUTE) */}
-          <View style={styles.routePolylineSection1} />
-          <View style={styles.routePolylineSection2} />
-
-          {/* LIVE DRIVER AMBULANCE VEHICLE MARKER */}
-          <View style={styles.ambulanceMarkerContainer}>
-            <View
-              style={[
-                styles.driverHeadingIndicator,
-                { transform: [{ rotate: headingRotation }] },
-              ]}
-            />
-            <View style={styles.ambulanceIconBadge}>
-              <AppIcon icon={{ set: "mci", name: "ambulance" }} size={22} color={colors.slate700} style={styles.ambulanceIconEmoji} />
-            </View>
-            <View style={styles.speedPill}>
-              <Text style={styles.speedPillText}>
-                {strings.speedText(liveSpeedKmh ?? 58)}
-              </Text>
-            </View>
-          </View>
-
-          {/* DESTINATION HOSPITAL BEACON MARKER */}
-          <View style={styles.hospitalMarkerContainer}>
-            <Animated.View
-              style={[
-                styles.hospitalBeaconRing,
-                { transform: [{ scale: hospitalPulse }] },
-              ]}
-            />
-            <View style={styles.hospitalMarkerCore}>
-              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={20} color={colors.slate700} style={styles.hospitalMarkerEmoji} />
-            </View>
-            <View style={styles.hospitalCalloutBubble}>
-              <Text style={styles.hospitalCalloutTitle}>
-                {strings.destinationMarkerLabel}
-              </Text>
-              <Text style={styles.hospitalCalloutSubtitle}>
-                {hospitalWard}
-              </Text>
-            </View>
-          </View>
-        </MapViewPort>
+        />
 
         {/* ===================================================================
             LOWER HALF: INFORMATION SHEET
@@ -706,177 +632,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing["3xl"],
   },
 
-  // ===========================================================================
-  // TOP HALF: MAP VIEWPORT STYLES
-  // ===========================================================================
-  mapRingRoadCorridor: {
-    position: "absolute",
-    top: 55,
-    left: 40,
-    right: 40,
-    height: 36,
-    backgroundColor: colors.slate300,
-    borderTopWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: colors.slate400,
-  },
-  mapHospitalCampus: {
-    position: "absolute",
-    top: 170,
-    left: 310,
-    width: 190,
-    height: 140,
-    borderRadius: radii.lg,
-    backgroundColor: colors.infoLight,
-    borderWidth: 1.5,
-    borderColor: semanticColors.status.statutoryBorder, // nearest existing token
-  },
-  mapAvenue: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 26,
-    backgroundColor: colors.slate300,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.slate400,
-  },
-  mapCrossStreet: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 24,
-    backgroundColor: colors.slate300,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.slate400,
-  },
 
-  // Route Polyline (Green Corridor Priority Route)
-  routePolylineSection1: {
-    position: "absolute",
-    top: 68,
-    left: 175,
-    width: 130,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.success,
-    transform: [{ rotate: "32deg" }],
-    zIndex: 3,
-  },
-  routePolylineSection2: {
-    position: "absolute",
-    top: 142,
-    left: 275,
-    width: 90,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.success,
-    transform: [{ rotate: "18deg" }],
-    zIndex: 3,
-  },
 
-  // Live Driver Ambulance Vehicle Marker
-  ambulanceMarkerContainer: {
-    position: "absolute",
-    top: 55,
-    left: 150,
-    alignItems: "center",
-    zIndex: 10,
-  },
-  driverHeadingIndicator: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderBottomWidth: 14,
-    borderStyle: "solid",
-    backgroundColor: "transparent",
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderBottomColor: colors.info,
-    marginBottom: -4,
-  },
-  ambulanceIconBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.white,
-    borderWidth: 2.5,
-    borderColor: colors.emergency,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.md,
-    elevation: 6,
-  },
-  ambulanceIconEmoji: {
-    fontSize: 22,
-  },
-  speedPill: {
-    backgroundColor: colors.slate900,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    marginTop: 2,
-  },
-  speedPillText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.white,
-  },
 
-  // Destination Hospital Marker
-  hospitalMarkerContainer: {
-    position: "absolute",
-    top: 150,
-    left: 350,
-    alignItems: "center",
-    zIndex: 9,
-  },
-  hospitalBeaconRing: {
-    position: "absolute",
-    top: -12,
-    left: -12,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    borderColor: colors.info,
-    backgroundColor: colors.infoLight,
-    opacity: 0.6,
-  },
-  hospitalMarkerCore: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.info,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  hospitalMarkerEmoji: {
-    fontSize: 20,
-  },
-  hospitalCalloutBubble: {
-    backgroundColor: colors.white,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    maxWidth: 140,
-    marginTop: 4,
-    ...shadows.sm,
-  },
-  hospitalCalloutTitle: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.info,
-  },
-  hospitalCalloutSubtitle: {
-    fontSize: 8,
-    color: colors.slate700,
-  },
 
   // Overlays
   centrifugoBadge: {

@@ -104,15 +104,18 @@ console.log("Test 5: Validating network failures produce a network_error, not a 
 const offlineError = networkErrorToApiError(new Error("Network request failed"));
 assert.strictEqual(offlineError.error, "network_error");
 assert.strictEqual(offlineError.isRateLimited, undefined, "A network error is never flagged as rate-limited");
-assert.strictEqual(offlineError.error_description, "Network request failed");
+assert.ok(!/Network request failed/.test(offlineError.error_description), "raw error text is not surfaced");
 
 const nonErrorThrow = networkErrorToApiError("a raw string was thrown");
-assert.strictEqual(
-  nonErrorThrow.error_description,
-  "Network request failed.",
-  "A non-Error throw falls back to a generic description rather than crashing"
-);
+assert.strictEqual(nonErrorThrow.error, "network_error", "A non-Error throw is still classified, not a crash");
 console.log("✓ Network failures classified distinctly from auth/rate-limit errors.\n");
+
+console.log("Test 5b: Raw Java/DNS exceptions never reach the UI...");
+const dnsError = new SupabaseAuthApiError("java.net.UnknownHostException: Unable to resolve host api.sahayak.in", 0, "unexpected_failure");
+const mapped = mapAuthError(dnsError, false);
+assert.strictEqual(mapped.error, "network_error");
+assert.ok(!/java|UnknownHost|sahayak/i.test(mapped.error_description), "no raw exception text in error_description");
+console.log("✓ Network failures sanitized.\n");
 
 console.log("=================================================");
 console.log("ALL PATIENT OTP AUTH CORE TESTS PASSED (100% GREEN)");

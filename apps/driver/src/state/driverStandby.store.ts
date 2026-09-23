@@ -68,6 +68,7 @@ export interface DriverStandbyStoreState {
   confirmGoOffline: () => void;
   openOfflineModal: () => void;
   closeOfflineModal: () => void;
+  setGps: (gps: GpsCoordinates) => void;
   setJurisdiction: (jur: JurisdictionCode) => void;
   setAis125Type: (type: AIS125VehicleType) => void;
   toggleCharging: () => void;
@@ -193,6 +194,7 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
     });
   },
 
+  setGps: (gps) => set({ gps }),
   openOfflineModal: () => set({ isOfflineModalOpen: true }),
   closeOfflineModal: () => set({ isOfflineModalOpen: false }),
 

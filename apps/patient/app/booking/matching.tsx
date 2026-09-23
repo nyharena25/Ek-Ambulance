@@ -58,6 +58,8 @@ export default function BookingMatchingRoute() {
         id: missionId,
         vehicleType,
         address: pickupAddress,
+        lat: String(latitude),
+        lon: String(longitude),
       },
     });
   };

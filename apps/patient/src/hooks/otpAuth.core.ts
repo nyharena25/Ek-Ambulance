@@ -47,7 +47,22 @@ export function extractCooldownSeconds(description: string): number | null {
  * docs/prompts/patient-app/P03-otp-authentication-flow.md's documented
  * error shape, so no UI/i18n code needed to change.
  */
+const NETWORK_ERROR_PATTERN = /network|fetch|UnknownHost|ECONN|ENOTFOUND|timed? ?out|java\.|status: 0/i;
+
+export function isNetworkFailure(error: { status?: number; name?: string; message?: string }): boolean {
+  return (
+    error.status === 0 ||
+    error.name === "AuthRetryableFetchError" ||
+    NETWORK_ERROR_PATTERN.test(error.message ?? "")
+  );
+}
+
+const NETWORK_MESSAGE = "Network connection unavailable. Operating in local demo mode.";
+
 export function mapAuthError(error: AuthError, isVerifyStep: boolean): AuthApiError {
+  if (isNetworkFailure(error)) {
+    return { error: "network_error", error_description: NETWORK_MESSAGE };
+  }
   const isRateLimited = error.status === 429;
   const cooldownSeconds = extractCooldownSeconds(error.message) ?? undefined;
 
@@ -70,9 +85,9 @@ export function mapAuthError(error: AuthError, isVerifyStep: boolean): AuthApiEr
   };
 }
 
-export function networkErrorToApiError(err: unknown): AuthApiError {
+export function networkErrorToApiError(_err: unknown): AuthApiError {
   return {
     error: "network_error",
-    error_description: err instanceof Error ? err.message : "Network request failed.",
+    error_description: NETWORK_MESSAGE,
   };
 }

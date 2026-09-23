@@ -51,10 +51,10 @@ export interface MissionChannelCallbacks {
 export { missionChannelName };
 
 const GATEWAY_URL =
-  process.env.EXPO_PUBLIC_GATEWAY_URL || "https://api.ekambulance.in";
+  process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000";
 const CENTRIFUGO_WS_URL =
   process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL ||
-  "wss://realtime.ekambulance.in/connection/websocket";
+  "ws://localhost:8001/connection/websocket";
 
 /**
  * POST /realtime/token per P04 - never cache the result; callers (the

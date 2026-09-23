@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { IncomingMissionModal } from "../../src/screens";
-import type { AIS125VehicleType, UrgencyTier } from "@sahayak/domain";
+import { getDrivingRoute, type AIS125VehicleType, type UrgencyTier } from "@sahayak/domain";
 import { useDriverLifecycleStore } from "../../src/state/driverLifecycle.store";
 import { useDriverStandbyStore } from "../../src/state/driverStandby.store";
 
@@ -14,7 +15,7 @@ const VALID_VEHICLE_TYPES: AIS125VehicleType[] = [
 
 export default function DispatchOfferRoute() {
   const router = useRouter();
-  const { missionId, offerId, acuity, requiredVehicleType, address, landmark, distanceKm, etaMinutes } =
+  const { missionId, offerId, acuity, requiredVehicleType, address, landmark, distanceKm, etaMinutes, pickupLat, pickupLng } =
     useLocalSearchParams<{
       missionId?: string;
       offerId?: string;
@@ -24,9 +25,25 @@ export default function DispatchOfferRoute() {
       landmark?: string;
       distanceKm?: string;
       etaMinutes?: string;
+      pickupLat?: string;
+      pickupLng?: string;
     }>();
   const { driverId, send } = useDriverLifecycleStore();
   const registeredVehicleType = useDriverStandbyStore((s) => s.registeredAis125Type);
+
+  const driverGps = useDriverStandbyStore((s) => s.gps);
+  const [route, setRoute] = useState<{ distanceKm: number; etaMinutes: number } | null>(null);
+  const hasPickup = Boolean(pickupLat && pickupLng);
+  useEffect(() => {
+    if (!hasPickup) return;
+    let cancelled = false;
+    void getDrivingRoute(driverGps, { latitude: Number(pickupLat), longitude: Number(pickupLng) }).then((r) => {
+      if (!cancelled) setRoute({ distanceKm: r.distanceKm, etaMinutes: r.durationMin });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPickup, pickupLat, pickupLng, driverGps.latitude, driverGps.longitude]);
 
   const resolvedMissionId = missionId || "MSN-2026-8819";
   const resolvedOfferId = offerId || `OFFER-${resolvedMissionId}`;
@@ -48,8 +65,8 @@ export default function DispatchOfferRoute() {
       registeredVehicleType={registeredVehicleType}
       pickupAddress={address}
       pickupLandmark={landmark}
-      distanceKm={distanceKm ? Number(distanceKm) : undefined}
-      etaMinutes={etaMinutes ? Number(etaMinutes) : undefined}
+      distanceKm={route?.distanceKm ?? (distanceKm ? Number(distanceKm) : undefined)}
+      etaMinutes={route?.etaMinutes ?? (etaMinutes ? Number(etaMinutes) : undefined)}
       onAccept={(acceptedId) => {
         // Accidental-tap-proof swipe confirmed - server-authoritative
         // ACCEPT_DISPATCH: standby's offer pool exits, driver is en route.
@@ -64,7 +81,7 @@ export default function DispatchOfferRoute() {
         });
         router.replace({
           pathname: "/mission/[id]",
-          params: { id: acceptedId },
+          params: { id: acceptedId, pickupLat, pickupLng },
         });
       }}
       onDecline={(_reason) => {

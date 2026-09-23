@@ -1,4 +1,4 @@
-import type { AIS125VehicleType, UrgencyTier } from "@sahayak/domain";
+import { fallbackRoute, type AIS125VehicleType, type GeoPoint, type UrgencyTier } from "@sahayak/domain";
 
 /**
  * Dev-mode mock dispatch wave generator (Phase 2 Objective 4). Simulates
@@ -69,6 +69,8 @@ const MOCK_PICKUP_POINTS: MockPickupPoint[] = [
   },
 ];
 
+const DEFAULT_DRIVER_POSITION: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
+
 const ACUITY_TIERS: UrgencyTier[] = ["CAT_1_IMMEDIATE", "CAT_2_URGENT", "CAT_3_DELAYED"];
 const VEHICLE_TYPES: AIS125VehicleType[] = ["TYPE_D_ALS", "TYPE_C_BLS", "TYPE_B_PTA", "TYPE_A_MFR"];
 
@@ -76,15 +78,18 @@ function pickRandom<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)] as T;
 }
 
-export function generateMockDispatchOffer(): MockDispatchOffer {
+export function generateMockDispatchOffer(driverPosition: GeoPoint = DEFAULT_DRIVER_POSITION): MockDispatchOffer {
   const idSuffix = Date.now().toString().slice(-6);
+  const pickup = pickRandom(MOCK_PICKUP_POINTS);
+  // Instant offline estimate; the offer screen upgrades it with a real OSRM route.
+  const estimate = fallbackRoute(driverPosition, pickup);
   return {
     offerId: `OFFER-${idSuffix}`,
     missionId: `MSN-${idSuffix}`,
     acuity: pickRandom(ACUITY_TIERS),
     requiredVehicleType: pickRandom(VEHICLE_TYPES),
-    pickup: pickRandom(MOCK_PICKUP_POINTS),
-    distanceKm: Number((1 + Math.random() * 8).toFixed(1)),
-    etaMinutes: Math.max(2, Math.round(2 + Math.random() * 10)),
+    pickup,
+    distanceKm: estimate.distanceKm,
+    etaMinutes: estimate.durationMin,
   };
 }

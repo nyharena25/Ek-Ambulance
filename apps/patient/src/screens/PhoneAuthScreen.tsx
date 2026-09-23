@@ -388,6 +388,8 @@ export default function PhoneAuthScreen({
                   consentError ||
                   (apiError?.isRateLimited
                     ? strings.rateLimitError
+                    : apiError?.error === "network_error"
+                    ? strings.networkError
                     : apiError?.error === "invalid_otp"
                     ? strings.invalidOtpError
                     : apiError?.error_description || strings.genericError)}

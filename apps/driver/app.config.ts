@@ -9,12 +9,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "light",
-  newArchEnabled: true,
-  splash: {
-    image: "./assets/splash-icon.png",
-    resizeMode: "contain",
-    backgroundColor: "#1E3A8A"
-  },
   ios: {
     supportsTablet: false,
     bundleIdentifier: "in.sahayak.driver",
@@ -36,15 +30,30 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "FOREGROUND_SERVICE_LOCATION",
       "INTERNET",
       "ACCESS_NETWORK_STATE",
-      "VIBRATE"
+      "VIBRATE",
+      "POST_NOTIFICATIONS"
     ]
   },
   plugins: [
     "expo-router",
+    "expo-secure-store",
+    // Android tiles need a Google Maps SDK key (iOS uses Apple Maps, no key); without it the map falls back to a static panel.
+    ["react-native-maps", { androidGoogleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }],
+    "expo-notifications",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/splash-icon.png",
+        resizeMode: "contain",
+        backgroundColor: "#1E3A8A"
+      }
+    ],
     [
       "expo-location",
       {
-        locationAlwaysAndWhenInUsePermission: "Allow Sahayak Driver to access your location to track ambulance dispatch and calculate ETA."
+        locationAlwaysAndWhenInUsePermission: "Allow Sahayak Driver to access your location to track ambulance dispatch and calculate ETA.",
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true
       }
     ]
   ],
@@ -52,8 +61,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     typedRoutes: true
   },
   extra: {
-    gatewayUrl: process.env.EXPO_PUBLIC_GATEWAY_URL || "https://api.sahayak.in",
-    centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL || "wss://realtime.sahayak.in/connection/websocket",
+    gatewayUrl: process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000",
+    centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL || "ws://localhost:8001/connection/websocket",
     eas: {
       projectId: "ek-ambulance-driver"
     }

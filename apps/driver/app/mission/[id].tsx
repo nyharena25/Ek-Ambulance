@@ -7,7 +7,7 @@ import {
 } from "../../src/screens";
 import { useDriverLifecycleStore, type DriverLifecycleStoreState } from "../../src/state/driverLifecycle.store";
 import { TraumaCentreItem } from "../../src/i18n/driverOnSceneStrings";
-import type { DriverLifecycleState } from "@sahayak/domain";
+import type { DriverLifecycleState, GeoPoint } from "@sahayak/domain";
 
 type MissionPhase = "enRouteToPatient" | "onScene" | "transporting";
 
@@ -30,7 +30,9 @@ function phaseForLifecycleState(state: DriverLifecycleState): MissionPhase {
 }
 
 export default function MissionExecutionRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, pickupLat, pickupLng } = useLocalSearchParams<{ id: string; pickupLat?: string; pickupLng?: string }>();
+  const pickupCoordinates =
+    pickupLat && pickupLng ? { latitude: Number(pickupLat), longitude: Number(pickupLng) } : undefined;
   const { currentState, driverId, send } = useDriverLifecycleStore();
 
   // A stale deep link, a page reload with no accepted mission, or a mission
@@ -46,6 +48,7 @@ export default function MissionExecutionRoute() {
       missionId={id || "MSN-2026-8819"}
       driverId={driverId || "DRV-DEMO-0001"}
       initialLifecycleState={currentState}
+      pickupCoordinates={pickupCoordinates}
       send={send}
     />
   );
@@ -55,6 +58,7 @@ interface MissionExecutionScreensProps {
   missionId: string;
   driverId: string;
   initialLifecycleState: DriverLifecycleState;
+  pickupCoordinates?: GeoPoint;
   send: DriverLifecycleStoreState["send"];
 }
 
@@ -65,7 +69,7 @@ interface MissionExecutionScreensProps {
  * own callbacks below, which only ever fire after the corresponding
  * send() already moved the machine forward - never the reverse.
  */
-function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, send }: MissionExecutionScreensProps) {
+function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, pickupCoordinates, send }: MissionExecutionScreensProps) {
   const router = useRouter();
   const [phase, setPhase] = useState<MissionPhase>(phaseForLifecycleState(initialLifecycleState));
   const [selectedHospital, setSelectedHospital] = useState<TraumaCentreItem | null>(null);
@@ -87,6 +91,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, s
     return (
       <DriverNavigationScreen
         missionId={missionId}
+        pickupCoordinates={pickupCoordinates}
         onConfirmArrival={(payload) => {
           // Dispatches server-authoritative CONFIRM_ARRIVAL_SCENE to XState / lifecycle store
           send({

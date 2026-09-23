@@ -1343,3 +1343,192 @@ $ git add -n .   -> no .env, android/, ios/, .jks/.keystore, or node_modules pat
 - **No physical device or emulator run** - verification here is `expo prebuild`'s manifest/Gradle generation plus static grep, same standing limitation as every prior phase's Android work (see §5's D6).
 - **Retry delays are a fixed schedule (`[3000, 7000]`), not truly exponential** - matches the directive's own literal example ("3 attempts over 10 seconds") rather than a generic 2^n backoff; documented as `DEFAULT_LIFECYCLE_RETRY_DELAYS_MS` with a name that says what it is.
 
+
+---
+
+## 19. Milestone: Dockerized Data Plane Deployment
+
+`pnpm services:up` / `pnpm services:down` (`docker compose up -d` / `down`). Compose project `sahayak-data-plane`; only the `redis-data` volume persists.
+
+| Service | Image | Host port | Purpose |
+| :--- | :--- | :--- | :--- |
+| `kong` | `kong:3.8` (DB-less, `docker/kong.yml`) | **8000** | API gateway = `EXPO_PUBLIC_GATEWAY_URL`. `/auth/v1` and `/rest/v1` proxy to the remote Supabase project; `/realtime/token` goes to `token-mint`. Per-IP rate limits (auth 20/min, rest 300/min, token 120/min), CORS. Admin API off. |
+| `centrifugo` | `centrifugo/centrifugo:v5` (`docker/centrifugo.json`) | **8001** (container 8000) | WebSocket `/connection/websocket`, admin UI at `http://localhost:8001/` (dev password in the JSON). Redis engine. |
+| `redis` | `redis:7-alpine` | 127.0.0.1:**6379** (`REDIS_HOST_PORT` overrides) | AOF persistence, 256mb, `volatile-lru` (only TTL'd presence keys evictable, GEO sets never). |
+| `token-mint` | `node:22-alpine` + `docker/mock-gateway/server.mjs` | none (Kong only) | **Dev-only** stand-in for the backend's `POST /realtime/token`. |
+
+### Deviations flagged up front
+- **Centrifugo is on host port 8001, not 8000.** Kong's proxy owns 8000 (the apps' gateway default, and what `eas.json`/`adb:reverse` already assumed). `apps/*/eas.json` dev WS URLs and the code defaults moved to `ws://localhost:8001/connection/websocket`. Both 8000 and 8001 are in `pnpm adb:reverse`.
+- **WebSocket URLs use `ws://`, not `http://`.** centrifuge-js takes `ws(s)://` endpoints for the WebSocket transport.
+- **Kong has no local mock for auth/rest** - those hit the real Supabase project (ref hardcoded in `docker/kong.yml`). Only `/realtime/token` is mocked, because nothing else served it.
+
+### Token contract (found by testing, not assumed)
+The two clients use the token differently, so `token-mint` returns a different JWT per role:
+- **Patient** (`fetchChannelToken`): connects anonymously, token is a *subscription* JWT (`channel` claim). Hence `allow_anonymous_connect_without_token: true`.
+- **Driver** (`role: "publisher"`): token is a *connection* JWT (`sub`); Centrifugo rejects a `channel` claim there. Driver publishes to `mission:{id}` without subscribing, hence `allow_publish_for_client` on `mission`.
+- Namespaces: `mission` (tracking, publish-for-client, history 20/300s, recovery) and `driver` (`driver:{id}:offers`, token-gated subscribe, client publish denied; server publishes via the HTTP API with `api_key`).
+
+### Verification (run against the live stack)
+- `docker compose config -q`: valid. All 4 services healthy.
+- Redis: `GEOADD` / `GEOSEARCH ... BYRADIUS 5 km WITHDIST` returned only the in-radius driver; `SET ... EX` ok.
+- Kong: `/realtime/token` -> 200 with `X-RateLimit-Limit-Minute: 120`; bad scope -> 403; no bearer -> 401; `/auth/v1/health` reached Supabase (401 without `apikey`, as expected).
+- Centrifugo (real `centrifuge` client): patient subscribes, driver connects and publishes without subscribing, patient receives it; `driver:*` subscribe with token ok; client publish to `driver:*` denied (103); forged subscription token rejected (103).
+- Not run: phone/emulator against the stack, Kong -> Supabase OTP with a real anon key, `pnpm preflight` is unaffected (no app logic changed).
+
+### Open items / security
+- **Dev-only secrets** (HMAC secret, admin password/secret, `api_key`) are committed placeholders in `docker/centrifugo.json`; `allowed_origins: ["*"]`. Rotate/inject via env for anything shared.
+- **Publish is not authorized per role.** With anonymous connects + `allow_publish_for_client`, any client can publish to any `mission:*` channel, including a patient. The "driver-only" publish claim the P05 doc describes needs a Centrifugo publish proxy to the real backend.
+- `token-mint` does not verify the caller's Supabase JWT (reads `sub` only). Replace with the real backend before any shared deploy.
+- Redis key convention for the matcher (not yet implemented anywhere): `drivers:geo:{DL|UP}` (GEO set), `driver:presence:{id}` (`SET ... EX 30`).
+- Redis host port 6379 was already taken on the dev machine; verified with `REDIS_HOST_PORT=6380`. Phones on LAN need ports 8000/8001 reachable through the host firewall.
+
+---
+
+## 20. Milestone: Supabase Core Database & RLS Migration
+
+**Not pushed.** `supabase/migrations/20260924000000_core_ems_schema.sql` is generated for a manual `supabase db push` to the ap-south-1 project. Nothing was applied to it.
+
+**Contents:** `postgis` + `pgcrypto` + `pg_net` (all `with schema extensions`); enums `ais125_vehicle_type`, `urgency_tier`, `jurisdiction_zone` (`DL`/`UP`), `mission_status`; tables `profiles`, `drivers`, `hospitals`, `missions` per spec; `set_updated_at` trigger on `missions`; GiST `idx_hospitals_location` (verbatim) plus a partial GiST on online drivers and B-tree indexes on every policy column; 4 seeded trauma centres (exact `POINT(lng lat)` from the request).
+
+**RLS:** all 7 policies are `to authenticated` and use `(select auth.uid())`. Behaviour matches the request except where noted below.
+
+### Deviations flagged up front
+1. **Column-level grants, not just row policies.** "Users can update their own row" would let any user set their own `role` (patient -> driver) or a driver set `is_verified = true`, because RLS is row-level only. `authenticated` may update only `profiles(full_name, dpdp_consent_at)` and `drivers(is_online, current_location)`. A check constraint also forbids `is_online` unless `is_verified`.
+2. **"Read basic vehicle details of their assigned driver" is a view, not a `drivers` policy.** A row policy would expose licence number, EMT cert and live location. `public.assigned_driver_vehicle` (owner-run, filtered by `(select auth.uid())`) returns only `mission_id, driver_id, ais125_type, is_verified`. Supabase's advisor may flag it as a "security definer view"; that is intentional.
+3. **Driver "OR status is matched" is narrowed** to `status = 'matched' AND driver_id IS NULL AND caller is a verified driver`. Unverified drivers, and other drivers' assigned missions, are excluded. **Decision needed:** this treats `matched` as the unassigned offer pool. If you meant `matched` = "driver assigned", the `driver_id = uid` branch already covers it and the pool branch can go. Either way, verified drivers see pickup location and `fare_details` before accepting; consider a narrower offer view/payload.
+4. **PostGIS type qualification amended to extensions.geography to satisfy remote Supabase search_path constraints.** Column types are `extensions.geography(Point, 4326)`, seed calls are `extensions.st_geogfromtext(...)`, and the migration sets `search_path to public, extensions`. This assumes PostGIS lives in `extensions` (managed Supabase); a dashboard-enabled copy in `public` would need the prefix removed.
+5. **`pg_net` and explicit `service_role` grants (from `supabase db diff --use-migra --linked` warnings).** `create extension if not exists "pg_net" with schema extensions;` matches Supabase's default extension set, so Migra no longer emits `drop extension pg_net`. The end of the migration has `grant all on table public.{profiles,drivers,hospitals,missions} to service_role;` declaring that backend workers and Edge Functions have administrative access; `anon` and `authenticated` are unchanged (RLS plus the column grants). The tests now assert `pg_net` and all four grants, and the "no table-wide grants" check exempts only `service_role`. Not re-run against the linked project: re-run the diff to confirm it comes back clean.
+6. **Writes are service-role only:** no INSERT/DELETE policies or grants for `authenticated`, and no mission writes. Onboarding must create the `profiles`/`drivers` rows server-side (do NOT auto-create from `raw_user_meta_data`; the client controls it and it would allow role self-selection). The patient app currently has no path to insert a mission as `authenticated`; that goes through the backend.
+7. `missions.patient_id` is `on delete restrict` (statutory records must outlive account deletion; the DPDP erasure flow needs an anonymise step, not a cascade). Seed `total_capacity` values are the apps' demo ICU-bed placeholders, not verified figures; `trauma_level` 1/1/2/2 comes from the same presets.
+
+### Verification
+- `pnpm test:schema` (`supabase/tests/schema_validation.test.ts`): 7 static suites over the SQL (enums, columns/FKs/constraints, RLS on every table, every policy authenticated-only + `(select auth.uid())`, no self-promotion grants, view leak check, indexes, exact seed coordinates). Mutation-checked: a bare `auth.uid()` and an added `role` grant both fail it. Not wired into `pnpm preflight` (root script, not a workspace).
+- Run against a real `postgis/postgis:16-3.4` container with stubbed `auth` schema/roles (scratch, not committed): migration applies cleanly with PostGIS in `public` and in `extensions`; 19 behavioural checks passed (patient isolation, driver pool rules, unverified driver blocked, role/`is_verified` self-edits denied, anon denied, inactive hospitals hidden, view leaks no licence columns). `EXPLAIN` shows `auth.uid()` as a one-time InitPlan and the patient query using `idx_missions_patient_id`.
+- **Not run:** against real Supabase (real `auth.uid()`/JWT, PostgREST, advisors). Run `get_advisors` after pushing.
+
+### Known limitation
+As `authenticated`, the planner does **not** use the hospitals GiST index (PostGIS operators are not leakproof, so they cannot be pushed below the RLS filter); the service role does use it. Irrelevant for dozens of hospitals; run proximity/matching queries server-side, or via an RPC, not through PostgREST filters.
+
+---
+
+## 21. Milestone: Real-Time Synchronization Bridge & Urgent Dispatch Notifications
+
+### What changed
+**Driver -> Centrifugo (real GPS).**
+- New `src/hooks/useDriverLocation.ts`, mounted once in `app/_layout.tsx`. Uses `expo-location` `watchPositionAsync` while the driver is **online or on a mission**: Balanced/10s/50m when idle, High/3s/5m on a mission. Every fix updates the standby store's `gps` (new `setGps` action); during `enRouteToPatient/onScene/transporting/arrivedHospital` it is also published to `mission:{id}` through the lifecycle store's existing publisher (new `publishDriverTelemetry`). While `driverConnection.isFallbackActive`, fixes go to the existing store-and-forward `telemetryQueueService` instead.
+- `driverTelemetry.ts` gained the pure `locationToPing()` (m/s -> km/h, `-1`/null heading -> omitted, 360 -> 0). `expo-location` is deliberately not imported there or in either store: the stores are loaded by node tests.
+- **Removed** `useGpsPublisher.ts` and the fake GPS in `DriverNavigationScreen` (hardcoded `28.5034,77.4112` + random 55-61 km/h every 2.5s, published over a *second* Centrifugo connection). The screen now shows the real `gps.speedKmh`.
+
+**Patient marker.** `mapProjection.ts` + `driverPositionAnim` (an `Animated.ValueXY`) in `booking/[id].tsx`, applied as a translate on the driver marker in `MissionTrackingScreen` and `TransportingScreen`. Each ping starts a linear 2.8s `Animated.timing` with `useNativeDriver: true`, so the marker glides on the native thread with no React re-render (same zero-re-render pattern as heading).
+
+**Dispatch notifications.** `expo-notifications@~57.0.20` installed (`npx expo install`), plugin + `POST_NOTIFICATIONS` added to `app.config.ts`. `dispatchNotifications.ts` registers channel `emergency_dispatch` (`Importance.MAX`, `lockscreenVisibility: PUBLIC`, `bypassDnd`, vibration `[0,800,300,800,300,800,300,1600]`), an action category ("Accept Mission" opens the app, "Decline" does not), and `notifyIncomingOffer()`, which fires only when `AppState !== "active"`. The response listener in `_layout.tsx` maps button presses (pure `dispatchNotifications.core.ts`) to the same `ACCEPT_DISPATCH` / `DECLINE_DISPATCH` events the offer screen sends. Dev trigger: `__mockDispatchOffer(delayMs)`, then background the app.
+
+### Deviations / limits flagged up front
+1. **No true full-screen notification.** `expo-notifications` 57 has no full-screen-intent API (confirmed in its type definitions). What ships is the strongest the API allows: MAX-importance heads-up, public on lock screen, bypasses DND, sticky, long vibration. A real takeover needs a native config plugin (`USE_FULL_SCREEN_INTENT` + `setFullScreenIntent`) and a dev build.
+2. **"Continuous" vibration is not possible**: Android channel patterns don't repeat (that needs `FLAG_INSISTENT`, not exposed). The pattern is long, not looping.
+3. **Offers do not yet arrive while backgrounded for real.** The offer source is still the in-app mock (standby button / `__mockDispatchOffer`); `useDispatchOfferChannel` is still a stub and a backgrounded app loses its WebSocket. Real background delivery needs server-sent FCM/APNs push (`getExpoPushTokenAsync` + a backend sender). This milestone delivers the client half: channel, actions, action->event mapping.
+4. **GPS is foreground-only.** Background tracking needs `expo-task-manager` + a dev build (Expo Go can't). Note the Google Maps deep-link button backgrounds the app, so publishing pauses while the driver is inside Maps; the last ping stays on the patient map.
+5. **The patient map is still a mock canvas with no geo-registration.** The marker moves by the driver's *real displacement* (metres x 0.08 px/m, anchored on the first ping, clamped +/-260px), not to an absolute map position. A real tile map (react-native-maps/MapLibre) is the proper fix; `MapViewPort` already isolates that swap.
+6. `GO_ONLINE` still announces the store's previous `gps` (preset or last fix); the real position updates a moment after, once the watch delivers. Presence in Redis is still simulated.
+
+### Verification proofs
+- `pnpm preflight`: **10/10 successful** (typecheck, lint no-op, tests), zero regressions. New suites, all green: driver `locationPing`, `dispatchNotifications.core`, `driverLocationState`; patient `mapProjection`.
+- **Live end-to-end, real services on the Docker stack** (`docker compose up`, ad-hoc node script, not committed): the actual `mountDriverTelemetryPublisher` published 5 fixes shaped like expo-location coords through Kong (`/realtime/token`) and Centrifugo; the actual patient `mountMissionChannel` received them: **5/5 in order, exact coordinates, 0 errors**; speed 8.33 m/s arrived as `30` km/h, heading `45`; `DRIVER_ARRIVED` lifecycle event delivered; projected marker offsets `(0,0) (3.1,-4.4) (6.3,-8.8) (9.4,-13.3) (12.5,-17.7)` px.
+- **Online/offline location state** (`driverLocationState.test.ts`): fixes replace `gps` without touching `isOnline`; `confirmGoOffline` keeps the last real fix (no snap back to a preset) and a late fix cannot revive online state; going online again keeps the latest fix and clears `isTogglingPresence`.
+- **Native config:** `expo prebuild --platform android` succeeded; the generated `AndroidManifest.xml` contains `POST_NOTIFICATIONS`, `VIBRATE`, `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE_LOCATION`. The generated `android/` (gitignored) was deleted afterwards.
+- **Not verified (no device/emulator here):** the notification channel/buttons on real Android, lock-screen appearance, the watch's battery/permission behaviour, and the 60fps claim for the marker glide. Expo Go (SDK 53+) does not support Android remote push and restricts `expo-notifications`; use a development build for the notification work.
+
+---
+
+## 22. Milestone: Background GPS Telemetry Engine
+
+Closes the Navigation Blackout in §21 limit 4: publishing no longer pauses when the Google Maps deep link backgrounds the driver app.
+
+### What changed (apps/driver)
+- `expo-task-manager@~57.0.19` installed (`npx expo install`).
+- `src/services/backgroundLocation.core.ts` (pure, node-testable): `BACKGROUND_LOCATION_TASK = "SAHAYAK_BACKGROUND_LOCATION_TASK"`, `shouldTrackInBackground`, idempotent `syncBackgroundTracking(state, api)`, and `handleLocationFix` (fix -> `locationToPing` -> gps store + publish, or `telemetryQueueService` when `isFallbackActive`). Uses the fix's own timestamp, so batched fixes keep their real times.
+- `src/services/backgroundLocation.ts`: module-scope `TaskManager.defineTask` whose handler publishes to the active `mission:{id}` channel through the existing lifecycle-store publisher, and `startLocationUpdatesAsync` (BestForNavigation, 3000 ms / 5 m, foreground service "Sahayak Ambulance Dispatch Active" / "Broadcasting live emergency mission telemetry" / `#1D4ED8`; iOS background indicator on).
+- `useDriverLocation.ts` now calls `syncBackgroundTracking(currentState)`: start at `enRouteToPatient`, keep through `onScene`, stop at `arrivedHospital`. Completed/cancelled land in `standby`/`offline` (the driver machine has no `completed`/`cancelled` states), so they stop it too. It also stops a stale task left from a previous session. The foreground watcher still updates `gps` and is the publish fallback if background permission is denied or the app runs in Expo Go; it never double-publishes while the background task is active.
+- `app.config.ts`: the `expo-location` plugin got `isAndroidBackgroundLocationEnabled` and `isAndroidForegroundServiceEnabled`. The three permissions were already declared.
+
+### Verification
+- `pnpm preflight`: **10/10 successful**. New suite `backgroundLocation.core.test.ts`: task name, which states track, start-once/stop-once lifecycle (plus stale-task stop), payload formatting (m/s -> km/h, -1/null heading omitted, exact ISO timestamp), fallback queueing, no-mission drop.
+- `expo prebuild --platform android`: succeeded; the manifest has `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`. The `LocationTaskService` (`foregroundServiceType="location"`) is declared in expo-location's own library manifest and merges at Gradle time, so it is not in the prebuild manifest. Generated `android/` removed afterwards.
+- **Not verified (no device):** the task actually firing with Maps in front, the foreground notification, the runtime background permission prompt, battery behaviour.
+
+### Limits
+1. **Dev build only.** Expo Go cannot run background location or foreground services.
+2. **The handler reuses in-process stores.** It publishes while the app process is alive (Maps in front). If Android kills the process, the headless task has no active mission or publisher and drops fixes. Fixing that means persisting the mission id and auth token (the token is still the `demo_auth_token` placeholder).
+3. Android 11+ needs the user to grant "Allow all the time" in system settings; `requestBackgroundPermissionsAsync` routes them there.
+
+---
+
+## 23. Milestone: Native Tile Map & Polyline Route Projection
+
+Replaces the mock pan canvas (§21 limit 5) with a real tile map on the patient tracking and transport screens.
+
+### What changed
+- **`react-native-maps@1.27.2`** installed in `apps/patient` and `apps/driver` (`npx expo install`). Both `app.config.ts` files register the plugin with `androidGoogleMapsApiKey` from `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` (added to both `.env.example`). Default provider: Google on Android, Apple on iOS.
+- **`MapViewPort.tsx` rewritten** around a native `<MapView>` (`initialRegion` 0.015/0.015 on the pickup, slate `customMapStyle`, compass/toolbar/rotate/pitch off). Screens now pass coordinates instead of canvas children: `pickup`, `destination`, `route`, `driverMarkerRef`, `driverStart`, `speedLabel`, `overlays`.
+- **Markers:** red pickup pin plus a radar ring; blue hospital badge labelled with the facility name (AIIMS New Delhi, Sharda Hospital, ...); red navigation-arrow badge for the ambulance.
+- **Route:** OSRM geometry from `getDrivingRoute` as a blue `<Polyline>`. `routeToCoordinates` (domain, tested) converts GeoJSON `[lng,lat]`. If OSRM is unreachable the fallback route has no geometry, so a dashed straight origin-to-destination line is drawn instead. Fetched once per origin/destination pair by `useDrivingRoute`, never per ping.
+- **Zero-length route guard:** the demo transport leg (no `hospitalName` reaches `/booking/[id]`, so AIIMS) starts and ends at AIIMS coordinates. `isFittable` (tested) skips `fitToCoordinates` when the route spans under ~0.005 degrees, falling back to the 0.015 camera, so the map does not max-zoom.
+- **Live marker, no screen re-render:** `booking/[id].tsx` forwards each Centrifugo ping to `driverMarkerRef.moveTo(coord, heading)`, which calls `Marker.animateMarkerToCoordinate` (2.8 s glide, native). The marker's `coordinate` prop is deliberately constant, since a changed prop would snap it back mid-glide. Heading goes through the marker's native `rotation` prop on Android (only the marker leaf re-renders, on turns of 3 degrees or more), so there is no animated child transform and no Fabric transform error. `rotation`, `flat` and `anchor` are Google-only on iOS, so on Apple Maps the badge itself is rotated with a plain (non-Animated) `rotate` transform and the hospital marker uses `centerOffset`; `tracksViewChanges` is re-enabled for 1.5 s after each turn so the bitmap refreshes.
+- **Floating controls:** zoom +/-, recenter (or refit route on the transport leg), and a red 108 dialer, all `zIndex` 20 plus `elevation` 20 above the map. The ScrollViews got `nestedScrollEnabled`.
+- **Data plumbing:** `matching.tsx` now passes `lat`/`lon` to `/booking/[id]` (they were dropped before). Tracking route = dispatch hub -> pickup; transport route = pickup -> hospital. `DISPATCH_HUB` moved from `confirm.tsx` to `mapGeo.core.ts`.
+- **Removed:** the mock canvas JSX and its now-unused styles, the two beacon-pulse animations, `mapProjection.ts` and its test, `driverHeadingAnim`/`driverPositionAnim`, and the unused `pickupAddress` (tracking) and `hospitalWard` (transport) props.
+
+### Fallback
+The native map is not mounted (a static "Map unavailable - live tracking continues" panel with coordinates is shown instead, keeping overlays and the 108 button) when: web; Android without `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` (the Google SDK aborts the process at mount without a manifest key); or `onMapReady` has not fired within 8 s (no Google Play services, or offline first load). Offline after a successful load: tiles blank but markers/polyline still draw.
+
+### Verification
+- `pnpm preflight`: **10/10 tasks successful**, 0 TypeScript errors. (Turbo counts 10 tasks across the workspaces, not 6.) New checks: domain `routeToCoordinates`, patient `mapGeo.core.test.ts` (param parsing never yields NaN, region/zoom maths, hospital lookup against the seeded coordinates, hubs).
+- `expo prebuild --platform android` for patient and driver: succeeds; `com.google.android.geo.API_KEY` lands in both manifests when the env var is set and is absent (no crash) when it is not. Generated `android/` dirs moved out of the repo afterwards.
+
+### Limits / not verified (no device or emulator here)
+1. **Nothing has been rendered.** Tile display, marker bitmaps (icon glyphs can snapshot blank on Android), the glide, the radar ring and gesture handling are untested on device. MapView inside a vertical ScrollView can fight the page scroll; `nestedScrollEnabled` is the mitigation, unproven.
+2. **Radar ring is a native `Circle` stepped at ~4 Hz**, not a pulsing marker view (that would need `tracksViewChanges` permanently on). It is a stepped approximation.
+3. **`customMapStyle` is Google-only**, so the slate style applies on Android; iOS Apple Maps ignores it.
+4. **Expo Go on Android:** the keyless guard shows the fallback panel even though Go bundles its own key. Use a dev build with the key.
+5. **Web:** `expo export --platform web` in `apps/patient` bundles successfully (react-native-maps resolves to its unimplemented-view stub), but the page was not loaded in a browser, so the fallback panel on web is unconfirmed.
+6. **Hospital coordinates** come from a keyword match against the four seeded trauma centres (`mapGeo.core.ts`); any other hospital name falls back to AIIMS coordinates. Missions do not carry a hospital id yet.
+7. **Mock telemetry** (`createMockMissionChannel`) still walks from AIIMS coordinates regardless of pickup, so on a dev emulator the ambulance appears to start there. Real Centrifugo pings are unaffected.
+8. **The driver app only got install and config.** It has no in-app map (navigation is delegated to Google Maps), so no driver screen uses the map yet.
+9. **Possible marker snap-back (device test):** `DriverMarker` re-renders on turns of 3 degrees or more and when `tracksViewChanges` flips. `coordinate` is a constant prop so Fabric should send no position update, but if a turn mid-glide snaps the marker back to its start, move heading to `marker.current.setNativeProps({ rotation })`.
+10. **API key must exist at native build time too.** The manifest key is baked in at prebuild/EAS build; the JS guard reads it at bundle time. A dev client built without the key but bundled against a `.env` that has one passes the guard and the Google SDK then crashes on mount. Set `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` in the EAS build env as well.
+11. **Platform-limited props:** `customMapStyle` (Google only), `anchor`/`flat`/`rotation` (Google on iOS; handled above), `centerOffset` (Apple only). `lineDashPattern`/`lineCap`/`lineJoin` work on Apple Maps and Android.
+12. ETA/distance figures in the screens are still static; the route's own distance/duration are not wired into them.
+
+---
+
+## 24. Milestone: Development Client Build Configuration
+
+Prepares both apps for a native Android development build on a physical phone. **No APK has been built here** (no device attached, no Gradle run); everything below is config plus the audit.
+
+### What changed
+- `eas.json` exists per app (`apps/patient`, `apps/driver`); there is no root one. The `development` profile already had `developmentClient: true` and `distribution: "internal"`; both now also have `"android": { "buildType": "apk" }`.
+- `expo-dev-client@~57.0.19` installed in both apps (`npx expo install`).
+- **`expo-font@~57` installed in both apps.** `npx expo-doctor` failed 1/21 on both: `@expo/vector-icons` (used by `AppIcon`) needs `expo-font` as a directly installed native peer, and would crash outside Expo Go without it. After the install, `expo-doctor` reports **21/21 passed** in both apps.
+- `"android:build": "expo run:android --variant debug"` added to both apps' `package.json`.
+- `pnpm preflight`: **10/10 successful**. `expo prebuild --platform android` on the patient app still succeeds with the dev client and the maps plugin (generated `android/` moved out of the repo).
+
+### Installing the debug APKs on a physical phone (USB)
+One-time phone setup: Settings > About phone > tap Build number 7 times; then Developer options > enable USB debugging; plug in via USB and accept the RSA prompt.
+
+1. **Host prerequisites:** JDK 17+, Android SDK with platform-tools (`adb` is at `~/Android/Sdk/platform-tools`; `ANDROID_HOME=~/Android/Sdk`). Confirm the phone: `adb devices` must list it as `device`, not `unauthorized`.
+2. **Env for a physical phone.** In each app's `.env` (copy `.env.example`), use `localhost`, not the emulator's `10.0.2.2`:
+   `EXPO_PUBLIC_GATEWAY_URL=http://localhost:8000`, `EXPO_PUBLIC_CENTRIFUGO_WS_URL=ws://localhost:8001/connection/websocket`, plus the Supabase values. Set `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` **before building**: it is baked into the manifest at prebuild (without it the patient map shows the static fallback panel).
+3. **Start the backend:** `pnpm services:up` (Kong on 8000, Centrifugo on 8001).
+4. **Tunnel the phone to the host:** `pnpm adb:reverse` (reverses 8081 patient Metro, 8082 driver Metro, 8000 Kong, 8001 Centrifugo). Re-run after every replug or `adb kill-server`.
+5. **Build and install** (from each app dir; the first build takes several minutes):
+   - `pnpm --filter @sahayak/patient android:build`
+   - `pnpm --filter @sahayak/driver android:build`
+   `expo run:android` runs prebuild, compiles the debug variant and installs to the connected device.
+6. **Manual install alternative:** the APK lands at `apps/<app>/android/app/build/outputs/apk/debug/app-debug.apk`; install with `adb install -r apps/patient/android/app/build/outputs/apk/debug/app-debug.apk` (same for driver; `-r` reinstalls keeping data). Packages are `in.sahayak.patient` and `in.sahayak.driver`, so both coexist on one phone.
+7. **Serve the JS bundle:** patient `pnpm --filter @sahayak/patient start` (8081); driver `pnpm --filter @sahayak/driver dev` (8082). With `expo-dev-client` installed, `expo start` targets the dev client. Open the app; it loads the bundle through the reversed port (or enter `http://localhost:8081` / `:8082` in the launcher). Wi-Fi alternative: skip `adb:reverse` and use the host LAN IP in the `.env` files and the launcher.
+8. **Phone permissions to grant:** location "Allow all the time" for the driver (background telemetry, §22), notifications for both.
+
+### Caveats
+- `eas build --profile development --platform android` produces the same APK in the cloud but bakes `http://localhost:8000` from `eas.json`, which only works with `adb reverse`. It also needs `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` in the EAS env, and `extra.eas.projectId` in both configs is a placeholder (`ek-ambulance-*`), not a real EAS project id.
+- Not verified: an actual Gradle build, install, or launch. Expect first-build friction (SDK/NDK downloads, Gradle memory).
+

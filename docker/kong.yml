@@ -1,0 +1,43 @@
+_format_version: "3.0"
+
+# Local gateway. Auth/REST go to the remote Supabase project; /realtime/token goes to the
+# dev token-mint container. Rate limits are per client IP, in-memory (policy: local).
+services:
+  - name: supabase-auth
+    url: https://nzwbwuhbtqhhjwnopwmm.supabase.co/auth/v1
+    routes:
+      - name: auth
+        paths: ["/auth/v1"]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 20, policy: local, limit_by: ip }
+
+  - name: supabase-rest
+    url: https://nzwbwuhbtqhhjwnopwmm.supabase.co/rest/v1
+    routes:
+      - name: rest
+        paths: ["/rest/v1"]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 300, policy: local, limit_by: ip }
+
+  - name: realtime-token
+    url: http://token-mint:8080/realtime/token
+    routes:
+      - name: realtime-token
+        paths: ["/realtime/token"]
+        strip_path: true
+        methods: ["POST", "OPTIONS"]
+    plugins:
+      - name: rate-limiting
+        config: { minute: 120, policy: local, limit_by: ip }
+
+plugins:
+  - name: cors
+    config:
+      origins: ["*"]
+      methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      headers: [Authorization, Content-Type, apikey, x-client-info]
+      max_age: 3600

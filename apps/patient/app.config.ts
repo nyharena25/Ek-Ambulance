@@ -9,12 +9,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "light",
-  newArchEnabled: true,
-  splash: {
-    image: "./assets/splash-icon.png",
-    resizeMode: "contain",
-    backgroundColor: "#DC2626"
-  },
   ios: {
     supportsTablet: false,
     bundleIdentifier: "in.sahayak.patient"
@@ -33,13 +27,26 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "VIBRATE"
     ]
   },
-  plugins: ["expo-router"],
+  plugins: [
+    "expo-router",
+    "expo-secure-store",
+    // Android tiles need a Google Maps SDK key (iOS uses Apple Maps, no key); without it the map falls back to a static panel.
+    ["react-native-maps", { androidGoogleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }],
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/splash-icon.png",
+        resizeMode: "contain",
+        backgroundColor: "#DC2626"
+      }
+    ]
+  ],
   experiments: {
     typedRoutes: true
   },
   extra: {
-    gatewayUrl: process.env.EXPO_PUBLIC_GATEWAY_URL || "https://api.sahayak.in",
-    centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL || "wss://realtime.sahayak.in/connection/websocket",
+    gatewayUrl: process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000",
+    centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL || "ws://localhost:8001/connection/websocket",
     eas: {
       projectId: "ek-ambulance-patient"
     }

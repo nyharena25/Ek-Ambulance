@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, type Ref } from "react";
 import {
   View,
   Text,
@@ -7,22 +7,23 @@ import {
   Platform,
   StatusBar,
   Pressable,
-  Animated,
   ScrollView,
   Linking,
   Modal,
   Alert,
 } from "react-native";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import { AIS125VehicleType, TriageSymptomFlag } from "@sahayak/domain";
+import { AIS125VehicleType, TriageSymptomFlag, type GeoPoint } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { trackingStrings } from "../i18n/trackingStrings";
 
-import { AppIcon, MapViewPort } from "../components";
+import { AppIcon, MapViewPort, type DriverMarkerHandle } from "../components";
+import type { MapRoute } from "../hooks/useDrivingRoute";
+import { DEFAULT_PICKUP } from "../services/mapGeo.core";
+
 export interface MissionTrackingScreenProps {
   missionId?: string;
   vehicleType?: AIS125VehicleType;
-  pickupAddress?: string;
   triagedSymptom?: TriageSymptomFlag;
   initialLanguage?: SupportedLanguage;
   onCallDriver?: () => void;
@@ -32,11 +33,14 @@ export interface MissionTrackingScreenProps {
    *  machine, mocking the driver confirming patient pickup ahead of
    *  Centrifugo. Mirrors ActiveMatchingScreen.onSimulateMatch. */
   onSimulateTransportStart?: () => void;
-  /** Zero-re-render marker rotation, owned by booking/[id].tsx (the single
-   *  useMissionChannel subscription site) and mutated directly via
-   *  .setValue() on every raw telemetry ping. Optional so the screen still
-   *  renders sensibly when previewed standalone. */
-  driverHeadingAnim?: Animated.Value;
+  /** Mission pickup (lat/lon route params); the map centres on it. */
+  pickup?: GeoPoint;
+  /** OSRM route hub -> pickup, fetched once by booking/[id].tsx. */
+  route?: MapRoute | null;
+  /** Live pings move the marker through this handle, so no screen re-renders per ping. */
+  driverMarkerRef?: Ref<DriverMarkerHandle>;
+  /** First ambulance position (dispatch hub) until the first ping glides it. */
+  driverStart?: GeoPoint;
   /** Safe-for-text live speed, throttled upstream to at most one update
    *  every ~2s - see useMissionChannel's throttledTelemetry. */
   liveSpeedKmh?: number | null;
@@ -69,14 +73,16 @@ export interface MissionTrackingScreenProps {
 export default function MissionTrackingScreen({
   missionId = "MSN-DL-2026-8921",
   vehicleType = "TYPE_D_ALS",
-  pickupAddress = "AIIMS New Delhi, Main Emergency Ward",
   triagedSymptom = "chest_pain",
   initialLanguage = "en",
   onCallDriver,
   onCall108,
   onBack,
   onSimulateTransportStart,
-  driverHeadingAnim,
+  pickup = DEFAULT_PICKUP,
+  route,
+  driverMarkerRef,
+  driverStart = pickup,
   liveSpeedKmh,
   driverHasArrived = false,
   onSimulateDriverArrival,
@@ -86,22 +92,8 @@ export default function MissionTrackingScreen({
   const [isChatModalVisible, setIsChatModalVisible] = useState<boolean>(false);
   const [chatToastMessage, setChatToastMessage] = useState<string | null>(null);
 
-  // Marker rotation: a fallback local Animated.Value when no ref is
-  // supplied (standalone preview), otherwise the caller's ref is used
-  // directly so booking/[id].tsx's single telemetry subscription drives it.
-  const fallbackHeadingAnim = useRef(new Animated.Value(68)).current;
-  const headingAnim = driverHeadingAnim ?? fallbackHeadingAnim;
-  const headingRotation = headingAnim.interpolate({
-    inputRange: [0, 360],
-    outputRange: ["0deg", "360deg"],
-  });
-
-  // ETA/distance were never real telemetry fields (DriverTelemetry is
-  // {latitude, longitude, heading, speed, timestamp} - no eta/distance) -
-  // the previous fake-decrementing values simulated progress that wasn't
-  // derived from anything real. Kept as static illustrative figures rather
-  // than invented distance/ETA math against context.pickup with no known
-  // destination coordinate for the transporting leg; flagged in HANDOVER.
+  // ETA/distance are still static illustrative figures: DriverTelemetry carries no eta/distance and the
+  // route's own distance/duration is not wired in yet (HANDOVER §23).
   const etaMinutes = 5;
   const distanceKm = 1.8;
 
@@ -113,29 +105,6 @@ export default function MissionTrackingScreen({
       ? (triagedSymptom as keyof typeof strings.guidesBySymptom)
       : "default";
   const guideData = strings.guidesBySymptom[symptomKey] || strings.guidesBySymptom.default;
-
-  // ---------------------------------------------------------------------------
-  // BEACON PULSE ANIMATION
-  // ---------------------------------------------------------------------------
-  const beaconPulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const pulseAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(beaconPulse, {
-          toValue: 1.3,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(beaconPulse, {
-          toValue: 1.0,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulseAnim.start();
-    return () => pulseAnim.stop();
-  }, [beaconPulse]);
 
   // ---------------------------------------------------------------------------
   // PHONE CALL HANDLER (MASKED RELAY)
@@ -268,6 +237,7 @@ export default function MissionTrackingScreen({
       </View>
 
       <ScrollView
+        nestedScrollEnabled
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -276,6 +246,12 @@ export default function MissionTrackingScreen({
             TOP HALF: INTERACTIVE MAP VIEWPORT
            =================================================================== */}
         <MapViewPort
+          pickup={pickup}
+          route={route}
+          driverMarkerRef={driverMarkerRef}
+          driverStart={driverStart}
+          speedLabel={strings.speedIndicator(liveSpeedKmh ?? 46)}
+          onCall108={handleCall108}
           overlays={
             <>
               {/* Centrifugo WebSocket Live Status Pill */}
@@ -305,65 +281,7 @@ export default function MissionTrackingScreen({
               </View>
             </>
           }
-        >
-          {/* City Street Grid & Green Area Background Mockup */}
-          <View style={styles.mapParkLandmark} />
-          <View style={styles.mapHospitalZone} />
-
-          {/* Roadway Grid Lines */}
-          <View style={[styles.mapAvenue, { top: 70 }]} />
-          <View style={[styles.mapAvenue, { top: 160 }]} />
-          <View style={[styles.mapCrossStreet, { left: 90 }]} />
-          <View style={[styles.mapCrossStreet, { left: 220 }]} />
-
-          {/* ROUTE POLYLINE (TRAFFIC COLOR CODED) */}
-          {/* Segment 1: Ring Road Green Arterial Corridor */}
-          <View style={styles.polylineSegmentGreen} />
-          {/* Segment 2: AIIMS Intersection Moderate Traffic Flow (Amber) */}
-          <View style={styles.polylineSegmentAmber} />
-
-          {/* LIVE DRIVER AMBULANCE VEHICLE MARKER */}
-          <View style={styles.driverMarkerContainer}>
-            {/* Heading Arrow Cone */}
-            <View
-              style={[
-                styles.driverHeadingIndicator,
-                { transform: [{ rotate: headingRotation }] },
-              ]}
-            />
-            {/* Ambulance Icon Badge */}
-            <View style={styles.ambulanceIconBadge}>
-              <AppIcon icon={{ set: "mci", name: "ambulance" }} size={22} color={colors.slate700} style={styles.ambulanceIconEmoji} />
-            </View>
-            {/* Speedometer Badge */}
-            <View style={styles.speedPill}>
-              <Text style={styles.speedPillText}>
-                {strings.speedIndicator(liveSpeedKmh ?? 46)}
-              </Text>
-            </View>
-          </View>
-
-          {/* PATIENT PICKUP PIN WITH BEACON PULSE */}
-          <View style={styles.pickupPinContainer}>
-            <Animated.View
-              style={[
-                styles.pickupBeaconRing,
-                { transform: [{ scale: beaconPulse }] },
-              ]}
-            />
-            <View style={styles.pickupPinCore}>
-              <AppIcon icon={{ set: "ion", name: "location" }} size={18} color={colors.slate700} style={styles.pickupPinEmoji} />
-            </View>
-            <View style={styles.pickupCalloutBubble}>
-              <Text style={styles.pickupCalloutTitle}>
-                {strings.pickupPinTitle}
-              </Text>
-              <Text style={styles.pickupCalloutSubtitle} numberOfLines={1}>
-                {pickupAddress}
-              </Text>
-            </View>
-          </View>
-        </MapViewPort>
+        />
 
         {/* ===================================================================
             LOWER HALF: EMERGENCY INFORMATION SHEET
@@ -876,177 +794,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing["3xl"],
   },
 
-  // ===========================================================================
-  // TOP HALF: MAP VIEWPORT STYLES
-  // ===========================================================================
-  mapParkLandmark: {
-    position: "absolute",
-    top: 40,
-    left: 40,
-    width: 140,
-    height: 120,
-    borderRadius: radii.lg,
-    backgroundColor: colors.successLight, // nearest existing token
-    borderWidth: 1,
-    borderColor: semanticColors.status.verifiedBorder, // nearest existing token
-  },
-  mapHospitalZone: {
-    position: "absolute",
-    top: 190,
-    left: 280,
-    width: 180,
-    height: 130,
-    borderRadius: radii.lg,
-    backgroundColor: colors.infoLight,
-    borderWidth: 1,
-    borderColor: semanticColors.status.statutoryBorder, // nearest existing token
-  },
-  mapAvenue: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 28,
-    backgroundColor: colors.slate300,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.slate400,
-  },
-  mapCrossStreet: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 24,
-    backgroundColor: colors.slate300,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.slate400,
-  },
 
-  // Route Polyline
-  polylineSegmentGreen: {
-    position: "absolute",
-    top: 78,
-    left: 170,
-    width: 120,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.success,
-    transform: [{ rotate: "35deg" }],
-    zIndex: 3,
-  },
-  polylineSegmentAmber: {
-    position: "absolute",
-    top: 145,
-    left: 255,
-    width: 90,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.warning,
-    transform: [{ rotate: "15deg" }],
-    zIndex: 3,
-  },
 
-  // Driver Ambulance Marker
-  driverMarkerContainer: {
-    position: "absolute",
-    top: 65,
-    left: 140,
-    alignItems: "center",
-    zIndex: 10,
-  },
-  driverHeadingIndicator: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderBottomWidth: 14,
-    borderStyle: "solid",
-    backgroundColor: "transparent",
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderBottomColor: colors.info,
-    marginBottom: -4,
-  },
-  ambulanceIconBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.white,
-    borderWidth: 2.5,
-    borderColor: colors.emergency,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.md,
-    elevation: 6,
-  },
-  ambulanceIconEmoji: {
-    fontSize: 22,
-  },
-  speedPill: {
-    backgroundColor: colors.slate900,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    marginTop: 2,
-  },
-  speedPillText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.white,
-  },
 
-  // Pickup Location Pin
-  pickupPinContainer: {
-    position: "absolute",
-    top: 155,
-    left: 330,
-    alignItems: "center",
-    zIndex: 9,
-  },
-  pickupBeaconRing: {
-    position: "absolute",
-    top: -10,
-    left: -10,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: colors.emergency,
-    backgroundColor: colors.emergencyLight,
-    opacity: 0.6,
-  },
-  pickupPinCore: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.emergency,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  pickupPinEmoji: {
-    fontSize: 18,
-  },
-  pickupCalloutBubble: {
-    backgroundColor: colors.white,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    maxWidth: 130,
-    marginTop: 4,
-    ...shadows.sm,
-  },
-  pickupCalloutTitle: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.emergencyDark,
-  },
-  pickupCalloutSubtitle: {
-    fontSize: 9,
-    color: colors.slate700,
-  },
 
   // Overlays
   centrifugoBadge: {

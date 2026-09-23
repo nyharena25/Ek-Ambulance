@@ -15,18 +15,19 @@ import {
   ScrollView,
 } from "react-native";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import { ConfirmArrivalScenePayload } from "@sahayak/domain";
+import { ConfirmArrivalScenePayload, type GeoPoint } from "@sahayak/domain";
 import {
   driverNavigationStrings,
   IncidentDelayOption,
 } from "../i18n/driverNavigationStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
-import { useGpsPublisher } from "../hooks/useGpsPublisher";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
-import { AppIcon } from "../components";
+import { useDriverStandbyStore } from "../state/driverStandby.store";
+import { AppIcon, NavigateInGoogleMapsButton } from "../components";
 
 export interface DriverNavigationScreenProps {
   missionId?: string;
+  pickupCoordinates?: GeoPoint;
   initialLanguage?: SupportedLanguage;
   onConfirmArrival?: (payload: ConfirmArrivalScenePayload) => void;
   onProceedToPatientHandoff?: () => void;
@@ -34,18 +35,20 @@ export interface DriverNavigationScreenProps {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+// Used only when the route was reached without pickup params (stale link / reload).
+const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 const SLIDER_THUMB_SIZE = 58;
 const SLIDER_TRACK_PADDING = 4;
 
 export default function DriverNavigationScreen({
   missionId = "MSN-2026-8819",
+  pickupCoordinates = DEMO_PICKUP,
   initialLanguage = "en",
   onConfirmArrival,
   onProceedToPatientHandoff,
   onBackToStandby,
 }: DriverNavigationScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
-  const [currentSpeed, setCurrentSpeed] = useState(58);
   const [distanceKm, setDistanceKm] = useState(1.8);
   const [etaMins, setEtaMins] = useState(3);
   const [isVoiceMuted, setIsVoiceMuted] = useState(false);
@@ -58,11 +61,8 @@ export default function DriverNavigationScreen({
   const [isOnSceneModalOpen, setIsOnSceneModalOpen] = useState(false);
 
   const setStoreLanguage = useDriverConnectionStore((s) => s.setLanguage);
-  const { recordTelemetryPing } = useGpsPublisher({
-    missionId,
-    authToken: "demo_auth_token",
-    isPublishingActive: !isArrivedOnScene,
-  });
+  // Real GPS is published app-wide by useDriverLocation; this screen only displays it.
+  const currentSpeed = Math.round(useDriverStandbyStore((s) => s.gps.speedKmh));
 
   const strings = driverNavigationStrings[language];
   const activeManeuver = strings.primaryManeuvers[0];
@@ -92,22 +92,10 @@ export default function DriverNavigationScreen({
       ])
     ).start();
 
-    // Subtle speed variance simulation (e.g. 56 - 60 km/h) & telemetry capture
-    const speedInterval = setInterval(() => {
-      if (!isArrivedOnScene) {
-        const nextSpeed = 55 + Math.floor(Math.random() * 7);
-        setCurrentSpeed(nextSpeed);
-        recordTelemetryPing({ latitude: 28.5034, longitude: 77.4112 }, nextSpeed, 180);
-      } else {
-        setCurrentSpeed(0);
-      }
-    }, 2500);
-
     return () => {
       pulseRadar.stopAnimation();
-      clearInterval(speedInterval);
     };
-  }, [isArrivedOnScene, recordTelemetryPing]);
+  }, []);
 
   // PanResponder for Irreversible 'Slide to Confirm Arrival on Scene'
   const panResponder = useRef(
@@ -134,7 +122,6 @@ export default function DriverNavigationScreen({
             useNativeDriver: false,
           }).start(() => {
             setIsArrivedOnScene(true);
-            setCurrentSpeed(0);
             setDistanceKm(0);
             setEtaMins(0);
 
@@ -298,6 +285,8 @@ export default function DriverNavigationScreen({
           </View>
         </View>
       </View>
+
+      <NavigateInGoogleMapsButton destination={pickupCoordinates} target="pickup" language={language} />
 
       {/* ACTIVE INCIDENT DELAY BANNER (IF BROADCASTED) */}
       {activeDelayNotice && (

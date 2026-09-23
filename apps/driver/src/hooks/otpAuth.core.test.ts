@@ -65,6 +65,13 @@ assert.strictEqual(hasDriverRole(null), false, "Null role must not default to au
 assert.strictEqual(hasDriverRole(""), false, "Empty string role must not default to authorized");
 console.log("✓ Only an exact 'driver' role claim passes the assertion.\n");
 
+console.log("Test 5b: Raw Java/DNS exceptions never reach the UI...");
+const dnsError = new SupabaseAuthApiError("java.net.UnknownHostException: Unable to resolve host api.sahayak.in", 0, "unexpected_failure");
+const mapped = mapAuthError(dnsError, false);
+assert.strictEqual(mapped.error, "network_error");
+assert.ok(!/java|UnknownHost|sahayak/i.test(mapped.error_description), "no raw exception text in error_description");
+console.log("✓ Network failures sanitized.\n");
+
 console.log("=================================================");
 console.log("ALL DRIVER OTP AUTH CORE TESTS PASSED (100% GREEN)");
 console.log("=================================================");

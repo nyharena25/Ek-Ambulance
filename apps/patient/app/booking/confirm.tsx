@@ -15,15 +15,17 @@ import {
   ItemizedStatutoryFare,
   DEFAULT_DISPATCH_DISTANCE_KM,
   careLevelFromVehicleType,
+  getDrivingRoute,
 } from "@sahayak/domain";
 import { StatutoryFareBottomSheet } from "../../src/screens";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 import { usePatientAuthStore } from "../../src/state/patientAuth.store";
 import { confirmStrings } from "../../src/i18n/confirmStrings";
 import { SupportedLanguage } from "../../src/i18n/onboardingStrings";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppIcon } from "../../src/components";
+import { DISPATCH_HUB } from "../../src/services/mapGeo.core";
 export default function BookingConfirmScreen() {
   const router = useRouter();
   const send = usePatientLifecycleStore((s) => s.send);
@@ -53,7 +55,23 @@ export default function BookingConfirmScreen() {
   const pickupAddress =
     params.address || "AIIMS New Delhi, Main Emergency Ward";
 
-  const handleConfirmAndRequest = (_fareDetails: ItemizedStatutoryFare) => {
+  const pickupLat = params.lat ? Number(params.lat) : 28.5672;
+  const pickupLon = params.lon ? Number(params.lon) : 77.21;
+  const [routedDistanceKm, setRoutedDistanceKm] = useState(DEFAULT_DISPATCH_DISTANCE_KM);
+  useEffect(() => {
+    let cancelled = false;
+    void getDrivingRoute(DISPATCH_HUB[jurisdiction] ?? DISPATCH_HUB.DL, {
+      latitude: pickupLat,
+      longitude: pickupLon,
+    }).then((r) => {
+      if (!cancelled) setRoutedDistanceKm(r.distanceKm);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [jurisdiction, pickupLat, pickupLon]);
+
+  const handleConfirmAndRequest = (fareDetails: ItemizedStatutoryFare) => {
     // Locks the mission request into machine context - vehicleType,
     // jurisdiction and pickup travel with the machine from here on, and
     // the machine recomputes fareDetails from the pure pricing engine
@@ -72,6 +90,8 @@ export default function BookingConfirmScreen() {
         vehicleType,
         jurisdiction,
         requestedAt: new Date().toISOString(),
+        // The machine re-prices from this, so the locked fare matches the quote the sheet showed.
+        distanceKm: fareDetails.totalDistanceKm,
         idempotencyKey: `idem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       },
     });
@@ -165,7 +185,7 @@ export default function BookingConfirmScreen() {
       <StatutoryFareBottomSheet
         vehicleType={vehicleType}
         jurisdiction={jurisdiction}
-        distanceKm={DEFAULT_DISPATCH_DISTANCE_KM}
+        distanceKm={routedDistanceKm}
         initialExpanded={true}
         initialLanguage={language}
         onConfirmAndRequest={handleConfirmAndRequest}

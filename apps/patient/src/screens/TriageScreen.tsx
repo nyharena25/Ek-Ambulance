@@ -23,7 +23,8 @@ import {
   PRIMARY_COMPLAINTS,
 } from "../i18n/triageStrings";
 
-import { AppIcon } from "../components";
+import { AppIcon, DescribeEmergencyPanel } from "../components";
+import { toTriageInput, TIER_SEVERITY, type TriageExtraction } from "../services/openRouterTriage";
 export interface TriageScreenProps {
   onConfirmTriage?: (result: TriageResult) => void;
   onBack?: () => void;
@@ -63,6 +64,14 @@ export default function TriageScreen({
 
   const handleSelectComplaint = (complaintId: PrimaryComplaintType) => {
     setSelectedComplaint(complaintId);
+  };
+
+  // The AI only pre-fills the same state the manual buttons drive; the tier still comes from computeTriageUrgency.
+  const handleExtracted = (extraction: TriageExtraction): boolean => {
+    const input = toTriageInput(extraction);
+    setSelectedComplaint(input.primaryComplaint);
+    if (input.traumaAssessment) setTraumaVitals(input.traumaAssessment);
+    return TIER_SEVERITY[extraction.recommendedTier] > TIER_SEVERITY[computeTriageUrgency(input).tier];
   };
 
   const handleConfirm = () => {
@@ -215,6 +224,8 @@ export default function TriageScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <DescribeEmergencyPanel language={language} onExtracted={handleExtracted} />
+
         {/* SECTION 1: PRIMARY COMPLAINTS */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionHeading}>{strings.complaintsHeading}</Text>

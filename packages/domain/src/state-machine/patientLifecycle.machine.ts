@@ -95,7 +95,7 @@ export const patientLifecycleMachine = setup({
               computeItemizedStatutoryFare({
                 vehicleType: event.payload.vehicleType,
                 jurisdiction: event.payload.jurisdiction,
-                distanceKm: DEFAULT_DISPATCH_DISTANCE_KM,
+                distanceKm: event.payload.distanceKm ?? DEFAULT_DISPATCH_DISTANCE_KM,
               }),
           }),
         },
