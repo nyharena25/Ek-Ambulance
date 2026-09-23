@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 12.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GATEWAY_URL": "http://localhost:8000",
+        "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "ws://localhost:8000/connection/websocket"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GATEWAY_URL": "https://staging-api.sahayak.in",
+        "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "wss://staging-realtime.sahayak.in/connection/websocket"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "env": {
+        "EXPO_PUBLIC_GATEWAY_URL": "https://api.sahayak.in",
+        "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "wss://realtime.sahayak.in/connection/websocket"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

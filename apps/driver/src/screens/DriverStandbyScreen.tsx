@@ -1,0 +1,1830 @@
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  SafeAreaView,
+  Pressable,
+  StatusBar,
+  Modal,
+  ActivityIndicator,
+} from "react-native";
+import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { AIS125VehicleType } from "@sahayak/domain";
+import { driverStandbyStrings } from "../i18n/driverStandbyStrings";
+import { useDriverStandbyStore } from "../state/driverStandby.store";
+
+import { AppIcon } from "../components";
+export interface DriverStandbyScreenProps {
+  onSimulateOffer?: () => void;
+  onNavigateToOnboarding?: () => void;
+}
+
+
+export default function DriverStandbyScreen({
+  onSimulateOffer,
+  onNavigateToOnboarding,
+}: DriverStandbyScreenProps) {
+  const {
+    isOnline,
+    isTogglingPresence,
+    language,
+    currentJurisdiction,
+    gps,
+    battery,
+    gpsQuality,
+    dailyMetrics,
+    registeredAis125Type,
+    redisPresence,
+    isOfflineModalOpen,
+    toggleOnlineState,
+    confirmGoOffline,
+    closeOfflineModal,
+    setJurisdiction,
+    setAis125Type,
+    toggleCharging,
+    toggleLowBatterySimulation,
+    toggleLanguage,
+    recenterGps,
+  } = useDriverStandbyStore();
+
+  const strings = driverStandbyStrings[language];
+  const ais125Info = strings.ais125TierBadge[registeredAis125Type];
+
+  // Key hospital landmark coordinates relative to current jurisdiction
+  const hospitalLandmarks =
+    currentJurisdiction === "UP_NOIDA"
+      ? [
+          { name: "Jaypee Hospital (Sec 128)", distance: "2.4 km", tag: "ICU / Trauma" },
+          { name: "Fortis Hospital (Sec 62)", distance: "1.1 km", tag: "Cardiac / Stroke" },
+          { name: "Kailash Hospital (Sec 27)", distance: "4.8 km", tag: "General / ER" },
+        ]
+      : [
+          { name: "AIIMS Trauma Centre", distance: "0.8 km", tag: "Apex Cat 1 Trauma" },
+          { name: "Max Super Speciality Saket", distance: "3.2 km", tag: "Cardiac / Neuro" },
+          { name: "Safdarjung Emergency", distance: "1.5 km", tag: "Polytrauma" },
+        ];
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+
+      {/* TOP NAVBAR & PILOT PROFILE */}
+      <View style={styles.header}>
+        <View style={styles.pilotProfileRow}>
+          <View
+            style={[
+              styles.pilotAvatarBox,
+              isOnline ? styles.pilotAvatarOnline : styles.pilotAvatarOffline,
+            ]}
+          >
+            <AppIcon icon={{ set: "ion", name: "man" }} size={22} color={colors.slate700} style={styles.pilotAvatarIcon} />
+            <View
+              style={[
+                styles.liveStatusDot,
+                isOnline ? styles.liveStatusDotGreen : styles.liveStatusDotAmber,
+              ]}
+            />
+          </View>
+          <View style={styles.pilotTextWrap}>
+            <Text style={styles.pilotName}>{strings.driverName}</Text>
+            <View style={styles.plateRow}>
+              <View style={styles.plateMiniBadge}>
+                <Text style={styles.plateMiniText}>{strings.vehiclePlate}</Text>
+              </View>
+              <Pressable
+                onPress={onNavigateToOnboarding}
+                style={styles.manageFleetBtn}
+              >
+                <Text style={styles.manageFleetBtnText}>AIS-125 Docs{" "}<AppIcon icon={{ set: "ion", name: "open-outline" }} size={10} /></Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* Language Toggle Button */}
+        <Pressable
+          style={styles.langToggle}
+          onPress={toggleLanguage}
+          accessibilityRole="button"
+          accessibilityLabel="Switch Language between English and Hindi"
+        >
+          <View
+            style={[styles.langPill, language === "en" && styles.langPillActive]}
+          >
+            <Text
+              style={[
+                styles.langPillText,
+                language === "en" && styles.langPillTextActive,
+              ]}
+            >
+              EN
+            </Text>
+          </View>
+          <View
+            style={[styles.langPill, language === "hi" && styles.langPillActive]}
+          >
+            <Text
+              style={[
+                styles.langPillText,
+                language === "hi" && styles.langPillTextActive,
+              ]}
+            >
+              हिन्दी
+            </Text>
+          </View>
+        </Pressable>
+      </View>
+
+      {/* AMBIENT HARDWARE TELEMETRY STRIP (BATTERY & GPS SIGNAL QUALITY) */}
+      <View style={styles.telemetryBar}>
+        {/* Battery Monitor */}
+        <Pressable
+          style={styles.telemetryWidget}
+          onPress={toggleLowBatterySimulation}
+          accessibilityLabel="Toggle battery charge simulation"
+        >
+          <View style={styles.telemetryIconBox}>
+            <Text style={styles.telemetryEmoji}>
+              <AppIcon
+                icon={
+                  battery.isCharging
+                    ? { set: "ion", name: "flash" }
+                    : battery.percentage < 20
+                      ? { set: "ion", name: "battery-dead" }
+                      : { set: "ion", name: "battery-full" }
+                }
+                size={14}
+              />
+            </Text>
+          </View>
+          <View style={styles.telemetryTextBox}>
+            <View style={styles.telemetryValueRow}>
+              <Text
+                style={[
+                  styles.telemetryValue,
+                  battery.percentage < 20 && styles.telemetryValueCritical,
+                ]}
+              >
+                {battery.percentage}%
+              </Text>
+              <Text style={styles.telemetrySubValue}>
+                {battery.isCharging ? "Charging" : "Batt"}
+              </Text>
+            </View>
+            <Text style={styles.telemetryMetaText} numberOfLines={1}>
+              {battery.isCharging ? strings.batteryCharging : strings.batteryDischarging}
+            </Text>
+          </View>
+        </Pressable>
+
+        <View style={styles.telemetryDivider} />
+
+        {/* GPS Signal Quality Monitor */}
+        <Pressable
+          style={styles.telemetryWidget}
+          onPress={recenterGps}
+          accessibilityLabel="Recenter GPS Satellite Lock"
+        >
+          <View style={styles.telemetryIconBox}>
+            <AppIcon icon={{ set: "mci", name: "satellite-variant" }} size={14} color={colors.slate700} style={styles.telemetryEmoji} />
+          </View>
+          <View style={styles.telemetryTextBox}>
+            <View style={styles.telemetryValueRow}>
+              <View style={styles.signalPulseDot} />
+              <Text style={styles.telemetryValue}>
+                {strings.gpsSignalExcellent}
+              </Text>
+            </View>
+            <Text style={styles.telemetryMetaText} numberOfLines={1}>
+              {strings.gpsSatellitesLocked(gpsQuality.satellitesLocked)}
+            </Text>
+          </View>
+        </Pressable>
+      </View>
+
+      {/* CRITICAL LOW BATTERY WARNING (IF < 20%) */}
+      {battery.percentage < 20 && (
+        <Pressable
+          style={styles.criticalBatteryBanner}
+          onPress={toggleCharging}
+        >
+          <AppIcon icon={{ set: "ion", name: "warning" }} size={18} color={colors.slate700} style={styles.criticalBatteryIcon} />
+          <View style={styles.criticalBatteryTextWrap}>
+            <Text style={styles.criticalBatteryTitle}>
+              {strings.batteryWarningCritical}
+            </Text>
+            <Text style={styles.criticalBatteryAction}>
+              <AppIcon icon={{ set: "ion", name: "arrow-forward" }} size={10} />{" "}{strings.batteryWarningAction}
+            </Text>
+          </View>
+        </Pressable>
+      )}
+
+      {/* SCROLLABLE DASHBOARD BODY */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* PROMINENT 'GO ONLINE' / 'GO OFFLINE' SHIFT ACTION CARD */}
+        <View
+          style={[
+            styles.shiftControlCard,
+            isOnline ? styles.shiftControlOnline : styles.shiftControlOffline,
+          ]}
+        >
+          {/* Status Header */}
+          <View style={styles.shiftHeaderRow}>
+            <View style={styles.shiftStatusPill}>
+              <View
+                style={[
+                  styles.radarDot,
+                  isOnline ? styles.radarDotOnline : styles.radarDotOffline,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.shiftStatusText,
+                  isOnline
+                    ? styles.shiftStatusTextOnline
+                    : styles.shiftStatusTextOffline,
+                ]}
+              >
+                {isOnline ? strings.pilotStatusOnline : strings.pilotStatusOffline}
+              </Text>
+            </View>
+
+            <View style={styles.redisBadge}>
+              <Text style={styles.redisBadgeText}>
+                {isOnline
+                  ? strings.redisGeoaddActive
+                  : strings.redisGeoaddInactive}
+              </Text>
+            </View>
+          </View>
+
+          {/* Subtitle & Radar Info */}
+          <Text
+            style={[
+              styles.shiftSubNotice,
+              isOnline ? styles.shiftSubNoticeOnline : styles.shiftSubNoticeOffline,
+            ]}
+          >
+            {isOnline ? strings.radarScanningNotice : strings.offlineBannerStatus}
+          </Text>
+
+          {/* PROMINENT ACTION TOGGLE BUTTON */}
+          <Pressable
+            style={[
+              styles.mainToggleButton,
+              isOnline ? styles.mainToggleOnline : styles.mainToggleOffline,
+              isTogglingPresence && styles.mainToggleDisabled,
+            ]}
+            onPress={toggleOnlineState}
+            disabled={isTogglingPresence}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isOnline ? "Go Offline and pause shift" : "Go Online and start dispatch shift"
+            }
+          >
+            {isTogglingPresence ? (
+              <View style={styles.toggleLoadingRow}>
+                <ActivityIndicator
+                  size="small"
+                  color={isOnline ? colors.emergency : colors.white}
+                />
+                <Text
+                  style={[
+                    styles.toggleBtnTitle,
+                    isOnline ? styles.toggleBtnTitleOnline : styles.toggleBtnTitleOffline,
+                  ]}
+                >
+                  Updating Redis GEOADD...
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.toggleContentRow}>
+                <View
+                  style={[
+                    styles.togglePulseCircle,
+                    isOnline
+                      ? styles.togglePulseCircleOnline
+                      : styles.togglePulseCircleOffline,
+                  ]}
+                >
+                  <Text style={styles.togglePowerIcon}>
+                    <AppIcon
+                icon={
+                  isOnline
+                    ? { set: "ion", name: "pause" }
+                    : { set: "ion", name: "flash" }
+                }
+                size={20}
+              />
+                  </Text>
+                </View>
+                <View style={styles.toggleTextWrap}>
+                  <Text
+                    style={[
+                      styles.toggleBtnTitle,
+                      isOnline
+                        ? styles.toggleBtnTitleOnline
+                        : styles.toggleBtnTitleOffline,
+                    ]}
+                  >
+                    {isOnline ? strings.btnGoOffline : strings.btnGoOnline}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.toggleBtnSub,
+                      isOnline
+                        ? styles.toggleBtnSubOnline
+                        : styles.toggleBtnSubOffline,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {isOnline
+                      ? strings.btnGoOfflineSubtitle
+                      : strings.btnGoOnlineSubtitle}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </Pressable>
+
+          {/* Redis Telemetry Footer */}
+          {isOnline && (
+            <View style={styles.redisTelemetryBar}>
+              <Text style={styles.redisKeyText}>
+                <AppIcon icon={{ set: "ion", name: "key" }} size={10} />{" "}{redisPresence.geoKey}
+              </Text>
+              <Text style={styles.redisSyncText}>
+                {strings.redisTtlSync(
+                  redisPresence.ttlSeconds,
+                  redisPresence.lastPingMs
+                )}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ACTIVE SERVICE AREA MAP & LIVE GPS HUD */}
+        <View style={styles.mapSectionCard}>
+          <View style={styles.mapSectionHeader}>
+            <View style={styles.mapTitleBox}>
+              <Text style={styles.mapSectionTitle}>
+                <AppIcon icon={{ set: "ion", name: "map" }} />{" "}{strings.mapSectionTitle}
+              </Text>
+              <Text style={styles.mapGeofenceBadge}>
+                {strings.mapDispatchRadius(15)}
+              </Text>
+            </View>
+            <Pressable style={styles.recenterIconBtn} onPress={recenterGps}>
+              <Text style={styles.recenterIconText}><AppIcon icon={{ set: "mci", name: "target" }} size={11} />{" "}{strings.btnRecenterGps}</Text>
+            </Pressable>
+          </View>
+
+          {/* SIMULATED MAP CANVAS */}
+          <View style={styles.mapCanvas}>
+            {/* Background Grid & Radar Rings */}
+            <View style={styles.radarRing15km} />
+            <View style={styles.radarRing10km} />
+            <View style={styles.radarRing5km} />
+
+            {/* Grid Line Accents */}
+            <View style={styles.gridLineHorizontal} />
+            <View style={styles.gridLineVertical} />
+
+            {/* Nearby Hospital Landmark Markers */}
+            <View style={[styles.landmarkPin, { top: 32, right: 40 }]}>
+              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={12} color={colors.slate700} style={styles.landmarkPinIcon} />
+              <Text style={styles.landmarkPinLabel}>{strings.landmarkPinNorth}</Text>
+            </View>
+            <View style={[styles.landmarkPin, { bottom: 48, left: 36 }]}>
+              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={12} color={colors.slate700} style={styles.landmarkPinIcon} />
+              <Text style={styles.landmarkPinLabel}>{strings.landmarkPinWest}</Text>
+            </View>
+
+            {/* Center Vehicle Marker & Pulsing Radar Wave */}
+            <View style={styles.vehicleCenterBox}>
+              {isOnline && <View style={styles.vehicleRadarSweepWave} />}
+              <View style={styles.vehicleMarkerBubble}>
+                <AppIcon icon={{ set: "mci", name: "ambulance" }} size={20} color={colors.slate700} style={styles.vehicleMarkerEmoji} />
+              </View>
+              <View style={styles.vehicleHeadingArrow}>
+                <AppIcon icon={{ set: "ion", name: "caret-up" }} size={10} style={styles.vehicleHeadingText} />
+              </View>
+            </View>
+
+            {/* Geofence Tag */}
+            <View style={styles.geofenceOverlayPill}>
+              <Text style={styles.geofenceOverlayText}>
+                {strings.gpsNavicSync}
+              </Text>
+            </View>
+          </View>
+
+          {/* LIVE COORDINATES HUD STRIP */}
+          <View style={styles.coordinatesHud}>
+            <View style={styles.hudRow}>
+              <View style={styles.hudCol}>
+                <Text style={styles.hudLabel}>{strings.latLabel}</Text>
+                <Text style={styles.hudValue}>{gps.latitude.toFixed(4)}° N</Text>
+              </View>
+              <View style={styles.hudCol}>
+                <Text style={styles.hudLabel}>{strings.lonLabel}</Text>
+                <Text style={styles.hudValue}>{gps.longitude.toFixed(4)}° E</Text>
+              </View>
+              <View style={styles.hudCol}>
+                <Text style={styles.hudLabel}>{strings.headingLabel}</Text>
+                <Text style={styles.hudValue}>{gps.heading}° NW</Text>
+              </View>
+              <View style={styles.hudCol}>
+                <Text style={styles.hudLabel}>{strings.precisionLabel}</Text>
+                <Text style={styles.hudValueGreen}>
+                  {strings.gpsAccuracyMeters(gps.accuracyMeters)}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Nearby Hospital Quick References */}
+          <View style={styles.hospitalListWrap}>
+            <Text style={styles.hospitalListTitle}>
+              <AppIcon icon={{ set: "ion", name: "location" }} size={11} />{" "}{strings.landmarksInZone}:
+            </Text>
+            <View style={styles.hospitalChipsRow}>
+              {hospitalLandmarks.map((h, i) => (
+                <View key={i} style={styles.hospitalChip}>
+                  <Text style={styles.hospitalChipName}>{h.name}</Text>
+                  <Text style={styles.hospitalChipDist}>({h.distance})</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* CURRENT REGISTERED JURISDICTION CARD */}
+        <View style={styles.jurisdictionCard}>
+          <View style={styles.jurisdictionHeaderRow}>
+            <View style={styles.jurisdictionIconBox}>
+              <AppIcon icon={{ set: "ion", name: "scale" }} size={18} color={colors.slate700} style={styles.jurisdictionIcon} />
+            </View>
+            <View style={styles.jurisdictionTitleWrap}>
+              <Text style={styles.jurisdictionSectionTitle}>
+                {strings.jurisdictionSectionTitle}
+              </Text>
+              <Text style={styles.jurisdictionSubHint}>
+                {strings.jurisdictionChangeHint}
+              </Text>
+            </View>
+          </View>
+
+          {/* Dual Jurisdiction Selector Chips */}
+          <View style={styles.jurisdictionChipsRow}>
+            <Pressable
+              style={[
+                styles.jurChip,
+                currentJurisdiction === "UP_NOIDA" && styles.jurChipActive,
+              ]}
+              onPress={() => setJurisdiction("UP_NOIDA")}
+            >
+              <View style={styles.jurChipTop}>
+                <Text
+                  style={[
+                    styles.jurStateBadge,
+                    currentJurisdiction === "UP_NOIDA" &&
+                      styles.jurStateBadgeActive,
+                  ]}
+                >
+                  UP
+                </Text>
+                <Text
+                  style={[
+                    styles.jurChipName,
+                    currentJurisdiction === "UP_NOIDA" && styles.jurChipNameActive,
+                  ]}
+                >
+                  {strings.jurisdictionNoidaName}
+                </Text>
+              </View>
+              <Text style={styles.jurChipSub}>
+                {strings.jurisdictionNoidaDistrict}
+              </Text>
+              <Text style={styles.jurChipStatutory}>
+                {strings.jurisdictionNoidaStatutory}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.jurChip,
+                currentJurisdiction === "DL_SOUTH" && styles.jurChipActive,
+              ]}
+              onPress={() => setJurisdiction("DL_SOUTH")}
+            >
+              <View style={styles.jurChipTop}>
+                <Text
+                  style={[
+                    styles.jurStateBadge,
+                    currentJurisdiction === "DL_SOUTH" &&
+                      styles.jurStateBadgeActive,
+                  ]}
+                >
+                  DL
+                </Text>
+                <Text
+                  style={[
+                    styles.jurChipName,
+                    currentJurisdiction === "DL_SOUTH" && styles.jurChipNameActive,
+                  ]}
+                >
+                  {strings.jurisdictionSouthDelhiName}
+                </Text>
+              </View>
+              <Text style={styles.jurChipSub}>
+                {strings.jurisdictionSouthDelhiDistrict}
+              </Text>
+              <Text style={styles.jurChipStatutory}>
+                {strings.jurisdictionSouthDelhiStatutory}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* REGISTERED AIS-125 TIER BADGE */}
+        <View style={styles.ais125Card}>
+          <View style={styles.ais125HeaderRow}>
+            <View style={styles.ais125Emblem}>
+              <AppIcon icon={{ set: "mci", name: "ambulance" }} size={20} color={colors.slate700} style={styles.ais125EmblemIcon} />
+            </View>
+            <View style={styles.ais125TitleBox}>
+              <Text style={styles.ais125TierTitle}>
+                {strings.ais125TierTitle}
+              </Text>
+              <Text style={styles.ais125CardMainTitle}>
+                {ais125Info.title}
+              </Text>
+              <Text style={styles.ais125CardSubTitle}>
+                {ais125Info.subtitle}
+              </Text>
+            </View>
+            <View style={styles.ais125BadgePill}>
+              <Text style={styles.ais125BadgeText}>{ais125Info.badge}</Text>
+            </View>
+          </View>
+
+          {/* Equipment Readiness Checklist */}
+          <View style={styles.equipmentBox}>
+            <View style={styles.equipmentBoxHeader}>
+              <Text style={styles.equipmentHeading}>
+                <AppIcon icon={{ set: "mci", name: "stethoscope" }} />{" "}{strings.equipmentReadinessHeading}
+              </Text>
+              <View style={styles.compliancePill}>
+                <Text style={styles.compliancePillText}>
+                  <AppIcon icon={{ set: "ion", name: "checkmark" }} size={10} />{" "}{strings.equipmentReadyStatus}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.equipmentDetailsText}>
+              {ais125Info.equipmentReady}
+            </Text>
+          </View>
+
+          {/* Quick Fleet Tier Switcher to preview all categories */}
+          <View style={styles.tierSwitcherRow}>
+            {(
+              [
+                "TYPE_D_ALS",
+                "TYPE_C_BLS",
+                "TYPE_B_PTA",
+                "TYPE_A_MFR",
+              ] as AIS125VehicleType[]
+            ).map((t) => (
+              <Pressable
+                key={t}
+                style={[
+                  styles.tierQuickChip,
+                  registeredAis125Type === t && styles.tierQuickChipActive,
+                ]}
+                onPress={() => setAis125Type(t)}
+              >
+                <Text
+                  style={[
+                    styles.tierQuickChipText,
+                    registeredAis125Type === t && styles.tierQuickChipTextActive,
+                  ]}
+                >
+                  {t.replace("TYPE_", "").replace("_", " ")}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* DAILY COMPLETED MISSIONS & SHIFT STATISTICS */}
+        <View style={styles.statsCard}>
+          <Text style={styles.statsTitle}>{strings.dailyStatsTitle}</Text>
+          <View style={styles.statsGrid}>
+            {/* Missions Completed */}
+            <View style={styles.statMetricBox}>
+              <Text style={styles.statNumber}>
+                {dailyMetrics.completedMissions}
+              </Text>
+              <Text style={styles.statLabel}>
+                {strings.statMissionsCompleted}
+              </Text>
+              <Text style={styles.statSub}>
+                {strings.statMissionsCompletedSubtitle}
+              </Text>
+            </View>
+
+            {/* Shift Duration */}
+            <View style={styles.statMetricBox}>
+              <Text style={styles.statNumber}>
+                {Math.floor(dailyMetrics.onlineMinutes / 60)}h{" "}
+                {dailyMetrics.onlineMinutes % 60}m
+              </Text>
+              <Text style={styles.statLabel}>{strings.statShiftDuration}</Text>
+              <Text style={styles.statSub}>
+                {strings.statShiftDurationSubtitle}
+              </Text>
+            </View>
+
+            {/* Distance Covered */}
+            <View style={styles.statMetricBox}>
+              <Text style={styles.statNumber}>
+                {dailyMetrics.distanceKm} km
+              </Text>
+              <Text style={styles.statLabel}>
+                {strings.statDistanceTraveled}
+              </Text>
+              <Text style={styles.statSub}>
+                {strings.statDistanceTraveledSubtitle}
+              </Text>
+            </View>
+
+            {/* Regulated Revenue */}
+            <View style={styles.statMetricBox}>
+              <Text style={styles.statNumberGreen}>
+                ₹ {dailyMetrics.revenueInr}
+              </Text>
+              <Text style={styles.statLabel}>{strings.statGrossTariff}</Text>
+              <Text style={styles.statSub}>
+                {strings.statGrossTariffSubtitle}
+              </Text>
+            </View>
+          </View>
+
+          {/* Most Recent Mission Card */}
+          <View style={styles.recentMissionCard}>
+            <View style={styles.recentMissionTop}>
+              <View style={styles.recentCareBadge}>
+                <Text style={styles.recentCareText}>
+                  {strings.recentMissionCareBadge}
+                </Text>
+              </View>
+              <Text style={styles.recentMissionFare}>
+                {strings.recentMissionFare(1850)}
+              </Text>
+            </View>
+            <Text style={styles.recentMissionTitle}>
+              {strings.recentMissionTitle}
+            </Text>
+            <Text style={styles.recentMissionDetails}>
+              {strings.recentMissionDetails}
+            </Text>
+          </View>
+        </View>
+
+        {/* DISPATCH OFFER SIMULATION TRIGGER (TESTING) */}
+        {onSimulateOffer && (
+          <Pressable
+            style={styles.testOfferBtn}
+            onPress={onSimulateOffer}
+            accessibilityRole="button"
+          >
+            <Text style={styles.testOfferBtnText}>
+              {strings.testDispatchBtn}
+            </Text>
+            <Text style={styles.testOfferBtnSub}>{strings.testDispatchSub}</Text>
+          </Pressable>
+        )}
+      </ScrollView>
+
+      {/* CONFIRM GO OFFLINE MODAL */}
+      <Modal
+        visible={isOfflineModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closeOfflineModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.offlineModalCard}>
+            <View style={styles.offlineIconBox}>
+              <AppIcon icon={{ set: "ion", name: "warning" }} size={24} color={colors.slate700} style={styles.offlineIconEmoji} />
+            </View>
+            <Text style={styles.offlineModalTitle}>
+              {strings.offlineModalTitle}
+            </Text>
+            <Text style={styles.offlineModalSubtitle}>
+              {strings.offlineModalSubtitle}
+            </Text>
+
+            {/* Reasons List */}
+            <View style={styles.offlineReasonsWrap}>
+              <View style={styles.offlineReasonItem}>
+                <Text style={styles.offlineReasonBullet}>•</Text>
+                <Text style={styles.offlineReasonText}>
+                  {strings.offlineModalReasonShiftEnd}
+                </Text>
+              </View>
+              <View style={styles.offlineReasonItem}>
+                <Text style={styles.offlineReasonBullet}>•</Text>
+                <Text style={styles.offlineReasonText}>
+                  {strings.offlineModalReasonBreak}
+                </Text>
+              </View>
+              <View style={styles.offlineReasonItem}>
+                <Text style={styles.offlineReasonBullet}>•</Text>
+                <Text style={styles.offlineReasonText}>
+                  {strings.offlineModalReasonFuel}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <Pressable
+              style={styles.confirmOfflineBtn}
+              onPress={confirmGoOffline}
+            >
+              <Text style={styles.confirmOfflineBtnText}>
+                {strings.offlineModalConfirmBtn}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.cancelOfflineBtn}
+              onPress={closeOfflineModal}
+            >
+              <Text style={styles.cancelOfflineBtnText}>
+                {strings.offlineModalCancelBtn}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.white,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.slate200,
+    backgroundColor: colors.white,
+  },
+  pilotProfileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  pilotAvatarBox: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.full,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    position: "relative",
+    borderWidth: 2,
+  },
+  pilotAvatarOnline: {
+    backgroundColor: colors.emergencyLight,
+    borderColor: colors.success,
+  },
+  pilotAvatarOffline: {
+    backgroundColor: colors.slate100,
+    borderColor: colors.slate300,
+  },
+  pilotAvatarIcon: {
+    fontSize: 22,
+  },
+  liveStatusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: radii.full,
+    borderWidth: 2,
+    borderColor: colors.white,
+    position: "absolute",
+    bottom: -1,
+    right: -1,
+  },
+  liveStatusDotGreen: {
+    backgroundColor: colors.success,
+  },
+  liveStatusDotAmber: {
+    backgroundColor: colors.warning,
+  },
+  pilotTextWrap: {
+    flex: 1,
+  },
+  pilotName: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+    lineHeight: typography.lineHeights.base,
+  },
+  plateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+  plateMiniBadge: {
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+  },
+  plateMiniText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.slate800,
+    letterSpacing: 0.5,
+  },
+  manageFleetBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  manageFleetBtnText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.info,
+  },
+  langToggle: {
+    flexDirection: "row",
+    backgroundColor: colors.slate100,
+    borderRadius: radii.full,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+  },
+  langPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radii.full,
+  },
+  langPillActive: {
+    backgroundColor: colors.emergency,
+  },
+  langPillText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.slate700,
+  },
+  langPillTextActive: {
+    color: colors.white,
+    fontWeight: typography.fontWeights.bold,
+  },
+
+  // Telemetry Bar
+  telemetryBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.slate950,
+    paddingHorizontal: spacing.base,
+    paddingVertical: 8,
+  },
+  telemetryWidget: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  telemetryIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: radii.sm,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  telemetryEmoji: {
+    fontSize: 14,
+  },
+  telemetryTextBox: {
+    flex: 1,
+  },
+  telemetryValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  telemetryValue: {
+    fontSize: 12,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.white,
+  },
+  telemetryValueCritical: {
+    color: colors.triageRed, // nearest existing token
+  },
+  telemetrySubValue: {
+    fontSize: 10,
+    color: colors.slate400,
+  },
+  telemetryMetaText: {
+    fontSize: 10,
+    color: colors.slate400,
+  },
+  telemetryDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    marginHorizontal: spacing.sm,
+  },
+  signalPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: radii.full,
+    backgroundColor: colors.triageGreen, // nearest existing token
+  },
+
+  // Critical Battery Banner
+  criticalBatteryBanner: {
+    flexDirection: "row",
+    backgroundColor: colors.warningLight,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.warning,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    alignItems: "center",
+    gap: 8,
+  },
+  criticalBatteryIcon: {
+    fontSize: 18,
+  },
+  criticalBatteryTextWrap: {
+    flex: 1,
+  },
+  criticalBatteryTitle: {
+    fontSize: 11,
+    color: colors.warning,
+    fontWeight: typography.fontWeights.bold,
+    lineHeight: 14,
+  },
+  criticalBatteryAction: {
+    fontSize: 10,
+    color: colors.slate900,
+    fontWeight: typography.fontWeights.extrabold,
+    marginTop: 2,
+  },
+
+  // Scroll Area
+  scrollView: {
+    flex: 1,
+    backgroundColor: colors.slate50,
+  },
+  scrollContent: {
+    padding: spacing.base,
+    paddingBottom: 40,
+    gap: spacing.base,
+  },
+
+  // Prominent Shift Card
+  shiftControlCard: {
+    borderRadius: radii.xl,
+    padding: spacing.base,
+    borderWidth: 2,
+    gap: spacing.md,
+    ...shadows.md,
+  },
+  shiftControlOnline: {
+    backgroundColor: colors.white,
+    borderColor: colors.success,
+  },
+  shiftControlOffline: {
+    backgroundColor: colors.white,
+    borderColor: colors.slate300,
+  },
+  shiftHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  shiftStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  radarDot: {
+    width: 10,
+    height: 10,
+    borderRadius: radii.full,
+  },
+  radarDotOnline: {
+    backgroundColor: colors.success,
+  },
+  radarDotOffline: {
+    backgroundColor: colors.slate400,
+  },
+  shiftStatusText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.extrabold,
+    letterSpacing: 0.5,
+  },
+  shiftStatusTextOnline: {
+    color: colors.success,
+  },
+  shiftStatusTextOffline: {
+    color: colors.slate600,
+  },
+  redisBadge: {
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+  },
+  redisBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate800,
+  },
+  shiftSubNotice: {
+    fontSize: typography.fontSizes.xs,
+    lineHeight: typography.lineHeights.xs,
+  },
+  shiftSubNoticeOnline: {
+    color: colors.slate700,
+  },
+  shiftSubNoticeOffline: {
+    color: colors.slate600,
+  },
+
+  // Big Toggle Button
+  mainToggleButton: {
+    borderRadius: radii.lg,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.base,
+    minHeight: 64,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  mainToggleOnline: {
+    backgroundColor: colors.emergencyLight,
+    borderWidth: 2,
+    borderColor: colors.emergencyBorder,
+  },
+  mainToggleOffline: {
+    backgroundColor: colors.emergency,
+    ...shadows.emergency,
+  },
+  mainToggleDisabled: {
+    opacity: 0.7,
+  },
+  toggleLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  toggleContentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    width: "100%",
+  },
+  togglePulseCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  togglePulseCircleOnline: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.emergencyBorder,
+  },
+  togglePulseCircleOffline: {
+    backgroundColor: colors.emergencyDark,
+  },
+  togglePowerIcon: {
+    fontSize: 18,
+  },
+  toggleTextWrap: {
+    flex: 1,
+  },
+  toggleBtnTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.extrabold,
+    lineHeight: typography.lineHeights.base,
+  },
+  toggleBtnTitleOnline: {
+    color: colors.emergencyDark,
+  },
+  toggleBtnTitleOffline: {
+    color: colors.white,
+  },
+  toggleBtnSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  toggleBtnSubOnline: {
+    color: colors.slate700,
+  },
+  toggleBtnSubOffline: {
+    color: "rgba(255, 255, 255, 0.9)",
+  },
+  redisTelemetryBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.slate50,
+    padding: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+  },
+  redisKeyText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate800,
+  },
+  redisSyncText: {
+    fontSize: 10,
+    color: colors.slate600,
+  },
+
+  // Service Area Map Card
+  mapSectionCard: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.base,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+    gap: spacing.sm,
+    ...shadows.sm,
+  },
+  mapSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  mapTitleBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  mapSectionTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  mapGeofenceBadge: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.info,
+    backgroundColor: colors.infoLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.info,
+  },
+  recenterIconBtn: {
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+  },
+  recenterIconText: {
+    fontSize: 11,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.slate800,
+  },
+
+  // Simulated Map Canvas
+  mapCanvas: {
+    height: 180,
+    backgroundColor: colors.slate950, // nearest existing token; dark tactical navy map styling
+    borderRadius: radii.lg,
+    overflow: "hidden",
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.slate800, // nearest existing token
+  },
+  radarRing15km: {
+    position: "absolute",
+    width: 260,
+    height: 260,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.15)",
+  },
+  radarRing10km: {
+    position: "absolute",
+    width: 170,
+    height: 170,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.25)",
+  },
+  radarRing5km: {
+    position: "absolute",
+    width: 90,
+    height: 90,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.35)",
+  },
+  gridLineHorizontal: {
+    position: "absolute",
+    width: "100%",
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  gridLineVertical: {
+    position: "absolute",
+    height: "100%",
+    width: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  landmarkPin: {
+    position: "absolute",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  landmarkPinIcon: {
+    fontSize: 12,
+  },
+  landmarkPinLabel: {
+    fontSize: 9,
+    color: colors.white,
+    fontWeight: typography.fontWeights.medium,
+  },
+  vehicleCenterBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  vehicleRadarSweepWave: {
+    position: "absolute",
+    width: 72,
+    height: 72,
+    borderRadius: radii.full,
+    backgroundColor: "rgba(220, 38, 38, 0.25)",
+    borderWidth: 1.5,
+    borderColor: colors.emergency,
+  },
+  vehicleMarkerBubble: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.full,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.emergency,
+    ...shadows.sm,
+  },
+  vehicleMarkerEmoji: {
+    fontSize: 20,
+  },
+  vehicleHeadingArrow: {
+    position: "absolute",
+    top: -8,
+  },
+  vehicleHeadingText: {
+    fontSize: 10,
+    color: colors.emergency,
+  },
+  geofenceOverlayPill: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  geofenceOverlayText: {
+    color: semanticColors.status.statutoryBorder, // nearest existing token (no cyan in the design system)
+    fontSize: 9,
+    fontWeight: typography.fontWeights.bold,
+  },
+
+  // Coordinates HUD
+  coordinatesHud: {
+    backgroundColor: colors.slate900,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+  },
+  hudRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  hudCol: {
+    alignItems: "center",
+  },
+  hudLabel: {
+    fontSize: 9,
+    color: colors.slate400,
+    fontWeight: typography.fontWeights.semibold,
+  },
+  hudValue: {
+    fontSize: 11,
+    color: colors.white,
+    fontWeight: typography.fontWeights.bold,
+    marginTop: 2,
+  },
+  hudValueGreen: {
+    fontSize: 11,
+    color: colors.triageGreen, // nearest existing token
+    fontWeight: typography.fontWeights.bold,
+    marginTop: 2,
+  },
+
+  // Hospital List
+  hospitalListWrap: {
+    marginTop: 2,
+    gap: 4,
+  },
+  hospitalListTitle: {
+    fontSize: 11,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate800,
+  },
+  hospitalChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  hospitalChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.sm,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+  },
+  hospitalChipName: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.medium,
+    color: colors.slate900,
+  },
+  hospitalChipDist: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.emergencyDark,
+  },
+
+  // Jurisdiction Section
+  jurisdictionCard: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.base,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  jurisdictionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  jurisdictionIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    backgroundColor: colors.infoLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.info,
+  },
+  jurisdictionIcon: {
+    fontSize: 18,
+  },
+  jurisdictionTitleWrap: {
+    flex: 1,
+  },
+  jurisdictionSectionTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+    lineHeight: typography.lineHeights.base,
+  },
+  jurisdictionSubHint: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.slate600,
+    lineHeight: typography.lineHeights.xs,
+  },
+  jurisdictionChipsRow: {
+    gap: 8,
+  },
+  jurChip: {
+    backgroundColor: colors.slate50,
+    borderWidth: 1.5,
+    borderColor: colors.slate300,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: 4,
+  },
+  jurChipActive: {
+    borderColor: colors.info,
+    backgroundColor: colors.infoLight,
+  },
+  jurChipTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  jurStateBadge: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.slate700,
+    backgroundColor: colors.slate200,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+  },
+  jurStateBadgeActive: {
+    backgroundColor: colors.info,
+    color: colors.white,
+  },
+  jurChipName: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  jurChipNameActive: {
+    color: colors.info,
+  },
+  jurChipSub: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.slate700,
+  },
+  jurChipStatutory: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.medium,
+    color: colors.slate600,
+    marginTop: 2,
+  },
+
+  // AIS-125 Tier Badge Card
+  ais125Card: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.base,
+    borderWidth: 1.5,
+    borderColor: colors.emergencyBorder,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  ais125HeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  ais125Emblem: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
+    backgroundColor: colors.emergencyLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.emergencyBorder,
+  },
+  ais125EmblemIcon: {
+    fontSize: 20,
+  },
+  ais125TitleBox: {
+    flex: 1,
+  },
+  ais125TierTitle: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.emergencyDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  ais125CardMainTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+    lineHeight: typography.lineHeights.base,
+  },
+  ais125CardSubTitle: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.slate600,
+  },
+  ais125BadgePill: {
+    backgroundColor: colors.emergencyDark,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.sm,
+  },
+  ais125BadgeText: {
+    color: colors.white,
+    fontSize: 9,
+    fontWeight: typography.fontWeights.extrabold,
+    letterSpacing: 0.5,
+  },
+  equipmentBox: {
+    backgroundColor: colors.slate50,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    borderRadius: radii.md,
+    padding: spacing.sm,
+    gap: 6,
+  },
+  equipmentBoxHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  equipmentHeading: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  compliancePill: {
+    backgroundColor: colors.successLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  compliancePillText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.success,
+  },
+  equipmentDetailsText: {
+    fontSize: 11,
+    color: colors.slate700,
+    lineHeight: 16,
+  },
+  tierSwitcherRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  tierQuickChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: radii.sm,
+    backgroundColor: colors.slate100,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+    alignItems: "center",
+  },
+  tierQuickChipActive: {
+    backgroundColor: colors.slate900,
+    borderColor: colors.slate900,
+  },
+  tierQuickChipText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate700,
+  },
+  tierQuickChipTextActive: {
+    color: colors.white,
+  },
+
+  // Daily Statistics Section
+  statsCard: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.base,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  statsTitle: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  statMetricBox: {
+    width: "48%",
+    backgroundColor: colors.slate50,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: 2,
+  },
+  statNumber: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.slate900,
+  },
+  statNumberGreen: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.success,
+  },
+  statLabel: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate800,
+  },
+  statSub: {
+    fontSize: 10,
+    color: colors.slate600,
+  },
+  recentMissionCard: {
+    backgroundColor: colors.slate50,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: 4,
+  },
+  recentMissionTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  recentCareBadge: {
+    backgroundColor: colors.emergencyLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.emergencyBorder,
+  },
+  recentCareText: {
+    fontSize: 9,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.emergencyDark,
+  },
+  recentMissionFare: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.success,
+  },
+  recentMissionTitle: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.slate900,
+  },
+  recentMissionDetails: {
+    fontSize: 11,
+    color: colors.slate700,
+  },
+
+  // Test Offer Simulation Button
+  testOfferBtn: {
+    backgroundColor: colors.emergencyLight, // nearest existing token
+    borderWidth: 1.5,
+    borderColor: colors.emergencyBorder,
+    borderStyle: "dashed",
+    borderRadius: radii.lg,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.base,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+    gap: 2,
+  },
+  testOfferBtnText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.emergencyDark,
+  },
+  testOfferBtnSub: {
+    fontSize: 11,
+    color: colors.slate700,
+  },
+
+  // Modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.base,
+  },
+  offlineModalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.md,
+    ...shadows.md,
+  },
+  offlineIconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: radii.full,
+    backgroundColor: colors.warningLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.warning,
+  },
+  offlineIconEmoji: {
+    fontSize: 24,
+  },
+  offlineModalTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+    textAlign: "center",
+  },
+  offlineModalSubtitle: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.slate700,
+    textAlign: "center",
+    lineHeight: typography.lineHeights.xs,
+  },
+  offlineReasonsWrap: {
+    width: "100%",
+    backgroundColor: colors.slate50,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+  },
+  offlineReasonItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  offlineReasonBullet: {
+    color: colors.emergency,
+    fontSize: 12,
+  },
+  offlineReasonText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.slate800,
+  },
+  confirmOfflineBtn: {
+    width: "100%",
+    backgroundColor: colors.emergency,
+    paddingVertical: 14,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+    ...shadows.emergency,
+  },
+  confirmOfflineBtnText: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.white,
+  },
+  cancelOfflineBtn: {
+    paddingVertical: 10,
+    alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  cancelOfflineBtnText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate600,
+  },
+});

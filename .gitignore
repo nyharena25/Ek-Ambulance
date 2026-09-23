@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbore/
+.turbo/
+
+# Secrets - .env* is blocked wholesale, .env.example is the one exception
+.env*
+!.env.example
+
+# Mobile signing credentials / keystores
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+# Managed Expo workflow: native projects are generated, never hand-edited
+android/
+ios/
+.expo/
+
+# Supabase CLI local runtime state (contains generated secrets, e.g.
+# supabase/.temp/start-secrets/**/docker.env)
+supabase/.temp/

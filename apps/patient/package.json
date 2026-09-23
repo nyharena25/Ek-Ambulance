@@ -1,0 +1,41 @@
+{
+  "name": "@sahayak/patient",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "dev": "expo start --port 8081",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types src/config/env.test.ts && node --experimental-strip-types src/services/missionChannel.service.test.ts && node --experimental-strip-types src/hooks/otpAuth.core.test.ts && node --experimental-strip-types src/integration/goldenPath.test.ts && node --experimental-strip-types src/integration/crossClientMission.test.ts"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.0.4",
+    "@sahayak/data": "workspace:*",
+    "@sahayak/domain": "workspace:*",
+    "@sahayak/observability": "workspace:*",
+    "@sahayak/ui": "workspace:*",
+    "@supabase/supabase-js": "^2.45.4",
+    "centrifuge": "^5.2.0",
+    "expo": "^52.0.0",
+    "expo-location": "~18.0.0",
+    "expo-router": "^4.0.0",
+    "expo-secure-store": "~14.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.0",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.1.0",
+    "xstate": "^5.19.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sahayak/config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@types/react": "~18.3.12",
+    "typescript": "^5.6.3"
+  }
+}
