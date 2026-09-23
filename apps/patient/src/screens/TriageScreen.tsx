@@ -5,10 +5,10 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  SafeAreaView,
   Platform,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   computeTriageUrgency,
@@ -549,7 +549,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.white,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
 
   /* HEADER */
@@ -720,7 +719,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.base,
-    paddingBottom: spacing["2xl"],
+    paddingBottom: 140,
   },
 
   /* SECTION HEADER */

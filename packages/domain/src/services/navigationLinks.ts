@@ -7,10 +7,12 @@ export interface NavigationLinks {
   universal: string;
 }
 
-export function buildNavigationLinks(dest: GeoPoint): NavigationLinks {
+/** With `origin` (e.g. the patient pickup) Google Maps plans from there instead of the phone's position; the Android intent can't take an origin, so it is omitted. */
+export function buildNavigationLinks(dest: GeoPoint, origin?: GeoPoint): NavigationLinks {
   const { latitude: lat, longitude: lng } = dest;
+  const from = origin ? `&origin=${origin.latitude},${origin.longitude}` : "";
   return {
-    android: `google.navigation:q=${lat},${lng}&mode=d`,
-    universal: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`,
+    android: origin ? "" : `google.navigation:q=${lat},${lng}&mode=d`,
+    universal: `https://www.google.com/maps/dir/?api=1${from}&destination=${lat},${lng}&travelmode=driving`,
   };
 }

@@ -3,8 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  Platform,
   StatusBar,
   Pressable,
   ScrollView,
@@ -12,6 +10,7 @@ import {
   Modal,
   Share,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   ItemizedStatutoryFare,
@@ -594,7 +593,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.slate100,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   topHeader: {
     flexDirection: "row",

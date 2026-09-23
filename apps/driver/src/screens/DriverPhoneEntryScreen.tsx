@@ -6,16 +6,17 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  SafeAreaView,
   Platform,
   StatusBar,
   KeyboardAvoidingView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { driverAuthStrings } from "../i18n/driverAuthStrings";
 import { useOtpAuth, toE164IndianPhone } from "../hooks/useOtpAuth";
 import { AppIcon } from "../components";
+import { DEV_DRIVER_PROFILES } from "../config/devDriverProfiles";
 
 export interface DriverPhoneEntryScreenProps {
   onOtpSent: (phone: string) => void;
@@ -238,6 +239,31 @@ export default function DriverPhoneEntryScreen({
         </ScrollView>
 
         <View style={styles.actionDock}>
+          {__DEV__ && (
+            <View style={styles.devQuickLogin}>
+              <Text style={styles.devQuickLoginTitle}>Development Quick Login (AIS-125 Test Fleet)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                {Object.values(DEV_DRIVER_PROFILES).map((p) => {
+                  const digits = p.phone.slice(3);
+                  return (
+                    <Pressable
+                      key={p.phone}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Dev login ${p.chipLabel}`}
+                      style={[styles.devChip, rawPhone === digits && styles.devChipActive]}
+                      onPress={() => {
+                        clearError();
+                        setPhoneError(null);
+                        setRawPhone(digits);
+                      }}
+                    >
+                      <Text style={styles.devChipText}>{p.chipDot} {p.chipLabel}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={strings.requestOtpButton}
@@ -260,7 +286,7 @@ export default function DriverPhoneEntryScreen({
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.white, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0 },
+  safeArea: { flex: 1, backgroundColor: colors.white },
   flexOne: { flex: 1 },
   header: {
     flexDirection: "row",
@@ -445,5 +471,32 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
     letterSpacing: -0.2,
+  },
+  devQuickLogin: {
+    marginBottom: spacing.md,
+  },
+  devQuickLoginTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.slate700,
+    marginBottom: spacing.sm,
+  },
+  devChip: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    marginRight: spacing.sm,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: colors.slate400,
+    backgroundColor: colors.white,
+  },
+  devChipActive: {
+    borderColor: colors.slate700,
+    borderWidth: 2,
+  },
+  devChipText: {
+    fontSize: 13,
+    color: colors.slate700,
   },
 });

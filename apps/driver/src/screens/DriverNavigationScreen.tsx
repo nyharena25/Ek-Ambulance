@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   Pressable,
   Animated,
   PanResponder,
@@ -14,6 +13,7 @@ import {
   Linking,
   ScrollView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { ConfirmArrivalScenePayload, type GeoPoint } from "@sahayak/domain";
 import {
@@ -23,7 +23,8 @@ import {
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
-import { AppIcon, NavigateInGoogleMapsButton } from "../components";
+import { distanceKm as distanceKmBetween } from "../hooks/hospitalSelection.core";
+import { AppIcon, DriverMap, NavigateInGoogleMapsButton } from "../components";
 
 export interface DriverNavigationScreenProps {
   missionId?: string;
@@ -49,9 +50,6 @@ export default function DriverNavigationScreen({
   onBackToStandby,
 }: DriverNavigationScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
-  const [distanceKm, setDistanceKm] = useState(1.8);
-  const [etaMins, setEtaMins] = useState(3);
-  const [isVoiceMuted, setIsVoiceMuted] = useState(false);
   const [isDelayDrawerOpen, setIsDelayDrawerOpen] = useState(false);
   const [selectedDelay, setSelectedDelay] = useState<IncidentDelayOption | null>(null);
   const [activeDelayNotice, setActiveDelayNotice] = useState<string | null>(null);
@@ -62,10 +60,12 @@ export default function DriverNavigationScreen({
 
   const setStoreLanguage = useDriverConnectionStore((s) => s.setLanguage);
   // Real GPS is published app-wide by useDriverLocation; this screen only displays it.
-  const currentSpeed = Math.round(useDriverStandbyStore((s) => s.gps.speedKmh));
+  const gps = useDriverStandbyStore((s) => s.gps);
+  const currentSpeed = Math.round(gps.speedKmh);
+  const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
+  const distanceKm = distanceKmBetween(driverPos, pickupCoordinates);
 
   const strings = driverNavigationStrings[language];
-  const activeManeuver = strings.primaryManeuvers[0];
 
   // Dynamic slider track width
   const sliderWidth = SCREEN_WIDTH - spacing.base * 2;
@@ -73,29 +73,6 @@ export default function DriverNavigationScreen({
 
   // Animated values
   const panX = useRef(new Animated.Value(0)).current;
-  const pulseRadar = useRef(new Animated.Value(1)).current;
-
-  // Pulse animation for vehicle marker and green corridor
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseRadar, {
-          toValue: 1.3,
-          duration: 900,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseRadar, {
-          toValue: 1,
-          duration: 900,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    return () => {
-      pulseRadar.stopAnimation();
-    };
-  }, []);
 
   // PanResponder for Irreversible 'Slide to Confirm Arrival on Scene'
   const panResponder = useRef(
@@ -122,8 +99,6 @@ export default function DriverNavigationScreen({
             useNativeDriver: false,
           }).start(() => {
             setIsArrivedOnScene(true);
-            setDistanceKm(0);
-            setEtaMins(0);
 
             const payload: ConfirmArrivalScenePayload = {
               missionId,
@@ -168,7 +143,6 @@ export default function DriverNavigationScreen({
   const handleBroadcastDelay = () => {
     if (!selectedDelay) return;
     const added = selectedDelay.addedMinutes;
-    setEtaMins((prev) => prev + added);
     setActiveDelayNotice(strings.delayBroadcastSuccessNotice(added));
     setIsDelayDrawerOpen(false);
 
@@ -195,22 +169,6 @@ export default function DriverNavigationScreen({
 
         <View style={styles.headerRightActions}>
           <Pressable
-            style={styles.voiceToggleBtn}
-            onPress={() => setIsVoiceMuted(!isVoiceMuted)}
-          >
-            <Text style={styles.voiceToggleIcon}>
-              <AppIcon
-                icon={
-                  isVoiceMuted
-                    ? { set: "ion", name: "volume-mute" }
-                    : { set: "ion", name: "volume-high" }
-                }
-                size={20}
-              />
-            </Text>
-          </Pressable>
-
-          <Pressable
             style={styles.langPill}
             onPress={() => {
               const nextLang = language === "en" ? "hi" : "en";
@@ -225,63 +183,16 @@ export default function DriverNavigationScreen({
         </View>
       </View>
 
-      {/* TOP TURN-BY-TURN NAVIGATION OVERLAY CARD */}
+      {/* DISTANCE + SPEED (directions themselves open in Google Maps) */}
       <View style={styles.navigationOverlayCard}>
-        {/* Primary Maneuver Instruction */}
-        <View style={styles.maneuverRow}>
-          <View style={styles.maneuverIconBox}>
-            <AppIcon
-              icon={
-                isArrivedOnScene
-                  ? { set: "ion", name: "flag" }
-                  : activeManeuver.icon
-              }
-              size={24}
-              color={colors.white}
-            />
-            <Text style={styles.maneuverDistBadge}>
-              {isArrivedOnScene ? "0 m" : activeManeuver.distanceToManeuver}
-            </Text>
-          </View>
-
-          <View style={styles.maneuverTextBox}>
-            <Text style={styles.maneuverInstruction} numberOfLines={2}>
-              {isArrivedOnScene
-                ? strings.destinationWaypointName
-                : activeManeuver.instruction}
-            </Text>
-            <Text style={styles.maneuverSub} numberOfLines={1}>
-              {isArrivedOnScene
-                ? strings.destinationAddress
-                : activeManeuver.subInstruction}
-            </Text>
-          </View>
-        </View>
-
-        {/* Telemetry Strip: Speedometer + Green Corridor Badge + ETA */}
         <View style={styles.telemetryRow}>
-          {/* Speedometer */}
           <View style={styles.speedometerBox}>
             <Text style={styles.speedValue}>{currentSpeed}</Text>
             <Text style={styles.speedUnit}>{strings.currentSpeedUnit}</Text>
           </View>
-
-          {/* Green Corridor Badge */}
-          <View style={styles.corridorBadgeBox}>
-            <View style={styles.corridorPill}>
-              <Text style={styles.corridorPillText}>
-                <AppIcon icon={{ set: "ion", name: "ellipse" }} size={9} />{" "}{strings.greenCorridorBadge}
-              </Text>
-            </View>
-            <Text style={styles.corridorSubText} numberOfLines={1}>
-              {strings.sirenPriorityActive}
-            </Text>
-          </View>
-
-          {/* Distance & ETA */}
           <View style={styles.etaBox}>
-            <Text style={styles.etaTimeText}>{etaMins} MINS</Text>
-            <Text style={styles.etaDistText}>{distanceKm.toFixed(1)} km left</Text>
+            <Text style={styles.etaTimeText}>{isArrivedOnScene ? "0.0" : distanceKm.toFixed(1)} km</Text>
+            <Text style={styles.etaDistText}>{language === "hi" ? "मरीज तक (सीधी दूरी)" : "to patient (straight line)"}</Text>
           </View>
         </View>
       </View>
@@ -297,68 +208,15 @@ export default function DriverNavigationScreen({
       )}
 
       {/* FULL-SCREEN TACTICAL NAVIGATION CANVAS */}
-      <View style={styles.mapCanvas}>
-        {/* Night Corridor Road Surface */}
-        <View style={styles.roadNetworkContainer}>
-          {/* Road Outlines */}
-          <View style={styles.expresswayRoadBed}>
-            <View style={styles.roadCenterDivider} />
-          </View>
-
-          {/* Route Polyline (Emergency Corridor Cyan Glow) */}
-          <View style={styles.routePolyline} />
-          <View style={styles.routePolylineGlow} />
-
-          {/* Directional Corridor Chevrons */}
-          <AppIcon
-            icon={{ set: "ion", name: "caret-up" }}
-            size={13}
-            style={[styles.routeChevron, { top: "65%" }]}
-          />
-          <AppIcon
-            icon={{ set: "ion", name: "caret-up" }}
-            size={13}
-            style={[styles.routeChevron, { top: "45%" }]}
-          />
-          <AppIcon
-            icon={{ set: "ion", name: "caret-up" }}
-            size={13}
-            style={[styles.routeChevron, { top: "25%" }]}
-          />
-
-          {/* Waypoint Marker at Destination */}
-          <View style={styles.destinationWaypoint}>
-            <View style={styles.destinationBubble}>
-              <AppIcon icon={{ set: "ion", name: "location" }} size={14} color={colors.slate700} style={styles.destinationIcon} />
-              <Text style={styles.destinationLabel}>
-                {strings.destinationWaypointName}
-              </Text>
-            </View>
-          </View>
-
-          {/* Moving Ambulance Avatar */}
-          <View style={styles.vehiclePositionBox}>
-            <Animated.View
-              style={[
-                styles.vehicleRadarPulse,
-                { transform: [{ scale: pulseRadar }] },
-              ]}
-            />
-            <View style={styles.vehicleAvatarBubble}>
-              <AppIcon icon={{ set: "mci", name: "ambulance" }} size={22} color={colors.slate700} style={styles.vehicleAvatarEmoji} />
-            </View>
-            <View style={styles.headingIndicatorArrow}>
-              <AppIcon icon={{ set: "ion", name: "caret-up" }} size={12} style={styles.headingIndicatorText} />
-            </View>
-          </View>
-        </View>
+      <View style={styles.mapCanvas} pointerEvents="box-none">
+        <DriverMap style={StyleSheet.absoluteFill} driver={driverPos} headingDeg={gps.heading} controlsBottom={64} />
 
         {/* Floating Map HUD Controls */}
         <View style={styles.floatingControlsRow}>
           <View style={styles.gpsAccuracyBadge}>
             <Text style={styles.gpsAccuracyText}>
               <AppIcon icon={{ set: "mci", name: "satellite-variant" }} size={10} />{" "}
-              ± 2.4m • NavIC Lock
+              ± {gps.accuracyMeters.toFixed(1)}m • GPS
             </Text>
           </View>
 
@@ -841,112 +699,6 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
   },
-  roadNetworkContainer: {
-    flex: 1,
-    position: "relative",
-  },
-  expresswayRoadBed: {
-    position: "absolute",
-    left: "40%",
-    top: 0,
-    bottom: 0,
-    width: 72,
-    backgroundColor: colors.slate800,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  roadCenterDivider: {
-    width: 2,
-    height: "100%",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  routePolyline: {
-    position: "absolute",
-    left: "48%",
-    top: 60,
-    bottom: 120,
-    width: 10,
-    backgroundColor: semanticColors.status.statutoryBorder, // nearest existing token (no cyan in the design system)
-    borderRadius: radii.full,
-  },
-  routePolylineGlow: {
-    position: "absolute",
-    left: "46%",
-    top: 60,
-    bottom: 120,
-    width: 20,
-    backgroundColor: "rgba(6, 182, 212, 0.2)",
-    borderRadius: radii.full,
-  },
-  routeChevron: {
-    position: "absolute",
-    left: "47.5%",
-    color: colors.white,
-    fontSize: 14,
-  },
-  destinationWaypoint: {
-    position: "absolute",
-    top: 40,
-    left: "20%",
-    alignItems: "center",
-  },
-  destinationBubble: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    borderColor: colors.emergency,
-    gap: 4,
-  },
-  destinationIcon: {
-    fontSize: 14,
-  },
-  destinationLabel: {
-    color: colors.white,
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-  },
-  vehiclePositionBox: {
-    position: "absolute",
-    bottom: 120,
-    left: "45%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  vehicleRadarPulse: {
-    position: "absolute",
-    width: 64,
-    height: 64,
-    borderRadius: radii.full,
-    backgroundColor: "rgba(220, 38, 38, 0.25)",
-    borderWidth: 1.5,
-    borderColor: colors.emergency,
-  },
-  vehicleAvatarBubble: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.full,
-    backgroundColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2.5,
-    borderColor: colors.emergency,
-    ...shadows.md,
-  },
-  vehicleAvatarEmoji: {
-    fontSize: 22,
-  },
-  headingIndicatorArrow: {
-    position: "absolute",
-    top: -8,
-  },
-  headingIndicatorText: {
-    fontSize: 12,
-    color: colors.emergency,
-  },
   floatingControlsRow: {
     position: "absolute",
     bottom: 12,
@@ -955,6 +707,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    zIndex: 20,
+    elevation: 20,
   },
   gpsAccuracyBadge: {
     backgroundColor: "rgba(15, 23, 42, 0.85)",
@@ -1092,16 +846,16 @@ const styles = StyleSheet.create({
   },
   sliderPromptText: {
     position: "absolute",
-    width: "100%",
+    left: SLIDER_THUMB_SIZE + 16,
+    right: 12,
     textAlign: "center",
     color: colors.white,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.extrabold,
     letterSpacing: 0.5,
-    paddingLeft: 30,
   },
   sliderPromptTextConfirmed: {
-    paddingLeft: 0,
+    left: 12,
     color: colors.white,
     fontSize: typography.fontSizes.base,
   },

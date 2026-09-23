@@ -9,8 +9,8 @@ import {
   Linking,
   ActivityIndicator,
   Platform,
-  SafeAreaView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { driverOfflineStrings } from "../i18n/driverOfflineStrings";
@@ -329,19 +329,17 @@ export default function OfflineConnectivityOverlay({
 }
 
 const styles = StyleSheet.create({
-  // Root non-blocking absolute container
+  // In normal flow (not absolute): the banner pushes the screen down instead of covering its header.
   pointerEventsContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
+    backgroundColor: colors.slate950,
     zIndex: 9999,
   },
 
   // Base Banner Container
   bannerContainer: {
     marginHorizontal: spacing.sm,
-    marginTop: Platform.OS === "android" ? spacing.sm : 2,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,

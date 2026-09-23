@@ -1,16 +1,24 @@
 import { useEffect } from "react";
-import { AppState } from "react-native";
+import { AppState, View } from "react-native";
+import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { initTracer } from "@sahayak/observability";
 
 import { OfflineConnectivityOverlay } from "../src/components";
 import { useDriverLifecycleStore } from "../src/state/driverLifecycle.store";
+import { useDriverConnectionStore } from "../src/state/driverConnection.store";
 import { useDriverStandbyStore } from "../src/state/driverStandby.store";
 import { generateMockDispatchOffer } from "../src/services/mockDispatchWave";
 import { assertEnvOrWarn } from "../src/config/env.ts";
 import { useDriverLocation } from "../src/hooks/useDriverLocation";
-import { Notifications, notifyIncomingOffer, setupDispatchNotifications } from "../src/services/dispatchNotifications";
+import {
+  dismissAllNotifications,
+  dismissNotification,
+  notifyIncomingOffer,
+  setupDispatchNotifications,
+  subscribeToOfferActions,
+} from "../src/services/dispatchNotifications";
 import { resolveOfferAction, type OfferNotificationData } from "../src/services/dispatchNotifications.core";
 
 assertEnvOrWarn();
@@ -27,22 +35,18 @@ export default function RootLayout() {
   // Accept/Decline buttons on the dispatch notification run the same lifecycle events as the offer screen.
   useEffect(() => {
     setupDispatchNotifications().catch(() => {});
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const result = resolveOfferAction(
-        response.actionIdentifier,
-        response.notification.request.content.data,
-        driverId || "DRV-DEMO-0001"
-      );
+    const unsubscribe = subscribeToOfferActions((response) => {
+      const result = resolveOfferAction(response.actionIdentifier, response.data, driverId || "DRV-DEMO-0001");
       if (!result) return;
       send(result.event);
       if (result.kind === "accept") router.replace(result.route);
-      Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
+      dismissNotification(response.notificationId);
     });
     const appStateSub = AppState.addEventListener("change", (s) => {
-      if (s === "active") Notifications.dismissAllNotificationsAsync().catch(() => {});
+      if (s === "active") dismissAllNotifications();
     });
     return () => {
-      responseSub.remove();
+      unsubscribe();
       appStateSub.remove();
     };
   }, [driverId, send]);
@@ -87,15 +91,23 @@ export default function RootLayout() {
     };
   }, [send]);
 
+  // The offline banner sits in flow at the top and already clears the status bar, so screens below it must not add the inset again.
+  const insets = useSafeAreaInsets();
+  const bannerShown = useDriverConnectionStore((s) => s.isFallbackActive || s.showRestoredBanner);
+
   return (
     <>
       <StatusBar style="light" />
       <OfflineConnectivityOverlay missionId={activeMissionId || "MSN-2026-8819"} />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(shift)" />
-        <Stack.Screen name="mission" />
-      </Stack>
+      <View style={{ flex: 1 }}>
+        <SafeAreaInsetsContext.Provider value={bannerShown ? { ...insets, top: 0 } : insets}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(shift)" />
+            <Stack.Screen name="mission/[id]" />
+          </Stack>
+        </SafeAreaInsetsContext.Provider>
+      </View>
     </>
   );
 }

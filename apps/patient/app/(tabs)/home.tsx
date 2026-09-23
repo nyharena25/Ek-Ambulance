@@ -1,35 +1,125 @@
-import { View, Text, StyleSheet } from "react-native";
-import { colors } from "@sahayak/ui";
+import { View, Text, StyleSheet, Pressable, Linking } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { homeStrings } from "../../src/i18n/homeStrings";
+import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
+import { AppIcon } from "../../src/components";
 
 export default function HomeScreen() {
   // No language switcher wired into this route yet; fixed to English until one is.
   const strings = homeStrings.en;
+  const router = useRouter();
+  const searching = usePatientLifecycleStore((s) => s.currentState === "requesting");
+  const context = usePatientLifecycleStore((s) => s.context);
+
+  const openMatching = () =>
+    router.push({
+      pathname: "/booking/matching",
+      params: {
+        vehicleType: context.vehicleType ?? undefined,
+        jurisdiction: context.jurisdiction ?? undefined,
+        lat: context.pickup ? String(context.pickup.latitude) : undefined,
+        lon: context.pickup ? String(context.pickup.longitude) : undefined,
+      },
+    });
+
+  // Same entry point as the onboarding screen's "Quick Emergency Access": straight into triage,
+  // no prior booking state required.
+  const startBooking = () => router.push("/booking/triage");
+  const call108 = () => Linking.openURL("tel:108").catch(() => {});
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{strings.screenTitle}</Text>
-      <Text style={styles.subtitle}>{strings.screenSubtitle}</Text>
-    </View>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+      {searching && (
+        <Pressable accessibilityRole="button" style={styles.banner} onPress={openMatching}>
+          <Text style={styles.bannerText}>Ambulance Dispatch Active — Searching... Tap to View</Text>
+        </Pressable>
+      )}
+
+      <View style={styles.container}>
+        <Text style={styles.title}>{strings.screenTitle}</Text>
+        <Text style={styles.subtitle}>{strings.screenSubtitle}</Text>
+
+        {/* The screen used to end here with no action - a dead end after returning from a
+            completed or cancelled mission. This is the same entry point onboarding's quick-access
+            button uses, so returning here is never a step backward. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={strings.requestButtonLabel}
+          style={({ pressed }) => [styles.requestButton, pressed && styles.requestButtonPressed]}
+          onPress={startBooking}
+        >
+          <AppIcon icon={{ set: "mci", name: "ambulance" }} size={22} color={colors.white} />
+          <Text style={styles.requestButtonText}>{strings.requestButtonLabel}</Text>
+        </Pressable>
+
+        <Pressable accessibilityRole="button" accessibilityLabel={strings.call108Label} style={styles.call108Link} onPress={call108}>
+          <AppIcon icon={{ set: "ion", name: "call" }} size={16} color={colors.slate600} />
+          <Text style={styles.call108Text}>{strings.call108Label}</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.white },
+  banner: { position: "absolute", top: spacing.xl, left: spacing.lg, right: spacing.lg, backgroundColor: colors.emergency, borderRadius: radii.lg, padding: 14, zIndex: 10 },
+  bannerText: { color: colors.white, fontWeight: "700", textAlign: "center" },
   container: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
-    backgroundColor: colors.white
+    padding: spacing.xl,
   },
   title: {
     fontSize: 22,
     fontWeight: "700",
     color: colors.emergency,
-    marginBottom: 8
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: colors.slate600 // nearest existing token
-  }
+    color: colors.slate600, // nearest existing token
+    marginBottom: spacing.xl,
+    textAlign: "center",
+  },
+  requestButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.emergency,
+    borderRadius: radii.full,
+    borderWidth: 1.5,
+    borderColor: colors.emergencyDark,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
+    minHeight: 56,
+    width: "100%",
+    ...shadows.emergency,
+  },
+  requestButtonPressed: {
+    backgroundColor: colors.emergencyDeep,
+    transform: [{ scale: 0.99 }],
+  },
+  requestButtonText: {
+    color: colors.white,
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+  },
+  call108Link: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.lg,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  call108Text: {
+    color: colors.slate600,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+  },
 });

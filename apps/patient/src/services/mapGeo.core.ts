@@ -1,6 +1,5 @@
 import type { GeoPoint, Jurisdiction } from "@sahayak/domain";
 
-export const DEFAULT_MAP_DELTA = 0.015;
 export const DEFAULT_PICKUP: GeoPoint = { latitude: 28.5672, longitude: 77.21 };
 
 /** fitToCoordinates on (near-)coincident points zooms to the maximum level; only fit when the route really spans distance. */
@@ -9,15 +8,6 @@ export function isFittable(points: readonly GeoPoint[], minSpanDeg = 0.005): boo
   const lats = points.map((p) => p.latitude);
   const lngs = points.map((p) => p.longitude);
   return Math.max(Math.max(...lats) - Math.min(...lats), Math.max(...lngs) - Math.min(...lngs)) >= minSpanDeg;
-}
-
-export function regionAround(center: GeoPoint, delta = DEFAULT_MAP_DELTA) {
-  return { ...center, latitudeDelta: delta, longitudeDelta: delta };
-}
-
-/** Scales a region about its centre; factor < 1 zooms in. */
-export function scaleRegion<R extends GeoPoint & { latitudeDelta: number; longitudeDelta: number }>(region: R, factor: number): R {
-  return { ...region, latitudeDelta: region.latitudeDelta * factor, longitudeDelta: region.longitudeDelta * factor };
 }
 
 /** Route params arrive as strings; anything non-finite falls back so the map never centres on NaN. */
@@ -47,4 +37,29 @@ export function findHospital(name: string): { label: string; coordinate: GeoPoin
   const lower = name.toLowerCase();
   const hit = HOSPITALS.find((h) => lower.includes(h.keyword));
   return hit ? { label: hit.label, coordinate: hit.coordinate, matched: true } : { label: name, coordinate: HOSPITALS[0]!.coordinate, matched: false };
+}
+
+export const formatCoordinates = (p: GeoPoint) => `${p.latitude.toFixed(4)}° N, ${p.longitude.toFixed(4)}° E`;
+
+export interface GeocodedPlace {
+  name?: string | null;
+  street?: string | null;
+  district?: string | null;
+  subregion?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+}
+
+/** street, district, subregion, city, postalCode; blanks and repeats dropped. Falls back to the coordinates when empty. */
+export function formatAddress(place: GeocodedPlace | undefined, fallback: GeoPoint): string {
+  const seen = new Set<string>();
+  const parts = [place?.street ?? place?.name, place?.district, place?.subregion, place?.city, place?.postalCode].filter(
+    (part): part is string => {
+      const v = part?.trim();
+      if (!v || seen.has(v.toLowerCase())) return false;
+      seen.add(v.toLowerCase());
+      return true;
+    }
+  );
+  return parts.length ? parts.map((v) => v.trim()).join(", ") : formatCoordinates(fallback);
 }

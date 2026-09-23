@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, authStorage } from "../lib/supabaseClient";
 import {
   toE164IndianPhone,
   mapAuthError,
@@ -8,6 +8,9 @@ import {
 } from "./otpAuth.core";
 
 export type { AuthApiError };
+
+const DEV_PATIENT_PHONE = "+919876500001";
+const DEV_OTP = "123456";
 
 export interface VerifyOtpResponse {
   access_token: string;
@@ -59,6 +62,13 @@ export function useOtpAuth(): UseOtpAuthReturn {
     setIsLoading(true);
     setError(null);
 
+    if (__DEV__ && phone === DEV_PATIENT_PHONE) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      console.log(`[DevAuth] Mock OTP dispatched to ${phone} -> OTP: ${DEV_OTP}`);
+      setIsLoading(false);
+      return true;
+    }
+
     try {
       // `phone` already arrives +91-prefixed from PhoneAuthScreen (matches
       // the prior contract); toE164IndianPhone is for callers passing a
@@ -88,6 +98,36 @@ export function useOtpAuth(): UseOtpAuthReturn {
     async (phone: string, token: string): Promise<VerifyOtpResponse | null> => {
       setIsLoading(true);
       setError(null);
+
+      if (__DEV__ && phone === DEV_PATIENT_PHONE) {
+        setIsLoading(false);
+        if (token !== DEV_OTP) {
+          setError({
+            error: "invalid_otp",
+            error_description: "Invalid verification code. Please try again.",
+          });
+          return null;
+        }
+        const expiresIn = 3600;
+        const user = { id: "dev-patient-uuid", phone, role: "authenticated" };
+        const response = {
+          access_token: "dev-mock-access-token",
+          token_type: "bearer",
+          expires_in: expiresIn,
+          refresh_token: "dev-mock-refresh-token",
+          user,
+        };
+        // supabase-js reads this key on getSession(); setSession() would reject the fake JWT.
+        await authStorage.setItem(
+          (supabase.auth as unknown as { storageKey: string }).storageKey,
+          JSON.stringify({
+            ...response,
+            expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+            user: { ...user, app_metadata: { provider: "phone" }, user_metadata: { full_name: "Mock Emergency Patient" } },
+          })
+        );
+        return response;
+      }
 
       try {
         const { data, error: authError } = await supabase.auth.verifyOtp({

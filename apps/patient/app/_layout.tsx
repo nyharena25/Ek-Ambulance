@@ -16,11 +16,13 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="dark" />
+      {/* "(tabs)" and "booking" aren't declared here: neither folder has its own _layout.tsx, so
+          expo-router registers their real leaf routes as "(tabs)/home", "booking/matching", etc.
+          Declaring the group name itself matched nothing and only produced the router's
+          "No route named ... exists in nested children" warning. */}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="booking" />
       </Stack>
     </>
   );

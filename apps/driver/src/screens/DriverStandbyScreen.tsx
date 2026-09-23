@@ -1,20 +1,20 @@
+import { useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Pressable,
   StatusBar,
   Modal,
   ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import { AIS125VehicleType } from "@sahayak/domain";
 import { driverStandbyStrings } from "../i18n/driverStandbyStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
-import { AppIcon } from "../components";
+import { AppIcon, DriverMap } from "../components";
 export interface DriverStandbyScreenProps {
   onSimulateOffer?: () => void;
   onNavigateToOnboarding?: () => void;
@@ -35,35 +35,20 @@ export default function DriverStandbyScreen({
     gpsQuality,
     dailyMetrics,
     registeredAis125Type,
-    redisPresence,
     isOfflineModalOpen,
     toggleOnlineState,
     confirmGoOffline,
     closeOfflineModal,
     setJurisdiction,
-    setAis125Type,
     toggleCharging,
     toggleLowBatterySimulation,
     toggleLanguage,
     recenterGps,
   } = useDriverStandbyStore();
 
+  const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
   const strings = driverStandbyStrings[language];
   const ais125Info = strings.ais125TierBadge[registeredAis125Type];
-
-  // Key hospital landmark coordinates relative to current jurisdiction
-  const hospitalLandmarks =
-    currentJurisdiction === "UP_NOIDA"
-      ? [
-          { name: "Jaypee Hospital (Sec 128)", distance: "2.4 km", tag: "ICU / Trauma" },
-          { name: "Fortis Hospital (Sec 62)", distance: "1.1 km", tag: "Cardiac / Stroke" },
-          { name: "Kailash Hospital (Sec 27)", distance: "4.8 km", tag: "General / ER" },
-        ]
-      : [
-          { name: "AIIMS Trauma Centre", distance: "0.8 km", tag: "Apex Cat 1 Trauma" },
-          { name: "Max Super Speciality Saket", distance: "3.2 km", tag: "Cardiac / Neuro" },
-          { name: "Safdarjung Emergency", distance: "1.5 km", tag: "Polytrauma" },
-        ];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -265,14 +250,9 @@ export default function DriverStandbyScreen({
           </View>
 
           {/* Subtitle & Radar Info */}
-          <Text
-            style={[
-              styles.shiftSubNotice,
-              isOnline ? styles.shiftSubNoticeOnline : styles.shiftSubNoticeOffline,
-            ]}
-          >
-            {isOnline ? strings.radarScanningNotice : strings.offlineBannerStatus}
-          </Text>
+          {!isOnline && (
+            <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]}>{strings.offlineBannerStatus}</Text>
+          )}
 
           {/* PROMINENT ACTION TOGGLE BUTTON */}
           <Pressable
@@ -353,20 +333,6 @@ export default function DriverStandbyScreen({
             )}
           </Pressable>
 
-          {/* Redis Telemetry Footer */}
-          {isOnline && (
-            <View style={styles.redisTelemetryBar}>
-              <Text style={styles.redisKeyText}>
-                <AppIcon icon={{ set: "ion", name: "key" }} size={10} />{" "}{redisPresence.geoKey}
-              </Text>
-              <Text style={styles.redisSyncText}>
-                {strings.redisTtlSync(
-                  redisPresence.ttlSeconds,
-                  redisPresence.lastPingMs
-                )}
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* ACTIVE SERVICE AREA MAP & LIVE GPS HUD */}
@@ -385,84 +351,11 @@ export default function DriverStandbyScreen({
             </Pressable>
           </View>
 
-          {/* SIMULATED MAP CANVAS */}
+          {/* LIVE MAP */}
           <View style={styles.mapCanvas}>
-            {/* Background Grid & Radar Rings */}
-            <View style={styles.radarRing15km} />
-            <View style={styles.radarRing10km} />
-            <View style={styles.radarRing5km} />
-
-            {/* Grid Line Accents */}
-            <View style={styles.gridLineHorizontal} />
-            <View style={styles.gridLineVertical} />
-
-            {/* Nearby Hospital Landmark Markers */}
-            <View style={[styles.landmarkPin, { top: 32, right: 40 }]}>
-              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={12} color={colors.slate700} style={styles.landmarkPinIcon} />
-              <Text style={styles.landmarkPinLabel}>{strings.landmarkPinNorth}</Text>
-            </View>
-            <View style={[styles.landmarkPin, { bottom: 48, left: 36 }]}>
-              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={12} color={colors.slate700} style={styles.landmarkPinIcon} />
-              <Text style={styles.landmarkPinLabel}>{strings.landmarkPinWest}</Text>
-            </View>
-
-            {/* Center Vehicle Marker & Pulsing Radar Wave */}
-            <View style={styles.vehicleCenterBox}>
-              {isOnline && <View style={styles.vehicleRadarSweepWave} />}
-              <View style={styles.vehicleMarkerBubble}>
-                <AppIcon icon={{ set: "mci", name: "ambulance" }} size={20} color={colors.slate700} style={styles.vehicleMarkerEmoji} />
-              </View>
-              <View style={styles.vehicleHeadingArrow}>
-                <AppIcon icon={{ set: "ion", name: "caret-up" }} size={10} style={styles.vehicleHeadingText} />
-              </View>
-            </View>
-
-            {/* Geofence Tag */}
-            <View style={styles.geofenceOverlayPill}>
-              <Text style={styles.geofenceOverlayText}>
-                {strings.gpsNavicSync}
-              </Text>
-            </View>
+            <DriverMap style={StyleSheet.absoluteFill} driver={driverPos} headingDeg={gps.heading} controlsBottom={spacing.sm} />
           </View>
 
-          {/* LIVE COORDINATES HUD STRIP */}
-          <View style={styles.coordinatesHud}>
-            <View style={styles.hudRow}>
-              <View style={styles.hudCol}>
-                <Text style={styles.hudLabel}>{strings.latLabel}</Text>
-                <Text style={styles.hudValue}>{gps.latitude.toFixed(4)}° N</Text>
-              </View>
-              <View style={styles.hudCol}>
-                <Text style={styles.hudLabel}>{strings.lonLabel}</Text>
-                <Text style={styles.hudValue}>{gps.longitude.toFixed(4)}° E</Text>
-              </View>
-              <View style={styles.hudCol}>
-                <Text style={styles.hudLabel}>{strings.headingLabel}</Text>
-                <Text style={styles.hudValue}>{gps.heading}° NW</Text>
-              </View>
-              <View style={styles.hudCol}>
-                <Text style={styles.hudLabel}>{strings.precisionLabel}</Text>
-                <Text style={styles.hudValueGreen}>
-                  {strings.gpsAccuracyMeters(gps.accuracyMeters)}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Nearby Hospital Quick References */}
-          <View style={styles.hospitalListWrap}>
-            <Text style={styles.hospitalListTitle}>
-              <AppIcon icon={{ set: "ion", name: "location" }} size={11} />{" "}{strings.landmarksInZone}:
-            </Text>
-            <View style={styles.hospitalChipsRow}>
-              {hospitalLandmarks.map((h, i) => (
-                <View key={i} style={styles.hospitalChip}>
-                  <Text style={styles.hospitalChipName}>{h.name}</Text>
-                  <Text style={styles.hospitalChipDist}>({h.distance})</Text>
-                </View>
-              ))}
-            </View>
-          </View>
         </View>
 
         {/* CURRENT REGISTERED JURISDICTION CARD */}
@@ -592,35 +485,6 @@ export default function DriverStandbyScreen({
             </Text>
           </View>
 
-          {/* Quick Fleet Tier Switcher to preview all categories */}
-          <View style={styles.tierSwitcherRow}>
-            {(
-              [
-                "TYPE_D_ALS",
-                "TYPE_C_BLS",
-                "TYPE_B_PTA",
-                "TYPE_A_MFR",
-              ] as AIS125VehicleType[]
-            ).map((t) => (
-              <Pressable
-                key={t}
-                style={[
-                  styles.tierQuickChip,
-                  registeredAis125Type === t && styles.tierQuickChipActive,
-                ]}
-                onPress={() => setAis125Type(t)}
-              >
-                <Text
-                  style={[
-                    styles.tierQuickChipText,
-                    registeredAis125Type === t && styles.tierQuickChipTextActive,
-                  ]}
-                >
-                  {t.replace("TYPE_", "").replace("_", " ")}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
 
         {/* DAILY COMPLETED MISSIONS & SHIFT STATISTICS */}
@@ -1221,110 +1085,20 @@ const styles = StyleSheet.create({
 
   // Simulated Map Canvas
   mapCanvas: {
-    height: 180,
-    backgroundColor: colors.slate950, // nearest existing token; dark tactical navy map styling
+    height: 260,
+    backgroundColor: colors.slate200,
     borderRadius: radii.lg,
     overflow: "hidden",
     position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
     borderWidth: 1,
     borderColor: colors.slate800, // nearest existing token
-  },
-  radarRing15km: {
-    position: "absolute",
-    width: 260,
-    height: 260,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.15)",
-  },
-  radarRing10km: {
-    position: "absolute",
-    width: 170,
-    height: 170,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.25)",
-  },
-  radarRing5km: {
-    position: "absolute",
-    width: 90,
-    height: 90,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.35)",
-  },
-  gridLineHorizontal: {
-    position: "absolute",
-    width: "100%",
-    height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-  },
-  gridLineVertical: {
-    position: "absolute",
-    height: "100%",
-    width: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-  },
-  landmarkPin: {
-    position: "absolute",
-    alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  landmarkPinIcon: {
-    fontSize: 12,
-  },
-  landmarkPinLabel: {
-    fontSize: 9,
-    color: colors.white,
-    fontWeight: typography.fontWeights.medium,
-  },
-  vehicleCenterBox: {
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  vehicleRadarSweepWave: {
-    position: "absolute",
-    width: 72,
-    height: 72,
-    borderRadius: radii.full,
-    backgroundColor: "rgba(220, 38, 38, 0.25)",
-    borderWidth: 1.5,
-    borderColor: colors.emergency,
-  },
-  vehicleMarkerBubble: {
-    width: 38,
-    height: 38,
-    borderRadius: radii.full,
-    backgroundColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.emergency,
-    ...shadows.sm,
-  },
-  vehicleMarkerEmoji: {
-    fontSize: 20,
-  },
-  vehicleHeadingArrow: {
-    position: "absolute",
-    top: -8,
-  },
-  vehicleHeadingText: {
-    fontSize: 10,
-    color: colors.emergency,
   },
   geofenceOverlayPill: {
     position: "absolute",
     bottom: 8,
     left: 8,
+    zIndex: 20,
+    elevation: 20,
     backgroundColor: "rgba(15, 23, 42, 0.8)",
     paddingHorizontal: 8,
     paddingVertical: 3,

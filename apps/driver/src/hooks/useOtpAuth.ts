@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, authStorage } from "../lib/supabaseClient";
+import { devVerifyOtp, isDevDriverPhone } from "./devAuth.core";
+import { DEV_OTP } from "../config/devDriverProfiles";
 import {
   hasDriverRole,
   mapAuthError,
@@ -55,6 +57,13 @@ export function useOtpAuth(): UseOtpAuthReturn {
     setIsLoading(true);
     setError(null);
 
+    if (__DEV__ && isDevDriverPhone(phone)) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      console.log(`[DevAuth] Mock OTP dispatched to ${phone} -> OTP: ${DEV_OTP}`);
+      setIsLoading(false);
+      return true;
+    }
+
     try {
       const { error: authError } = await supabase.auth.signInWithOtp({
         phone,
@@ -80,6 +89,30 @@ export function useOtpAuth(): UseOtpAuthReturn {
     async (phone: string, token: string): Promise<VerifyOtpResponse | null> => {
       setIsLoading(true);
       setError(null);
+
+      if (__DEV__) {
+        const dev = devVerifyOtp(phone, token);
+        if (dev) {
+          setIsLoading(false);
+          if (!dev.ok) {
+            setError(dev.error);
+            return null;
+          }
+          const { user, ...tokens } = dev.session;
+          // supabase-js reads this key on getSession(); setSession() would reject the fake JWT.
+          await authStorage.setItem(
+            (supabase.auth as unknown as { storageKey: string }).storageKey,
+            JSON.stringify(dev.session)
+          );
+          return {
+            access_token: tokens.access_token,
+            token_type: tokens.token_type,
+            expires_in: tokens.expires_in,
+            refresh_token: tokens.refresh_token,
+            user: { id: user.id, phone: user.phone, role: user.app_metadata.role },
+          };
+        }
+      }
 
       try {
         const { data, error: authError } = await supabase.auth.verifyOtp({

@@ -1,6 +1,10 @@
+import { useEffect } from "react";
+import { Alert, BackHandler } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { ActiveMatchingScreen } from "../../src/screens";
 import { AIS125VehicleType } from "@sahayak/domain";
+import { returnHome } from "../../src/navigation/returnHome";
+import { formatCoordinates } from "../../src/services/mapGeo.core";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 
 export default function BookingMatchingRoute() {
@@ -17,10 +21,10 @@ export default function BookingMatchingRoute() {
   }>();
 
   const vehicleType = (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
-  const pickupAddress =
-    params.address || "AIIMS New Delhi, Main Emergency Ward";
   const latitude = params.lat ? parseFloat(params.lat) : 28.5672;
   const longitude = params.lon ? parseFloat(params.lon) : 77.21;
+  // Re-entry from the Home banner carries only coordinates (the machine stores no address).
+  const pickupAddress = params.address || formatCoordinates({ latitude, longitude });
 
   const handleCancel = (reason: string) => {
     send({
@@ -36,14 +40,34 @@ export default function BookingMatchingRoute() {
     // home screens: `cancelled` has no `on` handlers, so without a reset the
     // actor would stay pinned here and every event a fresh booking sends
     // (SUBMIT_TRIAGE included) would silently no-op from this point on.
-    resetLifecycle();
     // Reset means idle, and idle only accepts SUBMIT_TRIAGE - router.back()
     // or /booking/confirm would land on a screen that sends REQUEST instead,
     // relocating the exact dead-end this reset exists to prevent. Home is
     // where the reset actor is actually ready to be used, matching both
     // reset call sites in booking/[id].tsx.
-    router.replace("/(tabs)/home");
+    returnHome(router, resetLifecycle);
   };
+
+  // Leaving without cancelling keeps the mission alive (the actor lives in the global store; Home shows a banner).
+  // Back only asks for an explicit cancel.
+  const confirmCancel = () => {
+    Alert.alert(
+      "Cancel Ambulance Request?",
+      "Nearby emergency ambulances are currently being notified in Wave 1. Are you sure you want to cancel?",
+      [
+        { text: "Keep Searching", style: "cancel" },
+        { text: "Cancel Request", style: "destructive", onPress: () => handleCancel("Cancelled from back confirmation") },
+      ]
+    );
+  };
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      confirmCancel();
+      return true;
+    });
+    return () => sub.remove();
+  });
 
   const handleSimulateMatch = () => {
     // Mocked server push (real Centrifugo event lands in a later slice) -
@@ -73,6 +97,7 @@ export default function BookingMatchingRoute() {
       wave1TimeoutSeconds={45}
       wave2TimeoutSeconds={45}
       onCancel={handleCancel}
+      onBack={confirmCancel}
       onSimulateMatch={handleSimulateMatch}
     />
   );

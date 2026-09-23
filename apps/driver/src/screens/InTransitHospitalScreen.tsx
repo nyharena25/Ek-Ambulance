@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Pressable,
   Animated,
@@ -14,13 +13,17 @@ import {
   StatusBar,
   Modal,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { CompleteMissionPayload, ConfirmArrivalHospitalPayload, GeoPoint } from "@sahayak/domain";
 import { driverTransportStrings } from "../i18n/driverTransportStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
-import { AppIcon, NavigateInGoogleMapsButton } from "../components";
+import { distanceKm as distanceKmBetween } from "../hooks/hospitalSelection.core";
+import { AppIcon, DriverMap, NavigateInGoogleMapsButton } from "../components";
+const DEMO_HOSPITAL: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
+
 export interface InTransitHospitalScreenProps {
   missionId?: string;
   initialLanguage?: SupportedLanguage;
@@ -56,9 +59,11 @@ export default function InTransitHospitalScreen({
   onBackToStandby,
 }: InTransitHospitalScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
-  const [currentSpeed, setCurrentSpeed] = useState(62);
-  const [distanceKm, setDistanceKm] = useState(3.8);
-  const [etaMins, setEtaMins] = useState(6);
+  const gps = useDriverStandbyStore((st) => st.gps);
+  const currentSpeed = Math.round(gps.speedKmh);
+  const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
+  const hospitalTarget = hospitalCoordinates ?? DEMO_HOSPITAL;
+  const distanceKm = distanceKmBetween(driverPos, hospitalTarget);
   const [isCompletedAtHospital, setIsCompletedAtHospital] = useState(false);
   const [isSignOffModalOpen, setIsSignOffModalOpen] = useState(false);
   const [isReceiptView, setIsReceiptView] = useState(false);
@@ -81,40 +86,6 @@ export default function InTransitHospitalScreen({
   const sliderWidth = SCREEN_WIDTH - spacing.base * 2;
   const maxDragDistance = sliderWidth - SLIDER_THUMB_SIZE - SLIDER_TRACK_PADDING * 2;
   const panX = useRef(new Animated.Value(0)).current;
-
-  // Flashing pulse animation for ER integration status
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 0.6,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Subtle speed fluctuation simulation (58 - 66 km/h)
-    const speedInterval = setInterval(() => {
-      if (!isCompletedAtHospital) {
-        setCurrentSpeed(58 + Math.floor(Math.random() * 8));
-      } else {
-        setCurrentSpeed(0);
-      }
-    }, 2000);
-
-    return () => {
-      pulseAnim.stopAnimation();
-      clearInterval(speedInterval);
-    };
-  }, [isCompletedAtHospital]);
 
   // PanResponder for 'Slide to Complete Mission at Hospital ER'
   const panResponder = useRef(
@@ -141,14 +112,11 @@ export default function InTransitHospitalScreen({
             useNativeDriver: false,
           }).start(() => {
             setIsCompletedAtHospital(true);
-            setCurrentSpeed(0);
-            setDistanceKm(0);
-            setEtaMins(0);
 
             const arrivalPayload: ConfirmArrivalHospitalPayload = {
               missionId,
               driverId: "DRV-DL-8821",
-              location: hospitalCoordinates || { latitude: 28.5355, longitude: 77.391 },
+              location: hospitalCoordinates || DEMO_HOSPITAL,
               arrivedAt: new Date().toISOString(),
             };
 
@@ -238,137 +206,36 @@ export default function InTransitHospitalScreen({
       </View>
 
       <NavigateInGoogleMapsButton
-        destination={hospitalCoordinates || { latitude: 28.5355, longitude: 77.391 }}
+        destination={hospitalCoordinates || DEMO_HOSPITAL}
         target="hospital"
         language={language}
       />
 
-      {/* ER INTEGRATION ALERT BANNER */}
-      <View style={styles.erAlertBanner}>
-        <View style={styles.erAlertHeaderRow}>
-          <Animated.View
-            style={[styles.integrationPulseDot, { opacity: pulseAnim }]}
-          />
-          <Text style={styles.erAlertTitle}>{strings.erAlertBannerTitle}</Text>
-        </View>
-
-        <Text style={styles.erAlertSub}>{strings.erIntegrationSub}</Text>
-
-        <View style={styles.erStatusChipsRow}>
-          <View style={styles.erStatusChip}>
-            <Text style={styles.erStatusChipText}>
-              <AppIcon icon={{ set: "ion", name: "checkmark" }} size={9} />{" "}{strings.hl7GatewayStatus}
-            </Text>
-          </View>
-          <View style={styles.erStatusChipHighlight}>
-            <Text style={styles.erStatusChipHighlightText}>
-              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={9} />{" "}{strings.assignedBayText}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.vitalsStreamBar}>
-          <Text style={styles.vitalsStreamText}>
-            <AppIcon icon={{ set: "ion", name: "flash" }} size={10} />{" "}{strings.preArrivalVitalsStream}
-          </Text>
-        </View>
-      </View>
-
-      {/* NAVIGATION OVERLAY CARD */}
+      {/* DESTINATION + DISTANCE + SPEED (directions open in Google Maps) */}
       <View style={styles.navOverlayCard}>
         <View style={styles.destinationTitleRow}>
-          <AppIcon icon={{ set: "ion", name: "location" }} size={20} color={colors.slate700} style={styles.destinationIcon} />
+          <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={22} color={colors.white} />
           <View style={styles.destinationTextBox}>
-            <Text style={styles.destinationHeading}>
-              {strings.destinationHeading}:
-            </Text>
-            <Text style={styles.destinationHospitalName}>
-              {hospitalName || strings.destinationHospitalName}
-            </Text>
-            <Text style={styles.destinationRampAccess}>
-              {strings.destinationRampAccess}
-            </Text>
+            <Text style={styles.destinationHeading}>{strings.destinationHeading}</Text>
+            <Text style={styles.destinationHospitalName}>{hospitalName || strings.destinationHospitalName}</Text>
           </View>
         </View>
 
-        {/* Speedometer & ETA Strip */}
         <View style={styles.telemetryBar}>
           <View style={styles.speedCol}>
             <Text style={styles.speedNumeral}>{currentSpeed}</Text>
             <Text style={styles.speedUnit}>{strings.currentSpeedUnit}</Text>
           </View>
-
-          <View style={styles.corridorCenterBox}>
-            <Text style={styles.corridorBadgeText}>
-              <AppIcon icon={{ set: "ion", name: "ellipse" }} size={9} />{" "}{strings.greenCorridorNotice}
-            </Text>
-          </View>
-
           <View style={styles.etaCol}>
-            <Text style={styles.etaNumeral}>{etaMins} MINS</Text>
-            <Text style={styles.etaDist}>{distanceKm.toFixed(1)} km left</Text>
+            <Text style={styles.etaNumeral}>{isCompletedAtHospital ? "0.0" : distanceKm.toFixed(1)} km</Text>
+            <Text style={styles.etaDist}>{language === "hi" ? "सीधी दूरी" : "straight line"}</Text>
           </View>
         </View>
       </View>
 
       {/* FULL-SCREEN TACTICAL NAVIGATION CANVAS */}
-      <View style={styles.mapCanvas}>
-        <View style={styles.roadNetworkContainer}>
-          {/* Main Expressway Bed */}
-          <View style={styles.expresswayBed}>
-            <View style={styles.laneDivider} />
-          </View>
-
-          {/* Cyan Glowing Polyline */}
-          <View style={styles.routePolyline} />
-          <View style={styles.routePolylineGlow} />
-
-          {/* Directional Chevrons */}
-          <AppIcon
-            icon={{ set: "ion", name: "caret-up" }}
-            size={13}
-            style={[styles.routeChevron, { top: "70%" }]}
-          />
-          <AppIcon
-            icon={{ set: "ion", name: "caret-up" }}
-            size={13}
-            style={[styles.routeChevron, { top: "50%" }]}
-          />
-          <AppIcon
-            icon={{ set: "ion", name: "caret-up" }}
-            size={13}
-            style={[styles.routeChevron, { top: "30%" }]}
-          />
-
-          {/* Hospital Waypoint */}
-          <View style={styles.hospitalWaypoint}>
-            <View style={styles.hospitalPinBubble}>
-              <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={14} color={colors.slate700} style={styles.hospitalPinIcon} />
-              <Text style={styles.hospitalPinText}>
-                ER Resus Bay 02 Entrance
-              </Text>
-            </View>
-          </View>
-
-          {/* Ambulance Moving Avatar */}
-          <View style={styles.vehiclePositionBox}>
-            <View style={styles.vehicleAvatarBubble}>
-              <AppIcon icon={{ set: "mci", name: "ambulance" }} size={22} color={colors.slate700} style={styles.vehicleAvatarEmoji} />
-            </View>
-            <View style={styles.headingIndicatorArrow}>
-              <AppIcon icon={{ set: "ion", name: "caret-up" }} size={12} style={styles.headingIndicatorText} />
-            </View>
-          </View>
-        </View>
-
-        {/* Floating Controls HUD */}
-        <View style={styles.floatingControls}>
-          <View style={styles.telemetryLockPill}>
-            <Text style={styles.telemetryLockText}>
-              HL7 Live Telemetry Synchronized (1.0 Hz)
-            </Text>
-          </View>
-        </View>
+      <View style={styles.mapCanvas} pointerEvents="box-none">
+        <DriverMap style={StyleSheet.absoluteFill} driver={driverPos} headingDeg={gps.heading} controlsBottom={56} />
       </View>
 
       {/* PERSISTENT BOTTOM ACTION BAR: SECURE COMPLETION SLIDER */}
@@ -903,109 +770,14 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
   },
-  roadNetworkContainer: {
-    flex: 1,
-    position: "relative",
-  },
-  expresswayBed: {
-    position: "absolute",
-    left: "40%",
-    top: 0,
-    bottom: 0,
-    width: 72,
-    backgroundColor: colors.slate800,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  laneDivider: {
-    width: 2,
-    height: "100%",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  routePolyline: {
-    position: "absolute",
-    left: "48%",
-    top: 70,
-    bottom: 110,
-    width: 10,
-    backgroundColor: colors.triageGreen, // Green corridor
-    borderRadius: radii.full,
-  },
-  routePolylineGlow: {
-    position: "absolute",
-    left: "46%",
-    top: 70,
-    bottom: 110,
-    width: 20,
-    backgroundColor: "rgba(16, 185, 129, 0.25)",
-    borderRadius: radii.full,
-  },
-  routeChevron: {
-    position: "absolute",
-    left: "47.5%",
-    color: colors.white,
-    fontSize: 14,
-  },
-  hospitalWaypoint: {
-    position: "absolute",
-    top: 40,
-    left: "25%",
-    alignItems: "center",
-  },
-  hospitalPinBubble: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    borderColor: colors.success,
-    gap: 4,
-  },
-  hospitalPinIcon: {
-    fontSize: 14,
-  },
-  hospitalPinText: {
-    color: colors.white,
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-  },
-  vehiclePositionBox: {
-    position: "absolute",
-    bottom: 100,
-    left: "45%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  vehicleAvatarBubble: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.full,
-    backgroundColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2.5,
-    borderColor: colors.emergency,
-    ...shadows.md,
-  },
-  vehicleAvatarEmoji: {
-    fontSize: 22,
-  },
-  headingIndicatorArrow: {
-    position: "absolute",
-    top: -8,
-  },
-  headingIndicatorText: {
-    fontSize: 12,
-    color: colors.emergency,
-  },
   floatingControls: {
     position: "absolute",
     bottom: 12,
     left: spacing.base,
     right: spacing.base,
     alignItems: "center",
+    zIndex: 20,
+    elevation: 20,
   },
   telemetryLockPill: {
     backgroundColor: "rgba(15, 23, 42, 0.85)",
@@ -1059,16 +831,16 @@ const styles = StyleSheet.create({
   },
   sliderPromptText: {
     position: "absolute",
-    width: "100%",
+    left: SLIDER_THUMB_SIZE + 16,
+    right: 12,
     textAlign: "center",
     color: colors.white,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.extrabold,
     letterSpacing: 0.5,
-    paddingLeft: 30,
   },
   sliderPromptTextCompleted: {
-    paddingLeft: 0,
+    left: 12,
     color: colors.white,
     fontSize: typography.fontSizes.base,
   },

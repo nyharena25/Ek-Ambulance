@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { DISPATCH_HUB, findHospital, isFittable, parseCoordinate, regionAround, scaleRegion } from "./mapGeo.core.ts";
+import { DISPATCH_HUB, findHospital, formatAddress, formatCoordinates, isFittable, parseCoordinate } from "./mapGeo.core.ts";
 
 const FALLBACK = { latitude: 28.5672, longitude: 77.21 };
 
@@ -9,12 +9,6 @@ for (const [a, b] of [[undefined, "77.2"], ["28.6", undefined], ["abc", "77.2"],
   assert.deepStrictEqual(parseCoordinate(a, b, FALLBACK), FALLBACK);
 }
 console.log("✓ parse\n");
-
-console.log("Test 2: default camera + zoom...");
-assert.deepStrictEqual(regionAround(FALLBACK), { ...FALLBACK, latitudeDelta: 0.015, longitudeDelta: 0.015 });
-assert.strictEqual(scaleRegion(regionAround(FALLBACK), 0.5).latitudeDelta, 0.0075);
-assert.strictEqual(scaleRegion(regionAround(FALLBACK), 2).longitudeDelta, 0.03);
-console.log("✓ region\n");
 
 console.log("Test 3: hospital lookup uses the seeded coordinates...");
 assert.deepStrictEqual(findHospital("Jai Prakash Narayan Apex Trauma Center, AIIMS").coordinate, { latitude: 28.5672, longitude: 77.21 });
@@ -36,5 +30,16 @@ assert.strictEqual(isFittable([AIIMS]), false);
 assert.strictEqual(isFittable([]), false);
 assert.strictEqual(isFittable([DISPATCH_HUB.DL, AIIMS]), true);
 console.log("✓ fit guard\n");
+
+console.log("Test 6: reverse-geocode formatting + coordinate fallback...");
+assert.strictEqual(
+  formatAddress({ street: "Ansari Nagar", district: "South Delhi", subregion: "South Delhi", city: "New Delhi", postalCode: "110029" }, FALLBACK),
+  "Ansari Nagar, South Delhi, New Delhi, 110029",
+  "repeated district/subregion collapses"
+);
+assert.strictEqual(formatAddress({ name: "AIIMS", city: "New Delhi" }, FALLBACK), "AIIMS, New Delhi", "name stands in for a missing street");
+assert.strictEqual(formatAddress({ street: "  ", city: null }, FALLBACK), "28.5672° N, 77.2100° E");
+assert.strictEqual(formatAddress(undefined, FALLBACK), formatCoordinates(FALLBACK));
+console.log("✓ address\n");
 
 console.log("MAP GEO TESTS PASSED (100% GREEN)");

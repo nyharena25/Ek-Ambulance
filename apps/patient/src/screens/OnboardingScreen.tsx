@@ -5,10 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  SafeAreaView,
   Platform,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   onboardingStrings,
@@ -383,7 +383,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.white,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
 
   /* HEADER & BILINGUAL TOGGLE */

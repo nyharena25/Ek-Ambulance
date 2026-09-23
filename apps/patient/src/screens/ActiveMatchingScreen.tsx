@@ -3,8 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  Platform,
   StatusBar,
   Pressable,
   Animated,
@@ -14,6 +12,7 @@ import {
   Alert,
   ScrollView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { AIS125VehicleType } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
@@ -28,6 +27,7 @@ export interface ActiveMatchingScreenProps {
   wave1TimeoutSeconds?: number;
   wave2TimeoutSeconds?: number;
   onCancel?: (reason: string) => void;
+  onBack?: () => void;
   onCall108?: () => void;
   onSimulateMatch?: () => void;
 }
@@ -53,6 +53,7 @@ export default function ActiveMatchingScreen({
   wave1TimeoutSeconds = 45,
   wave2TimeoutSeconds = 45,
   onCancel,
+  onBack,
   onCall108,
   onSimulateMatch,
 }: ActiveMatchingScreenProps) {
@@ -223,6 +224,17 @@ export default function ActiveMatchingScreen({
       {/* TOP HEADER */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
+          {onBack && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              style={styles.backButton}
+              onPress={onBack}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <AppIcon icon={{ set: "ion", name: "arrow-back" }} size={20} color={colors.slate700} />
+            </Pressable>
+          )}
           <View style={styles.pulseDotWrapper}>
             <View style={styles.pulseDotCore} />
           </View>
@@ -717,7 +729,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.slate100,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   topHeader: {
     flexDirection: "row",
@@ -734,6 +745,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    backgroundColor: colors.slate100,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: spacing.sm,
   },
   pulseDotWrapper: {
     width: 22,

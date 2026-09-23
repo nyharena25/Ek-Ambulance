@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Pressable,
   TextInput,
   Switch,
@@ -12,19 +11,28 @@ import {
   StatusBar,
   Modal,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import { ConfirmPatientOnboardPayload } from "@sahayak/domain";
-import {
-  driverOnSceneStrings,
-  RANKED_TRAUMA_CENTRES,
-  TraumaCentreItem,
-} from "../i18n/driverOnSceneStrings";
+import { ConfirmPatientOnboardPayload, type GeoPoint } from "@sahayak/domain";
+import { driverOnSceneStrings, TraumaCentreItem } from "../i18n/driverOnSceneStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
-import { isHospitalSelectable } from "../hooks/hospitalHandoff.core";
+import { EMERGENCY_TYPES, hospitalsFor, type EmergencyType } from "../hooks/hospitalSelection.core";
 
-import { AppIcon } from "../components";
+import { AppIcon, openGoogleMapsNavigation } from "../components";
+
+const EMERGENCY_LABELS: Record<EmergencyType, { en: string; hi: string }> = {
+  trauma: { en: "Trauma", hi: "ट्रॉमा" },
+  cardiac: { en: "Heart", hi: "हृदय" },
+  stroke: { en: "Stroke", hi: "स्ट्रोक" },
+  burns: { en: "Burns", hi: "जलना" },
+  general: { en: "Other", hi: "अन्य" },
+};
+
+// Used only when the route was reached without pickup params (stale link / reload).
+const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 export interface OnSceneCareScreenProps {
   missionId?: string;
+  pickupCoordinates?: GeoPoint;
   initialLanguage?: SupportedLanguage;
   onConfirmPatientOnboard?: (payload: ConfirmPatientOnboardPayload) => void;
   onProceedToTransportNavigation?: (hospital: TraumaCentreItem) => void;
@@ -33,6 +41,7 @@ export interface OnSceneCareScreenProps {
 
 export default function OnSceneCareScreen({
   missionId = "MSN-2026-8819",
+  pickupCoordinates = DEMO_PICKUP,
   initialLanguage = "en",
   onConfirmPatientOnboard,
   onProceedToTransportNavigation,
@@ -50,33 +59,21 @@ export default function OnSceneCareScreen({
   // Immediate Departure Bypass (Load & Go)
   const [isBypassActive, setIsBypassActive] = useState(false);
 
-  // Hospital Selection State
-  const [selectedHospitalId, setSelectedHospitalId] = useState<string>("hosp_jaypee");
-  const [filterCategory, setFilterCategory] = useState<"ALL" | "GOVERNMENT" | "PRIVATE">("ALL");
+  // Hospital selection: only centres that treat the chosen emergency, nearest to the pickup first
+  const [emergency, setEmergency] = useState<EmergencyType>("trauma");
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(null);
 
   // Handoff Alert Modal
   const [isHandoffModalOpen, setIsHandoffModalOpen] = useState(false);
 
   const strings = driverOnSceneStrings[language];
-  const selectedHospital =
-    RANKED_TRAUMA_CENTRES.find((h) => h.id === selectedHospitalId) ||
-    RANKED_TRAUMA_CENTRES[0];
+  const nearby = useMemo(() => hospitalsFor(emergency, pickupCoordinates), [emergency, pickupCoordinates.latitude, pickupCoordinates.longitude]);
+  const selectedHospital = (nearby.find((n) => n.hospital.id === selectedHospitalId) ?? nearby[0])!.hospital;
 
   // Mean Arterial Pressure (MAP) computation
   const mapValue = Math.round(diastolic + (systolic - diastolic) / 3);
 
-  // Filtered trauma centres
-  const filteredHospitals = RANKED_TRAUMA_CENTRES.filter((h) => {
-    if (filterCategory === "ALL") return true;
-    return h.category === filterCategory;
-  });
-
   const handleStartTransport = () => {
-    // Defense-in-depth: card selection is already gated below, but never
-    // let an overcrowded destination proceed even if selectedHospitalId
-    // somehow points at one (e.g. a future filter/sort change).
-    if (!isHospitalSelectable(selectedHospital)) return;
-
     const payload: ConfirmPatientOnboardPayload = {
       missionId,
       driverId: "DRV-DL-8821",
@@ -321,171 +318,69 @@ export default function OnSceneCareScreen({
           </View>
         </View>
 
-        {/* RANKED NEAREST TRAUMA CENTRES LIST */}
+        {/* NEAREST HOSPITALS FOR THIS EMERGENCY */}
         <View style={styles.traumaSectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={22} color={colors.slate700} style={styles.sectionIcon} />
-            <View style={styles.sectionTitleWrap}>
-              <Text style={styles.sectionTitle}>{strings.traumaCentresTitle}</Text>
-              <Text style={styles.sectionSub}>
-                {strings.traumaCentresSubtitle}
-              </Text>
-            </View>
-          </View>
-
-          {/* Category Filter Chips */}
+          <Text style={styles.sectionTitle}>{language === "hi" ? "आपातकाल का प्रकार" : "Type of emergency"}</Text>
           <View style={styles.categoryFiltersRow}>
-            {(["ALL", "GOVERNMENT", "PRIVATE"] as const).map((cat) => (
+            {EMERGENCY_TYPES.map((type) => (
               <Pressable
-                key={cat}
-                style={[
-                  styles.catFilterChip,
-                  filterCategory === cat && styles.catFilterChipActive,
-                ]}
-                onPress={() => setFilterCategory(cat)}
+                key={type}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: emergency === type }}
+                style={[styles.catFilterChip, emergency === type && styles.catFilterChipActive]}
+                onPress={() => {
+                  setEmergency(type);
+                  setSelectedHospitalId(null);
+                }}
               >
-                <Text
-                  style={[
-                    styles.catFilterText,
-                    filterCategory === cat && styles.catFilterTextActive,
-                  ]}
-                >
-                  {cat === "ALL"
-                    ? strings.filterAll
-                    : cat === "GOVERNMENT"
-                    ? strings.filterGovt
-                    : strings.filterPrivate}
+                <Text style={[styles.catFilterText, emergency === type && styles.catFilterTextActive]}>
+                  {EMERGENCY_LABELS[type][language]}
                 </Text>
               </Pressable>
             ))}
           </View>
 
-          {/* Hospital Cards List */}
-          <View style={styles.hospitalsList}>
-            {filteredHospitals.map((hospital, index) => {
-              const isSelected = selectedHospitalId === hospital.id;
-              const isSelectable = isHospitalSelectable(hospital);
-              const displayName =
-                language === "hi" ? hospital.hindiName : hospital.name;
-              const displayLevel =
-                language === "hi"
-                  ? hospital.hindiTraumaLevel
-                  : hospital.traumaLevel;
+          <Text style={styles.sectionSub}>
+            {language === "hi" ? "मरीज के स्थान से सबसे नज़दीकी अस्पताल" : "Nearest hospitals from the patient's location"}
+          </Text>
 
+          <View style={styles.hospitalsList}>
+            {nearby.map(({ hospital, km }, index) => {
+              const isSelected = hospital.id === selectedHospital.id;
               return (
                 <Pressable
                   key={hospital.id}
-                  style={[
-                    styles.hospitalCard,
-                    isSelected && styles.hospitalCardSelected,
-                    !isSelectable && styles.hospitalCardDisabled,
-                  ]}
-                  onPress={() => isSelectable && setSelectedHospitalId(hospital.id)}
-                  disabled={!isSelectable}
+                  style={[styles.hospitalCard, isSelected && styles.hospitalCardSelected]}
+                  onPress={() => setSelectedHospitalId(hospital.id)}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected: isSelected, disabled: !isSelectable }}
+                  accessibilityState={{ selected: isSelected }}
                 >
-                  {/* Top Row: Rank + Name + Category */}
                   <View style={styles.hospTopRow}>
                     <View style={styles.hospRankBadge}>
                       <Text style={styles.hospRankText}>#{index + 1}</Text>
                     </View>
                     <View style={styles.hospNameBox}>
-                      <Text
-                        style={[
-                          styles.hospNameText,
-                          isSelected && styles.hospNameTextSelected,
-                        ]}
-                      >
-                        {displayName}
+                      <Text style={[styles.hospNameText, isSelected && styles.hospNameTextSelected]}>
+                        {language === "hi" ? hospital.hindiName : hospital.name}
                       </Text>
-                      <Text style={styles.hospLevelText}>{displayLevel}</Text>
+                      <Text style={styles.hospLevelText}>
+                        {km.toFixed(1)} km · {language === "hi" ? hospital.hindiTraumaLevel : hospital.traumaLevel}
+                      </Text>
                     </View>
-                    {!isSelectable ? (
-                      <View style={styles.atCapacityBadge}>
-                        <Text style={styles.atCapacityBadgeText}>
-                          {strings.hospitalAtCapacityBadge}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.radioOuter}>
-                        {isSelected && <View style={styles.radioInner} />}
-                      </View>
-                    )}
+                    <View style={styles.radioOuter}>{isSelected && <View style={styles.radioInner} />}</View>
                   </View>
 
-                  {/* Distance & ETA Row */}
-                  <View style={styles.hospEtaBar}>
-                    <Text style={styles.hospEtaText}>
-                      ⏱️{" "}
-                      {strings.etaDistanceLabel(
-                        hospital.etaMinutes,
-                        hospital.distanceKm
-                      )}
+                  <Pressable
+                    style={({ pressed }) => [styles.directionsBtn, pressed && { opacity: 0.8 }]}
+                    onPress={() => void openGoogleMapsNavigation(hospital.coordinates, pickupCoordinates)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${language === "hi" ? "Google Maps में रास्ता" : "Directions in Google Maps"}: ${hospital.name}`}
+                  >
+                    <AppIcon icon={{ set: "mci", name: "google-maps" }} size={20} color={colors.white} />
+                    <Text style={styles.directionsBtnText}>
+                      {language === "hi" ? "Google Maps में रास्ता" : "Directions in Google Maps"}
                     </Text>
-                    <View
-                      style={[
-                        styles.catPill,
-                        hospital.category === "GOVERNMENT"
-                          ? styles.catPillGovt
-                          : styles.catPillPrivate,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.catPillText,
-                          hospital.category === "GOVERNMENT"
-                            ? styles.catPillTextGovt
-                            : styles.catPillTextPrivate,
-                        ]}
-                      >
-                        {hospital.category}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Real-Time Bed Capacity & Held Counters */}
-                  <View style={styles.capacityGrid}>
-                    <View style={styles.capacityBox}>
-                      <Text style={styles.capacityNum}>
-                        {hospital.availableIcuBeds} / {hospital.totalIcuBeds}
-                      </Text>
-                      <Text style={styles.capacitySub}>{strings.capacityIcuFreeLabel}</Text>
-                    </View>
-                    <View style={styles.capacityBox}>
-                      <Text style={styles.capacityNum}>
-                        {hospital.availableTraumaBays}
-                      </Text>
-                      <Text style={styles.capacitySub}>{strings.capacityResusBaysLabel}</Text>
-                    </View>
-                    <View style={styles.capacityBox}>
-                      <Text style={styles.capacityNum}>
-                        {hospital.ventilatorsReady}
-                      </Text>
-                      <Text style={styles.capacitySub}>{strings.capacityVentilatorsLabel}</Text>
-                    </View>
-                  </View>
-
-                  {/* HELD COUNTERS / PRE-ALERT RESERVATION BADGE */}
-                  <View style={styles.heldCountersRow}>
-                    <View style={styles.heldBadge}>
-                      <Text style={styles.heldBadgeText}>
-                        <AppIcon icon={{ set: "ion", name: "lock-closed" }} size={9} />{" "}{strings.bedsHeldBadge(hospital.bedsHeldCounter)}
-                      </Text>
-                    </View>
-                    <Text style={styles.inboundUnitsText}>
-                      <AppIcon icon={{ set: "mci", name: "ambulance" }} size={9} />{" "}{strings.inboundUnitsNotice(hospital.inboundAmbulances)}
-                    </Text>
-                  </View>
-
-                  {/* Selected Indicator Banner */}
-                  {isSelected && (
-                    <View style={styles.selectedConfirmedBar}>
-                      <Text style={styles.selectedConfirmedBarText}>
-                        <AppIcon icon={{ set: "ion", name: "checkmark" }} size={10} />{" "}{strings.selectedDestinationLabel}
-                      </Text>
-                    </View>
-                  )}
+                  </Pressable>
                 </Pressable>
               );
             })}
@@ -495,17 +390,9 @@ export default function OnSceneCareScreen({
 
       {/* STICKY BOTTOM ACTION BAR */}
       <View style={styles.bottomBar}>
-        <View style={styles.destinationSummaryBar}>
-          <Text style={styles.destinationSummaryLabel}>
-            {strings.selectedDestinationLabel}:
-          </Text>
-          <Text style={styles.destinationSummaryHospital} numberOfLines={1}>
-            {language === "hi"
-              ? selectedHospital.hindiName
-              : selectedHospital.name}{" "}
-            ({selectedHospital.etaMinutes} mins ETA)
-          </Text>
-        </View>
+        <Text style={styles.destinationSummaryHospital}>
+          {language === "hi" ? selectedHospital.hindiName : selectedHospital.name}
+        </Text>
 
         <Pressable
           style={styles.startTransportBtn}
@@ -514,9 +401,6 @@ export default function OnSceneCareScreen({
         >
           <Text style={styles.startTransportBtnText}>
             {strings.btnStartTransport}
-          </Text>
-          <Text style={styles.startTransportBtnSub}>
-            {strings.btnStartTransportSub}
           </Text>
         </Pressable>
       </View>
@@ -546,15 +430,6 @@ export default function OnSceneCareScreen({
                 {language === "hi"
                   ? selectedHospital.hindiName
                   : selectedHospital.name}
-              </Text>
-              <Text style={styles.reservedBayText}>
-                {strings.bedReservedConfirmation(
-                  selectedHospital.name,
-                  "Bay 02 - Red Trauma Resus"
-                )}
-              </Text>
-              <Text style={styles.reservedSpecialities}>
-                Team Alerted: {selectedHospital.specialities.join(" • ")}
               </Text>
             </View>
 
@@ -942,11 +817,13 @@ const styles = StyleSheet.create({
   },
   categoryFiltersRow: {
     flexDirection: "row",
-    gap: 6,
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
   catFilterChip: {
-    flex: 1,
-    paddingVertical: 6,
+    minHeight: 44,
+    paddingHorizontal: spacing.base,
+    justifyContent: "center",
     borderRadius: radii.sm,
     backgroundColor: colors.slate100,
     borderWidth: 1,
@@ -1014,9 +891,10 @@ const styles = StyleSheet.create({
   },
   hospNameBox: {
     flex: 1,
+    flexShrink: 1,
   },
   hospNameText: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
@@ -1024,8 +902,25 @@ const styles = StyleSheet.create({
     color: colors.emergencyDark,
   },
   hospLevelText: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.slate600,
+  },
+  directionsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    minHeight: 48,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.base,
+    borderRadius: radii.md,
+    backgroundColor: colors.info,
+  },
+  directionsBtnText: {
+    flexShrink: 1,
+    color: colors.white,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
   },
   radioOuter: {
     width: 20,
@@ -1154,8 +1049,7 @@ const styles = StyleSheet.create({
     color: colors.slate600,
   },
   destinationSummaryHospital: {
-    flex: 1,
-    fontSize: 11,
+    fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,
   },

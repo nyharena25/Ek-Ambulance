@@ -3,8 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  Platform,
   StatusBar,
   Pressable,
   ScrollView,
@@ -12,6 +10,7 @@ import {
   Share,
   Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { AIS125VehicleType, type GeoPoint } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
@@ -559,7 +558,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.slate100,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   topHeader: {
     flexDirection: "row",

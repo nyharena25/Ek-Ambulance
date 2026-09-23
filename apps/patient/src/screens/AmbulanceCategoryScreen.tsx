@@ -5,10 +5,10 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  SafeAreaView,
   Platform,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   AIS125VehicleType,
@@ -447,7 +447,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.white,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
 
   /* HEADER */

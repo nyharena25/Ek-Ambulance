@@ -1,5 +1,6 @@
 import { useRouter, useLocalSearchParams, Redirect } from "expo-router";
 import { DriverOtpVerifyScreen } from "../../src/screens";
+import { getDevDriverProfile } from "../../src/config/devDriverProfiles";
 
 export default function OtpVerifyRoute() {
   const router = useRouter();
@@ -18,6 +19,10 @@ export default function OtpVerifyRoute() {
         // Session is already persisted by supabaseClient's secure-store
         // adapter; role is verified inside useOtpAuth.verifyOtp before this
         // fires, so it's safe to proceed straight to the shift dashboard.
+        if (__DEV__ && getDevDriverProfile(phone)?.isVerified === false) {
+          router.replace("/(auth)/onboarding");
+          return;
+        }
         router.replace("/(shift)/standby");
       }}
       onChangeNumber={() => router.back()}

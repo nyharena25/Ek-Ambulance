@@ -15,6 +15,7 @@ import {
   computeItemizedStatutoryFare,
   type GeoPoint,
 } from "@sahayak/domain";
+import { returnHome } from "../../src/navigation/returnHome";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 import { usePatientAuthStore } from "../../src/state/patientAuth.store";
 import {
@@ -63,10 +64,7 @@ export default function BookingMissionTrackingRoute() {
   // `on` handlers) - navigating home without resetting would leave the
   // actor stuck there, silently no-op-ing every event a fresh booking
   // sends (SUBMIT_TRIAGE included) until the app process restarts.
-  const handleReturnHome = () => {
-    resetLifecycle();
-    router.replace("/(tabs)/home");
-  };
+  const handleReturnHome = () => returnHome(router, resetLifecycle);
 
   // currentState, not context.missionId: CANCEL clears missionId back to
   // null (so a cancelled mission's context no longer looks "active"), but

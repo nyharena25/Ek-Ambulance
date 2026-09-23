@@ -112,6 +112,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
     return (
       <OnSceneCareScreen
         missionId={missionId}
+        pickupCoordinates={pickupCoordinates}
         onConfirmPatientOnboard={(payload) => {
           // Dispatches server-authoritative CONFIRM_PATIENT_ONBOARD to XState / lifecycle store
           send({

@@ -1,6 +1,17 @@
 import { ExpoConfig, ConfigContext } from "expo/config";
+import { AndroidConfig, withAndroidManifest, type ConfigPlugin } from "expo/config-plugins";
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+// The grey gear floating over every screen is expo-dev-menu's debug-only FAB (default on). Turn it off in
+// dev builds; the menu stays reachable via shake or `m` in Metro. Expo Go ignores this: toggle it in its dev menu.
+const DEV_MENU_FAB = "EXDevMenuShowFloatingActionButton";
+const withoutDevMenuFab: ConfigPlugin = (cfg) =>
+  withAndroidManifest(cfg, (c) => {
+    const app = AndroidConfig.Manifest.getMainApplicationOrThrow(c.modResults);
+    AndroidConfig.Manifest.addMetaDataItemToMainApplication(app, DEV_MENU_FAB, "false");
+    return c;
+  });
+
+export default ({ config }: ConfigContext): ExpoConfig => withoutDevMenuFab({
   ...config,
   name: "Sahayak Patient",
   slug: "sahayak-patient",
@@ -11,7 +22,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: "light",
   ios: {
     supportsTablet: false,
-    bundleIdentifier: "in.sahayak.patient"
+    bundleIdentifier: "in.sahayak.patient",
+    infoPlist: { [DEV_MENU_FAB]: false }
   },
   android: {
     adaptiveIcon: {
@@ -30,8 +42,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "expo-router",
     "expo-secure-store",
-    // Android tiles need a Google Maps SDK key (iOS uses Apple Maps, no key); without it the map falls back to a static panel.
-    ["react-native-maps", { androidGoogleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }],
+    // No react-native-maps plugin: the map is a Leaflet WebView now (OsmWebMap.tsx), which needs no
+    // Google Maps API key and works in Expo Go - see that file for why react-native-maps was dropped.
     [
       "expo-splash-screen",
       {

@@ -112,4 +112,39 @@ for (const [name, point] of seeds) {
 }
 console.log("✓ 4 trauma centres seeded\n");
 
+console.log("Test 8: operational migration (push tokens, dispatch waves, audit trail, telemetry)...");
+const ops = readFileSync(
+  fileURLToPath(new URL("../migrations/20260924000001_operational_ems_schema.sql", import.meta.url)),
+  "utf8"
+).replace(/--.*$/gm, "");
+const OPS_TABLES = ["driver_push_tokens", "dispatch_waves", "mission_events", "telemetry_logs"] as const;
+const opsTableBody = (t: string) => ops.match(new RegExp(`create table public\\.${t} \\(([\\s\\S]*?)\\n\\);`, "i"))?.[1] ?? assert.fail(`missing ${t}`);
+for (const t of OPS_TABLES) {
+  opsTableBody(t);
+  assert.match(ops, new RegExp(`alter table public\\.${t}\\s+enable row level security`, "i"), `${t} RLS enabled`);
+  assert.match(ops, new RegExp(`grant all on table public\\.${t} to service_role;`, "i"), `service_role grant on ${t}`);
+}
+assert.match(opsTableBody("driver_push_tokens"), /platform\s+text not null check \(platform in \('android', 'ios', 'web'\)\)/i);
+assert.match(opsTableBody("dispatch_waves"), /status\s+text not null check \(status in \('broadcasting', 'accepted', 'expired', 'exhausted'\)\)/i);
+assert.match(opsTableBody("dispatch_waves"), /wave_number\s+integer not null check \(wave_number between 1 and 3\)/i);
+assert.match(opsTableBody("dispatch_waves"), /radius_km\s+numeric\(4, 2\) not null/i);
+assert.match(opsTableBody("mission_events"), /to_status\s+public\.mission_status not null/i);
+assert.match(opsTableBody("telemetry_logs"), /location\s+extensions\.geography\(Point, 4326\) not null/i, "PostGIS type is schema-qualified");
+assert.match(opsTableBody("telemetry_logs"), /id\s+bigint generated always as identity primary key/i);
+assert.match(ops, /create index idx_telemetry_mission_time on public\.telemetry_logs \(mission_id, recorded_at\)/i);
+const opsPolicies = [...ops.matchAll(/create policy (\w+) on public\.(\w+)([\s\S]*?);/gi)];
+assert.strictEqual(opsPolicies.length, 5);
+for (const [, name, , body] of opsPolicies) {
+  assert.match(body!, /\bto authenticated\b/i, `${name} authenticated only`);
+  assert.match(body!, /\(select auth\.uid\(\)\)/i, `${name} uses (select auth.uid())`);
+  assert.doesNotMatch(body!, /(?<!\bselect )\bauth\.uid\(\)/i, `${name} has no bare auth.uid()`);
+}
+assert.ok(!opsPolicies.some(([, , table]) => table === "telemetry_logs"), "telemetry_logs has no client policy");
+assert.match(ops, /revoke all on public\.driver_push_tokens, public\.dispatch_waves, public\.mission_events, public\.telemetry_logs\s+from anon, authenticated/i);
+assert.doesNotMatch(ops.replace(/create policy[\s\S]*?;/gi, ""), /\bto anon\b/i, "no anon grants");
+assert.doesNotMatch(ops, /grant (all|insert|update|delete)\s+on\s+(table\s+)?public\.\w+\s+to\s+(?!service_role)/i, "no table-wide client write grants");
+assert.match(ops, /grant insert \(driver_id, token, platform\) on public\.driver_push_tokens to authenticated/i);
+assert.doesNotMatch(ops, /grant [^;]*(insert|update|delete)[^;]*on public\.(dispatch_waves|mission_events|telemetry_logs)/i, "waves/audit/telemetry are read-only or server-only");
+console.log("✓ operational schema\n");
+
 console.log("SUPABASE SCHEMA VALIDATION TESTS PASSED (100% GREEN)");

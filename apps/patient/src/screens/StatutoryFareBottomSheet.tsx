@@ -5,8 +5,8 @@ import {
   StyleSheet,
   Pressable,
   Platform,
+  ScrollView,
   LayoutAnimation,
-  UIManager,
 } from "react-native";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
@@ -19,13 +19,9 @@ import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { fareStrings } from "../i18n/fareStrings";
 
 import { AppIcon } from "../components";
-// Enable LayoutAnimation on Android
-if (
-  Platform.OS === "android" &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// No Android UIManager.setLayoutAnimationEnabledExperimental() call: it's a no-op under the New
+// Architecture (Fabric, on by default since RN 0.76) and only produced a Metro warning.
+// LayoutAnimation.configureNext below still works without it.
 
 export interface StatutoryFareBottomSheetProps {
   vehicleType?: AIS125VehicleType;
@@ -165,7 +161,8 @@ export default function StatutoryFareBottomSheet({
 
       {/* EXPANDABLE ITEMIZED STATUTORY TABLE */}
       {isExpanded ? (
-        <View style={styles.expandedSection}>
+        // Scrolls instead of growing past the screen: an over-tall sheet pushed the CTA under the nav bar.
+        <ScrollView style={styles.expandedScroll} contentContainerStyle={styles.expandedSection}>
           <View style={styles.tableHeaderRow}>
             <Text style={styles.tableHeading}>{strings.tableHeading}</Text>
             <Pressable onPress={toggleExpand} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -267,7 +264,7 @@ export default function StatutoryFareBottomSheet({
           <Text style={styles.legalNoticeText}>
             <AppIcon icon={{ set: "ion", name: "scale" }} size={10} />{" "}{strings.zeroSurgeLawGuarantee}
           </Text>
-        </View>
+        </ScrollView>
       ) : (
         /* COLLAPSED SUMMARY VIEW */
         <View style={styles.collapsedSummaryRow}>
@@ -332,6 +329,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.slate300,
     ...shadows.md,
     paddingTop: spacing.xs,
+    flexShrink: 1,
   },
 
   /* DRAG HANDLE */
@@ -432,6 +430,9 @@ const styles = StyleSheet.create({
   },
 
   /* EXPANDED SECTION */
+  expandedScroll: {
+    flexShrink: 1,
+  },
   expandedSection: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xs,
@@ -448,6 +449,8 @@ const styles = StyleSheet.create({
     color: colors.slate700,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    flexShrink: 1,
+    marginRight: spacing.sm,
   },
   collapseText: {
     fontSize: 11,

@@ -6,13 +6,13 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  SafeAreaView,
   Platform,
   StatusBar,
   KeyboardAvoidingView,
   NativeSyntheticEvent,
   TextInputKeyPressEventData,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { authStrings } from "../i18n/authStrings";
@@ -686,7 +686,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.white,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   flexOne: {
     flex: 1,

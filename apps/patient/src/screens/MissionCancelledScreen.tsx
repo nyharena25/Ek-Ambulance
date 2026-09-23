@@ -3,13 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  Platform,
   StatusBar,
   Pressable,
   Linking,
   Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { cancellationStrings } from "../i18n/cancellationStrings";
@@ -140,7 +139,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.white,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   topHeader: {
     flexDirection: "row",

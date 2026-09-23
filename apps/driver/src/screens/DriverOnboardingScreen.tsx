@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   TextInput,
   Pressable,
   Platform,
@@ -12,6 +11,7 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { AIS125VehicleType } from "@sahayak/domain";
 import {

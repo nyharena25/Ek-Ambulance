@@ -53,9 +53,11 @@ function createSecureStorageAdapter(): SupportedStorage {
   };
 }
 
+export const authStorage = createSecureStorageAdapter();
+
 export const supabase = createClient(GATEWAY_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: createSecureStorageAdapter(),
+    storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

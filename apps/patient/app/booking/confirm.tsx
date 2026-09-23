@@ -2,11 +2,10 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
-  Platform,
   StatusBar,
   Pressable,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
@@ -198,7 +197,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.slate100,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
     justifyContent: "space-between",
   },
   topBar: {

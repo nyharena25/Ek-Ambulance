@@ -8,10 +8,11 @@ const LABELS = {
   hi: { title: "Google Maps में नेविगेट करें", pickup: "मरीज के पिकअप तक", hospital: "ट्रॉमा अस्पताल ER तक" },
 } as const;
 
-export async function openGoogleMapsNavigation(dest: GeoPoint): Promise<void> {
-  const { android, universal } = buildNavigationLinks(dest);
+/** `origin` plans the trip from that point (e.g. the pickup) instead of the phone's live position. */
+export async function openGoogleMapsNavigation(dest: GeoPoint, origin?: GeoPoint): Promise<void> {
+  const { android, universal } = buildNavigationLinks(dest, origin);
   // No canOpenURL gate: Android 11+ needs manifest <queries> for it, unavailable in Expo Go.
-  if (Platform.OS === "android") {
+  if (Platform.OS === "android" && android) {
     try {
       await Linking.openURL(android);
       return;

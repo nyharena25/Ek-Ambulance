@@ -1,31 +1,15 @@
-import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
-import { View, Text, StyleSheet, Pressable, Linking, Platform } from "react-native";
-import MapView, { Circle, Marker, Polyline, type MapMarker } from "react-native-maps";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { View, Text, StyleSheet, Pressable, Linking } from "react-native";
 import { colors, spacing, shadows } from "@sahayak/ui";
 import type { GeoPoint } from "@sahayak/domain";
 import { AppIcon } from "./AppIcon";
-import { isFittable, regionAround, scaleRegion } from "../services/mapGeo.core";
+import { OsmWebMap, type OsmWebMapHandle, type WebMarkerSpec } from "./OsmWebMap";
+import { CAN_MOUNT_MAP, OSM_TILE_URL } from "./nativeMap";
+import { isFittable } from "../services/mapGeo.core";
 
 const MAP_BLUE = "#1D4ED8";
-const MAP_READY_TIMEOUT_MS = 8000;
-// The Android Google Maps SDK aborts the process at mount without a manifest API key, so never mount it keyless.
-const CAN_MOUNT_NATIVE_MAP =
-  Platform.OS === "ios" || (Platform.OS === "android" && Boolean(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY));
+const DEFAULT_ZOOM = 15;
 
-// Applies to Google Maps (Android) only; Apple Maps ignores customMapStyle.
-const SLATE_MAP_STYLE = [
-  { elementType: "geometry", stylers: [{ color: colors.slate200 }] },
-  { elementType: "labels.text.fill", stylers: [{ color: colors.slate600 }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: colors.slate50 }] },
-  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: colors.slate100 }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: colors.white }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: colors.slate300 }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: colors.slate300 }] },
-];
-
-/** Imperative handle so live pings move the marker natively, without re-rendering any screen. */
 export interface DriverMarkerHandle {
   moveTo: (coordinate: GeoPoint, headingDeg?: number, durationMs?: number) => void;
 }
@@ -36,10 +20,10 @@ export interface MapViewPortProps {
   route?: { coordinates: GeoPoint[]; isEstimate: boolean } | null;
   /** Camera centre and recenter target; defaults to the pickup. */
   center?: GeoPoint;
-  /** Fit the whole route into view once it arrives (transport leg) instead of holding the 0.015 delta. */
+  /** Fit the whole route into view once it arrives (transport leg) instead of holding the default zoom. */
   fitRoute?: boolean;
   driverMarkerRef?: Ref<DriverMarkerHandle>;
-  /** Where the ambulance marker first appears; afterwards the native animation owns its position. */
+  /** Where the ambulance marker first appears; afterwards moveTo() owns its position. */
   driverStart: GeoPoint;
   speedLabel?: string;
   /** Fixed content that must not move with the map (status pills, ETA banner). */
@@ -48,111 +32,31 @@ export interface MapViewPortProps {
   unavailableLabel?: string;
 }
 
-/** Custom marker views are bitmapped: keep tracking on after mount (icon fonts load) and after `bump` changes, then off. */
-function useSettledTracking(bump?: unknown): boolean {
-  const [tracking, setTracking] = useState(true);
-  useEffect(() => {
-    setTracking(true);
-    const t = setTimeout(() => setTracking(false), 1500);
-    return () => clearTimeout(t);
-  }, [bump]);
-  return tracking;
-}
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function DriverMarker({ handleRef, start }: { handleRef?: Ref<DriverMarkerHandle>; start: GeoPoint }) {
-  const marker = useRef<MapMarker>(null);
-  const coordinate = useRef(start).current; // never changes: a changed prop would snap the marker back mid-glide
-  const [heading, setHeading] = useState(0);
-  const lastHeading = useRef(0);
-  const tracking = useSettledTracking(heading);
+const pickupPinHtml = () => `
+  <div style="position:relative;width:34px;height:34px;">
+    <div class="osm-pulse" style="position:absolute;top:-13px;left:-13px;width:60px;height:60px;background:rgba(220,38,38,0.35);"></div>
+    <div style="width:34px;height:34px;border-radius:17px;background:${colors.emergency};border:2px solid ${colors.white};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+      <div style="width:10px;height:10px;border-radius:50%;background:${colors.white};"></div>
+    </div>
+  </div>`;
 
-  useImperativeHandle(
-    handleRef,
-    () => ({
-      moveTo: (next, headingDeg, durationMs = 2800) => {
-        marker.current?.animateMarkerToCoordinate(next, durationMs);
-        // Only this leaf re-renders, and only for a >=3 degree turn.
-        if (headingDeg !== undefined && Math.abs(headingDeg - lastHeading.current) >= 3) {
-          lastHeading.current = headingDeg;
-          setHeading(headingDeg);
-        }
-      },
-    }),
-    []
-  );
+const hospitalPinHtml = (label: string) => `
+  <div style="position:relative;width:36px;height:36px;">
+    <div style="width:36px;height:36px;border-radius:18px;background:${MAP_BLUE};border:2px solid ${colors.white};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+      <span style="color:${colors.white};font-weight:800;font-size:14px;">H</span>
+    </div>
+    <div style="position:absolute;top:40px;left:50%;transform:translateX(-50%);background:${colors.white};border-radius:8px;padding:2px 6px;font-size:11px;font-weight:700;color:${MAP_BLUE};white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(label)}</div>
+  </div>`;
 
-  return (
-    <Marker
-      ref={marker}
-      coordinate={coordinate}
-      rotation={heading}
-      flat
-      anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges={tracking}
-      zIndex={3}
-      accessibilityLabel="Live ambulance"
-    >
-      {/* rotation/flat are Google-only on iOS, so Apple Maps turns the (live) badge itself; Android bitmaps ignore this. */}
-      <View style={[styles.ambulanceBadge, Platform.OS === "ios" && { transform: [{ rotate: `${heading}deg` }] }]}>
-        <AppIcon icon={{ set: "mci", name: "navigation" }} size={20} color={colors.white} />
-      </View>
-    </Marker>
-  );
-}
-
-const PULSE_STEPS = 8;
-
-/** Radar ring as a native Circle stepped at ~4 Hz: a pulsing marker view would need tracksViewChanges forever. */
-function PulseRing({ center }: { center: GeoPoint }) {
-  const [step, setStep] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setStep((s) => (s + 1) % PULSE_STEPS), 250);
-    return () => clearInterval(t);
-  }, []);
-  const t = step / (PULSE_STEPS - 1);
-  return (
-    <Circle
-      center={center}
-      radius={25 + t * 90}
-      strokeWidth={1}
-      strokeColor={`rgba(220,38,38,${(0.6 * (1 - t)).toFixed(2)})`}
-      fillColor={`rgba(220,38,38,${(0.3 * (1 - t)).toFixed(2)})`}
-      zIndex={1}
-    />
-  );
-}
-
-function PickupMarker({ coordinate }: { coordinate: GeoPoint }) {
-  const tracking = useSettledTracking();
-  return (
-    <>
-      <PulseRing center={coordinate} />
-      <Marker coordinate={coordinate} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={tracking} zIndex={2} accessibilityLabel="Patient pickup">
-        <View style={styles.pickupPin}>
-          <AppIcon icon={{ set: "ion", name: "location" }} size={20} color={colors.white} />
-        </View>
-      </Marker>
-    </>
-  );
-}
-
-function HospitalMarker({ coordinate, label }: { coordinate: GeoPoint; label: string }) {
-  const tracking = useSettledTracking();
-  return (
-    <Marker coordinate={coordinate} anchor={{ x: 0.5, y: 0.3 }} centerOffset={{ x: 0, y: 10 }} tracksViewChanges={tracking} zIndex={2} accessibilityLabel={label}>
-      <View style={styles.hospitalWrap}>
-        <View style={styles.hospitalBadge}>
-          <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={20} color={colors.white} />
-        </View>
-        <View style={styles.hospitalLabel}>
-          <Text style={styles.hospitalLabelText} numberOfLines={1}>
-            {label}
-          </Text>
-        </View>
-      </View>
-    </Marker>
-  );
-}
+// A plain CSS triangle stands in for the AppIcon "navigation" glyph - it's inside a WebView's own
+// DOM, not RN, so it can't reuse AppIcon directly. ponytail: swap for an inline SVG if the exact
+// icon matters more than "a pointer that rotates with heading".
+const driverPinHtml = () => `
+  <div class="rotwrap" style="width:36px;height:36px;border-radius:18px;background:${colors.emergencyDark};border:2px solid ${colors.white};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,0.3);transition:transform 300ms;">
+    <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:12px solid ${colors.white};"></div>
+  </div>`;
 
 function ControlButton({ label, onPress, children, danger }: { label: string; onPress: () => void; children: ReactNode; danger?: boolean }) {
   return (
@@ -163,10 +67,8 @@ function ControlButton({ label, onPress, children, danger }: { label: string; on
 }
 
 /**
- * Native tile map (Google on Android, Apple on iOS) replacing the mock canvas. Markers, the OSRM polyline
- * and the floating controls live here; screens only pass coordinates and a driverMarkerRef.
- * Falls back to a static panel on web, keyless Android builds, or when the map never becomes ready
- * (no Google Play services / offline first load) - tracking text and the 108 button keep working.
+ * Leaflet-in-a-WebView map (see OsmWebMap.tsx for why, in place of react-native-maps). Markers, the
+ * OSRM polyline and the floating controls live here; screens only pass coordinates and a driverMarkerRef.
  */
 export function MapViewPort({
   pickup,
@@ -181,68 +83,65 @@ export function MapViewPort({
   onCall108,
   unavailableLabel = "Map unavailable - live tracking continues",
 }: MapViewPortProps) {
-  const mapRef = useRef<MapView>(null);
-  const regionRef = useRef(regionAround(center));
+  const mapRef = useRef<OsmWebMapHandle>(null);
   const [ready, setReady] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
-
-  useEffect(() => {
-    if (!CAN_MOUNT_NATIVE_MAP || ready) return;
-    const t = setTimeout(() => setTimedOut(true), MAP_READY_TIMEOUT_MS);
-    return () => clearTimeout(t);
-  }, [ready]);
+  const driverStartRef = useRef(driverStart); // never re-read after mount: a changed prop would snap the marker back mid-glide
 
   const coordinates = route?.coordinates;
   const canFit = coordinates ? isFittable(coordinates) : false;
   const fit = () => {
-    if (canFit && coordinates) {
-      mapRef.current?.fitToCoordinates(coordinates, { edgePadding: { top: 60, right: 60, bottom: 100, left: 60 }, animated: true });
-    }
+    if (canFit && coordinates) mapRef.current?.fitBounds(coordinates);
   };
   useEffect(() => {
     if (ready && fitRoute && canFit) fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, fitRoute, coordinates]);
 
-  const recenter = () => (fitRoute && canFit ? fit() : mapRef.current?.animateToRegion(regionAround(center), 350));
-  const zoom = (factor: number) => mapRef.current?.animateToRegion(scaleRegion(regionRef.current, factor), 250);
+  useEffect(() => {
+    if (ready) mapRef.current?.flyTo(center, DEFAULT_ZOOM, 600);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [center.latitude, center.longitude]);
+
+  useEffect(() => {
+    // First paint: put the driver marker where it starts. Every ping after this goes through
+    // driverMarkerRef.moveTo below, bypassing React entirely.
+    if (ready) mapRef.current?.moveMarker({ id: "driver", coordinate: driverStartRef.current, html: driverPinHtml(), anchor: [18, 18] });
+  }, [ready]);
+
+  useImperativeHandle(
+    driverMarkerRef,
+    () => ({
+      moveTo: (next, headingDeg, durationMs = 2800) =>
+        mapRef.current?.moveMarker({ id: "driver", coordinate: next, html: driverPinHtml(), anchor: [18, 18], headingDeg, durationMs }),
+    }),
+    []
+  );
+
+  const recenter = () => (fitRoute && canFit ? fit() : mapRef.current?.flyTo(center, DEFAULT_ZOOM, 600));
+  const zoom = (delta: number) => mapRef.current?.zoomBy(delta);
   const call108 = onCall108 ?? (() => void Linking.openURL("tel:108").catch(() => {}));
 
-  const showMap = CAN_MOUNT_NATIVE_MAP && !(timedOut && !ready);
+  const markers: WebMarkerSpec[] = useMemo(() => {
+    const list: WebMarkerSpec[] = [{ id: "pickup", coordinate: pickup, html: pickupPinHtml(), anchor: [17, 17], zIndexOffset: 10 }];
+    if (destination) list.push({ id: "hospital", coordinate: destination.coordinate, html: hospitalPinHtml(destination.label), anchor: [18, 18], zIndexOffset: 10 });
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickup.latitude, pickup.longitude, destination?.coordinate.latitude, destination?.coordinate.longitude, destination?.label]);
+
+  const showMap = CAN_MOUNT_MAP;
 
   return (
     <View style={styles.container}>
       {showMap ? (
-        <MapView
+        <OsmWebMap
           ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={regionAround(center)}
-          customMapStyle={SLATE_MAP_STYLE}
-          onMapReady={() => setReady(true)}
-          onRegionChangeComplete={(r) => {
-            regionRef.current = r;
-          }}
-          rotateEnabled={false}
-          pitchEnabled={false}
-          toolbarEnabled={false}
-          showsCompass={false}
-          moveOnMarkerPress={false}
-        >
-          {route && route.coordinates.length > 1 && (
-            <Polyline
-              coordinates={route.coordinates}
-              strokeColor={MAP_BLUE}
-              strokeWidth={5}
-              lineDashPattern={route.isEstimate ? [12, 10] : undefined}
-              lineCap="round"
-              lineJoin="round"
-              zIndex={0}
-            />
-          )}
-          <PickupMarker coordinate={pickup} />
-          {destination && <HospitalMarker coordinate={destination.coordinate} label={destination.label} />}
-          <DriverMarker handleRef={driverMarkerRef} start={driverStart} />
-        </MapView>
+          center={center}
+          zoom={DEFAULT_ZOOM}
+          tileUrlTemplate={OSM_TILE_URL}
+          markers={markers}
+          route={route ? { coordinates: route.coordinates, color: MAP_BLUE, dashed: route.isEstimate } : null}
+          onReady={() => setReady(true)}
+        />
       ) : (
         <View style={styles.unavailable} accessibilityRole="summary">
           <AppIcon icon={{ set: "mci", name: "map-marker-off-outline" }} size={28} color={colors.slate500} />
@@ -265,10 +164,10 @@ export function MapViewPort({
       <View style={styles.controls} pointerEvents="box-none">
         {showMap && (
           <>
-            <ControlButton label="Zoom in" onPress={() => zoom(0.5)}>
+            <ControlButton label="Zoom in" onPress={() => zoom(1)}>
               <AppIcon icon={{ set: "mci", name: "plus" }} size={20} color={colors.slate700} />
             </ControlButton>
-            <ControlButton label="Zoom out" onPress={() => zoom(2)}>
+            <ControlButton label="Zoom out" onPress={() => zoom(-1)}>
               <AppIcon icon={{ set: "mci", name: "minus" }} size={20} color={colors.slate700} />
             </ControlButton>
             <ControlButton label="Recenter Map" onPress={recenter}>
@@ -284,7 +183,7 @@ export function MapViewPort({
   );
 }
 
-// Overlays need zIndex AND elevation: Android draws the native map surface above lower-elevation siblings.
+// Overlays need zIndex AND elevation: Android draws the WebView surface above lower-elevation siblings.
 const FLOAT = { zIndex: 20, elevation: 20 } as const;
 
 const styles = StyleSheet.create({
@@ -317,37 +216,4 @@ const styles = StyleSheet.create({
     ...FLOAT,
   },
   speedPillText: { color: colors.white, fontWeight: "700", fontSize: 12 },
-  ambulanceBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.emergencyDark,
-    borderWidth: 2,
-    borderColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pickupPin: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.emergency,
-    borderWidth: 2,
-    borderColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hospitalWrap: { alignItems: "center", width: 150 },
-  hospitalBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: MAP_BLUE,
-    borderWidth: 2,
-    borderColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hospitalLabel: { marginTop: 2, backgroundColor: colors.white, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, maxWidth: 146 },
-  hospitalLabelText: { color: MAP_BLUE, fontWeight: "700", fontSize: 11 },
 });

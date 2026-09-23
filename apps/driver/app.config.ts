@@ -37,8 +37,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "expo-router",
     "expo-secure-store",
-    // Android tiles need a Google Maps SDK key (iOS uses Apple Maps, no key); without it the map falls back to a static panel.
-    ["react-native-maps", { androidGoogleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }],
     "expo-notifications",
     [
       "expo-splash-screen",

@@ -1,18 +1,17 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
   Pressable,
-  SafeAreaView,
-  Platform,
   StatusBar,
   Linking,
-  PanResponder,
   Animated,
-  Dimensions,
+  Keyboard,
+  ScrollView,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
@@ -28,6 +27,10 @@ import {
 } from "../i18n/locationStrings";
 
 import { AppIcon } from "../components";
+import { OsmWebMap, type OsmWebMapHandle } from "../components/OsmWebMap";
+import { CAN_MOUNT_MAP, OSM_TILE_URL } from "../components/nativeMap";
+import { formatCoordinates } from "../services/mapGeo.core";
+import { resolveAddress as lookupAddress } from "../services/geocodingService";
 export interface PickupLocationScreenProps {
   onConfirmPickup?: (data: {
     point: GeoPoint;
@@ -39,7 +42,7 @@ export interface PickupLocationScreenProps {
   initialLocation?: GeoPoint;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const PICKUP_ZOOM = 16;
 
 // Default coordinates: AIIMS New Delhi (Main Emergency Ward)
 const DEFAULT_COORDINATES: GeoPoint = {
@@ -55,6 +58,7 @@ export default function PickupLocationScreen({
 }: PickupLocationScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = locationStrings[language];
+  const insets = useSafeAreaInsets();
 
   // Map center coordinates & domain jurisdiction resolution
   const [coordinates, setCoordinates] = useState<GeoPoint>(initialLocation);
@@ -62,24 +66,22 @@ export default function PickupLocationScreen({
     resolveJurisdiction(initialLocation)
   );
 
-  // Address description state
-  const [currentAddress, setCurrentAddress] = useState(
-    language === "hi"
-      ? "एम्स नई दिल्ली, मुख्य आपातकालीन वार्ड"
-      : "AIIMS New Delhi, Main Emergency Ward"
-  );
+  // Address: real reverse-geocoded text, or the formatted coordinates until/unless geocoding succeeds.
+  const [currentAddress, setCurrentAddress] = useState(() => formatCoordinates(initialLocation));
+  const [addressLine2, setAddressLine2] = useState("");
+  const searchInputRef = useRef<TextInput>(null);
+  const dragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Search query & suggestion dropdown
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
 
-  // Center pin elevation animation (lifts up on pan, drops on release)
+  // Center pin elevation animation (lifts while the map is dragged, drops on release)
   const pinElevationAnim = useRef(new Animated.Value(0)).current;
-  const mapPanX = useRef(new Animated.Value(0)).current;
-  const mapPanY = useRef(new Animated.Value(0)).current;
-
-  // Track pan delta for simulated map panning
-  const panOffset = useRef({ x: 0, y: 0 });
+  const pinLifted = useRef(false);
+  const mapRef = useRef<OsmWebMapHandle>(null);
+  const geocodeSeq = useRef(0);
+  const showMap = CAN_MOUNT_MAP;
 
   // Non-blocking GPS fallback banner: set on permission denial or a
   // getCurrentPositionAsync failure, cleared automatically - manual pin
@@ -89,17 +91,28 @@ export default function PickupLocationScreen({
   // Update jurisdiction whenever coordinates change
   const updateCoordinates = useCallback((newCoords: GeoPoint, label?: string) => {
     setCoordinates(newCoords);
-    const res = resolveJurisdiction(newCoords);
-    setJurisdiction(res);
+    setJurisdiction(resolveJurisdiction(newCoords));
     if (label) {
       setCurrentAddress(label);
+      setAddressLine2("");
     }
   }, []);
 
-  // Handle GPS "Locate Me": real device location via expo-location, with a
-  // non-blocking fallback banner (never a crash, never a blocked flow) if
-  // permission is denied or the GPS fix itself fails.
-  const handleLocateMe = async () => {
+  // Google -> device -> Nominatim reverse geocoding; stale replies are dropped.
+  const resolveAddress = useCallback(async (point: GeoPoint) => {
+    const seq = ++geocodeSeq.current;
+    setCurrentAddress(formatCoordinates(point));
+    setAddressLine2("");
+    const { primary, secondary } = await lookupAddress(point);
+    if (seq === geocodeSeq.current) {
+      setCurrentAddress(primary);
+      setAddressLine2(secondary);
+    }
+  }, []);
+
+  // GPS "Locate Me" (also runs on mount): real fix -> camera + jurisdiction badge + address. A denied
+  // permission or failed fix shows a non-blocking banner; landmark search and pin drag stay available.
+  const handleLocateMe = useCallback(async () => {
     setLocationErrorMessage(null);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -107,87 +120,57 @@ export default function PickupLocationScreen({
         setLocationErrorMessage(strings.locationPermissionDeniedBanner);
         return;
       }
-
-      const position = await Location.getCurrentPositionAsync({});
-      const newCoords: GeoPoint = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      };
-      updateCoordinates(
-        newCoords,
-        language === "hi" ? "वर्तमान GPS स्थान" : "Current GPS Position"
-      );
-      Animated.spring(mapPanX, { toValue: 0, useNativeDriver: true }).start();
-      Animated.spring(mapPanY, { toValue: 0, useNativeDriver: true }).start();
-      panOffset.current = { x: 0, y: 0 };
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = position.coords;
+      updateCoordinates({ latitude, longitude });
+      void resolveAddress({ latitude, longitude });
+      mapRef.current?.flyTo({ latitude, longitude }, PICKUP_ZOOM, 600);
     } catch {
-      // GPS disabled, no fix available, or any other native failure -
-      // manual pin placement stays fully available.
       setLocationErrorMessage(strings.locationUnavailableBanner);
     }
-  };
+  }, [strings, updateCoordinates, resolveAddress]);
+
+  useEffect(() => {
+    void handleLocateMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Handle emergency 108 phone dialer fallback
   const handleCall108 = () => {
     Linking.openURL("tel:108");
   };
 
-  // PanResponder for gesture-driven interactive map movement
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        // Lift pin up when user touches map
-        Animated.spring(pinElevationAnim, {
-          toValue: -14,
-          useNativeDriver: true,
-          speed: 20,
-        }).start();
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        // Visual parallax pan of road grid
-        mapPanX.setValue(panOffset.current.x + gestureState.dx);
-        mapPanY.setValue(panOffset.current.y + gestureState.dy);
-      },
-      onPanResponderRelease: (_evt, gestureState) => {
-        // Drop pin down when user releases
-        Animated.spring(pinElevationAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 8,
-        }).start();
+  const setPinLifted = (lifted: boolean) => {
+    if (pinLifted.current === lifted) return;
+    pinLifted.current = lifted;
+    Animated.spring(pinElevationAnim, { toValue: lifted ? -14 : 0, useNativeDriver: true, speed: 20 }).start();
+  };
 
-        panOffset.current.x += gestureState.dx;
-        panOffset.current.y += gestureState.dy;
+  // The pin is fixed at the screen centre, so a user drag ends with the map centre as the pickup point.
+  const handleMoveEnd = (point: GeoPoint, isUserGesture: boolean) => {
+    setPinLifted(false);
+    if (!isUserGesture) return;
+    if (dragTimer.current) clearTimeout(dragTimer.current);
+    dragTimer.current = setTimeout(() => {
+      updateCoordinates(point);
+      void resolveAddress(point);
+    }, 300);
+  };
 
-        // Convert pixel pan delta to latitude & longitude offset
-        // ~100px roughly corresponds to 0.015 degrees (~1.6 km)
-        const latDelta = -(gestureState.dy / 3000);
-        const lonDelta = gestureState.dx / 3000;
+  useEffect(() => () => {
+    if (dragTimer.current) clearTimeout(dragTimer.current);
+  }, []);
 
-        setCoordinates((prev) => {
-          const updated = {
-            latitude: Number((prev.latitude + latDelta).toFixed(4)),
-            longitude: Number((prev.longitude + lonDelta).toFixed(4)),
-          };
-          const res = resolveJurisdiction(updated);
-          setJurisdiction(res);
-          setCurrentAddress(
-            `${updated.latitude.toFixed(4)}° N, ${updated.longitude.toFixed(
-              4
-            )}° E`
-          );
-          return updated;
-        });
-      },
-    })
-  ).current;
+  const closeSearch = () => {
+    setIsSearchActive(false);
+    setSearchQuery("");
+    searchInputRef.current?.blur();
+    Keyboard.dismiss();
+  };
 
   // Handle Landmark Selection from Search List
   const handleSelectLandmark = (item: LandmarkPreset) => {
-    setIsSearchActive(false);
-    setSearchQuery("");
+    closeSearch();
     const targetPoint: GeoPoint = {
       latitude: item.latitude,
       longitude: item.longitude,
@@ -196,6 +179,7 @@ export default function PickupLocationScreen({
       targetPoint,
       language === "hi" ? item.hindiAddress : item.address
     );
+    mapRef.current?.flyTo(targetPoint, PICKUP_ZOOM, 600);
   };
 
   // Handle Confirmation
@@ -205,7 +189,7 @@ export default function PickupLocationScreen({
       onConfirmPickup({
         point: coordinates,
         resolution: jurisdiction,
-        address: currentAddress,
+        address: addressLine2 ? `${currentAddress}, ${addressLine2}` : currentAddress,
       });
     }
   };
@@ -223,7 +207,7 @@ export default function PickupLocationScreen({
   });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* TOP HEADER: Back, Title, & Persistent Bilingual Toggle */}
@@ -301,6 +285,7 @@ export default function PickupLocationScreen({
         <View style={styles.searchInputRow}>
           <AppIcon icon={{ set: "ion", name: "search" }} size={16} color={colors.slate700} style={styles.searchIcon} />
           <TextInput
+            ref={searchInputRef}
             style={styles.searchTextInput}
             placeholder={strings.searchPlaceholder}
             placeholderTextColor={colors.slate400}
@@ -316,29 +301,48 @@ export default function PickupLocationScreen({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Clear search"
-              onPress={() => {
-                setSearchQuery("");
-                setIsSearchActive(false);
-              }}
+              onPress={closeSearch}
               style={styles.clearSearchButton}
             >
               <AppIcon icon={{ set: "ion", name: "close" }} size={14} style={styles.clearSearchIcon} />
             </Pressable>
           )}
         </View>
+      </View>
 
-        {/* Autocomplete Dropdown */}
+      {/* INTERACTIVE MAP CANVAS WITH CENTER-PIN MARKER */}
+      <View style={styles.mapContainer}>
+        {showMap ? (
+          <OsmWebMap
+            ref={mapRef}
+            center={initialLocation}
+            zoom={PICKUP_ZOOM}
+            tileUrlTemplate={OSM_TILE_URL}
+            onDragStart={() => setPinLifted(true)}
+            onMoveEnd={handleMoveEnd}
+          />
+        ) : (
+          <View style={styles.mapUnavailable}>
+            <AppIcon icon={{ set: "mci", name: "map-marker-off-outline" }} size={28} color={colors.slate500} />
+            <Text style={styles.mapUnavailableText}>Map unavailable - pick a landmark or tap Locate Me</Text>
+          </View>
+        )}
+
+        {/* Autocomplete overlay lives inside the map box (not under the search bar): Android drops taps on
+            children drawn outside their parent's bounds, and the list scrolls instead of spilling over the map. */}
+        {isSearchActive && <Pressable style={styles.searchBackdrop} onPress={closeSearch} accessibilityLabel="Close search" />}
         {isSearchActive && (
           <View style={styles.searchDropdown}>
             <View style={styles.dropdownHeader}>
               <Text style={styles.dropdownTitle}>
                 {strings.searchRecentTitle}
               </Text>
-              <Pressable onPress={() => setIsSearchActive(false)}>
+              <Pressable onPress={closeSearch} hitSlop={8}>
                 <Text style={styles.dropdownCloseText}>Done</Text>
               </Pressable>
             </View>
 
+            <ScrollView keyboardShouldPersistTaps="handled">
             {filteredLandmarks.map((item) => (
               <Pressable
                 key={item.id}
@@ -381,43 +385,9 @@ export default function PickupLocationScreen({
                 </View>
               </Pressable>
             ))}
+            </ScrollView>
           </View>
         )}
-      </View>
-
-      {/* INTERACTIVE MAP CANVAS WITH CENTER-PIN MARKER */}
-      <View style={styles.mapContainer} {...panResponder.panHandlers}>
-        {/* Visual Map Grid Lines */}
-        <Animated.View
-          style={[
-            styles.mapGridLayer,
-            {
-              transform: [
-                { translateX: mapPanX },
-                { translateY: mapPanY },
-              ],
-            },
-          ]}
-        >
-          {/* Simulated Road Grids */}
-          <View style={styles.mapRoadHorizontal1} />
-          <View style={styles.mapRoadHorizontal2} />
-          <View style={styles.mapRoadHorizontal3} />
-          <View style={styles.mapRoadVertical1} />
-          <View style={styles.mapRoadVertical2} />
-          <View style={styles.mapRoadVertical3} />
-
-          {/* Simulated Landmarks on the map */}
-          <View style={[styles.mapLandmarkDot, { top: 120, left: 80 }]}>
-            <Text style={styles.mapLandmarkLabel}><AppIcon icon={{ set: "mci", name: "hospital-building" }} size={11} />{" "}AIIMS Delhi</Text>
-          </View>
-          <View style={[styles.mapLandmarkDot, { top: 220, left: 240 }]}>
-            <Text style={styles.mapLandmarkLabel}><AppIcon icon={{ set: "ion", name: "business" }} size={11} />{" "}Connaught Pl</Text>
-          </View>
-          <View style={[styles.mapLandmarkDot, { top: 310, left: 160 }]}>
-            <Text style={styles.mapLandmarkLabel}><AppIcon icon={{ set: "mci", name: "ambulance" }} size={11} />{" "}Dispatch Hub</Text>
-          </View>
-        </Animated.View>
 
         {/* FLOATING TOP BADGE: DYNAMIC JURISDICTION RESOLUTION */}
         <View style={styles.topOverlayContainer}>
@@ -571,7 +541,7 @@ export default function PickupLocationScreen({
       )}
 
       {/* BOTTOM CONFIRMATION DOCK */}
-      <View style={styles.bottomDock}>
+      <View style={[styles.bottomDock, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.addressSummaryRow}>
           <View style={styles.addressPinIconBox}>
             <AppIcon icon={{ set: "ion", name: "location" }} size={20} color={colors.slate700} style={styles.addressPinIcon} />
@@ -580,9 +550,8 @@ export default function PickupLocationScreen({
             <Text style={styles.addressMainText} numberOfLines={1}>
               {currentAddress}
             </Text>
-            <Text style={styles.addressCoordsText}>
-              {strings.coordinatesLabel}: {coordinates.latitude.toFixed(4)}° N,{" "}
-              {coordinates.longitude.toFixed(4)}° E
+            <Text style={styles.addressCoordsText} numberOfLines={1}>
+              {addressLine2 || `${strings.coordinatesLabel}: ${formatCoordinates(coordinates)}`}
             </Text>
           </View>
         </View>
@@ -619,7 +588,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.white,
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
 
   /* HEADER */
@@ -633,6 +601,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.slate200,
     zIndex: 20,
+    elevation: 2,
   },
   headerLeft: {
     flexDirection: "row",
@@ -701,7 +670,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     backgroundColor: colors.white,
-    zIndex: 30,
+    zIndex: 100,
+    elevation: 30,
+  },
+  searchBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    zIndex: 90,
+    elevation: 25,
   },
   searchInputRow: {
     flexDirection: "row",
@@ -735,16 +711,18 @@ const styles = StyleSheet.create({
   /* DROPDOWN */
   searchDropdown: {
     position: "absolute",
-    top: 56,
+    top: spacing.sm,
     left: spacing.lg,
     right: spacing.lg,
-    backgroundColor: colors.white,
-    borderRadius: radii.lg,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.slate300,
-    maxHeight: 280,
+    maxHeight: "85%",
     ...shadows.md,
-    zIndex: 40,
+    // Above the pin/badge/Locate Me (elevation <= 20): on Android elevation, not just zIndex, orders siblings.
+    zIndex: 100,
+    elevation: 30,
     padding: spacing.sm,
   },
   dropdownHeader: {
@@ -833,92 +811,23 @@ const styles = StyleSheet.create({
   },
 
   /* MAP CANVAS */
+  mapUnavailable: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  mapUnavailableText: {
+    color: colors.slate600,
+    textAlign: "center",
+    fontWeight: "600",
+  },
   mapContainer: {
     flex: 1,
     backgroundColor: colors.slate200, // nearest existing token; subtle realistic road map canvas color
     overflow: "hidden",
     position: "relative",
-  },
-  mapGridLayer: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    width: SCREEN_WIDTH * 2,
-    height: 900,
-  },
-  mapRoadHorizontal1: {
-    position: "absolute",
-    top: 100,
-    left: 0,
-    right: 0,
-    height: 14,
-    backgroundColor: colors.slate300,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.slate400,
-  },
-  mapRoadHorizontal2: {
-    position: "absolute",
-    top: 240,
-    left: 0,
-    right: 0,
-    height: 22,
-    backgroundColor: colors.slate300,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.slate400,
-  },
-  mapRoadHorizontal3: {
-    position: "absolute",
-    top: 380,
-    left: 0,
-    right: 0,
-    height: 14,
-    backgroundColor: colors.slate300,
-  },
-  mapRoadVertical1: {
-    position: "absolute",
-    left: 120,
-    top: 0,
-    bottom: 0,
-    width: 16,
-    backgroundColor: colors.slate300,
-  },
-  mapRoadVertical2: {
-    position: "absolute",
-    left: 280,
-    top: 0,
-    bottom: 0,
-    width: 24,
-    backgroundColor: colors.slate300,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.slate400,
-  },
-  mapRoadVertical3: {
-    position: "absolute",
-    left: 440,
-    top: 0,
-    bottom: 0,
-    width: 14,
-    backgroundColor: colors.slate300,
-  },
-  mapLandmarkDot: {
-    position: "absolute",
-    backgroundColor: colors.white,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    ...shadows.sm,
-  },
-  mapLandmarkLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.slate800,
   },
 
   /* TOP OVERLAY: DYNAMIC JURISDICTION BADGE */
@@ -928,6 +837,7 @@ const styles = StyleSheet.create({
     left: spacing.lg,
     right: spacing.lg,
     zIndex: 10,
+    elevation: 10,
     alignItems: "center",
   },
   jurisdictionBadge: {
@@ -998,6 +908,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     zIndex: 15,
+    elevation: 15,
   },
   pinAnimatedGroup: {
     alignItems: "center",
@@ -1101,6 +1012,7 @@ const styles = StyleSheet.create({
     bottom: spacing.md,
     left: spacing.lg,
     zIndex: 10,
+    elevation: 10,
     backgroundColor: "rgba(255, 255, 255, 0.85)",
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -1196,11 +1108,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.base,
-    paddingBottom: Platform.OS === "ios" ? spacing.xl : spacing.base,
     borderTopWidth: 1.5,
     borderTopColor: colors.slate200,
     ...shadows.md,
     zIndex: 20,
+    elevation: 8,
   },
   addressSummaryRow: {
     flexDirection: "row",

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Pressable,
   Animated,
   PanResponder,
@@ -13,6 +12,7 @@ import {
   StatusBar,
   Modal,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   driverMissionOfferStrings,
@@ -399,10 +399,6 @@ export default function IncomingMissionModal({
             <View style={styles.addressBox}>
               <Text style={styles.addressMain}>{pickupAddress}</Text>
               <Text style={styles.addressLandmark}>{pickupLandmark}</Text>
-              <View style={styles.trafficRow}>
-                <View style={styles.trafficDot} />
-                <Text style={styles.trafficText}>{strings.trafficStatusNormal}</Text>
-              </View>
             </View>
           </View>
 
@@ -465,51 +461,6 @@ export default function IncomingMissionModal({
               <Text style={styles.demographicsText}>
                 <AppIcon icon={{ set: "ion", name: "person" }} />{" "}{strings.patientDemographics(42, "Male")}
               </Text>
-            </View>
-
-            {/* Vitals Overview Badges */}
-            <View style={styles.vitalsListWrap}>
-              <Text style={styles.vitalsHeader}>{strings.vitalsOverviewLabel}:</Text>
-              <View style={styles.vitalBadgeRow}>
-                <View style={styles.vitalBadge}>
-                  <Text style={styles.vitalBadgeText}>
-                    <AppIcon
-                      icon={
-                        isCat1
-                          ? { set: "ion", name: "flash" }
-                          : { set: "mci", name: "lungs" }
-                      }
-                      size={13}
-                    />{" "}
-                    {isCat1
-                      ? "Respiration: 28 bpm (Labored)"
-                      : "Respiration: 18 bpm (Normal)"}
-                  </Text>
-                </View>
-                <View style={styles.vitalBadge}>
-                  <Text style={styles.vitalBadgeText}>
-                    <AppIcon
-                      icon={
-                        isCat1
-                          ? { set: "mci", name: "blood-bag" }
-                          : { set: "ion", name: "bandage" }
-                      }
-                      size={13}
-                    />{" "}
-                    {isCat1
-                      ? "Active Bleeding: Reported"
-                      : "Bleeding: Controlled"}
-                  </Text>
-                </View>
-                <View style={styles.vitalBadge}>
-                  <Text style={styles.vitalBadgeText}>
-                    <AppIcon icon={{ set: "mci", name: "brain" }} size={13} />{" "}
-                    {isCat1
-                      ? "Consciousness: Stuporous"
-                      : "Consciousness: Alert & Responding"}
-                  </Text>
-                </View>
-              </View>
             </View>
           </View>
         </ScrollView>
@@ -948,9 +899,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.emergencyLight,
   },
   vehicleTierRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+    gap: 2,
+    marginBottom: spacing.xs,
   },
   vehicleTierLabel: {
     fontSize: typography.fontSizes.xs,
@@ -1152,13 +1102,13 @@ const styles = StyleSheet.create({
   },
   sliderPromptText: {
     position: "absolute",
-    width: "100%",
+    left: SLIDER_THUMB_SIZE + 16,
+    right: 12,
     textAlign: "center",
     color: colors.white,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.extrabold,
     letterSpacing: 0.5,
-    paddingLeft: 30,
   },
   sliderThumb: {
     width: SLIDER_THUMB_SIZE,
