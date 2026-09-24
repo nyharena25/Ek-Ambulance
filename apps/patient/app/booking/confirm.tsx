@@ -18,10 +18,15 @@ import {
 } from "@sahayak/domain";
 import { StatutoryFareBottomSheet } from "../../src/screens";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
-import { usePatientAuthStore } from "../../src/state/patientAuth.store";
+import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAuth.store";
 import { confirmStrings } from "../../src/i18n/confirmStrings";
 import { SupportedLanguage } from "../../src/i18n/onboardingStrings";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Linking } from "react-native";
+import { createMission } from "../../src/lib/missionApi";
+import { createMissionErrorMessage, newIdempotencyKey } from "../../src/lib/missionApi.core";
+import { authStorage } from "../../src/lib/supabaseClient";
+import { savePersistedMission } from "../../src/services/missionSession.core";
 
 import { AppIcon } from "../../src/components";
 import { DISPATCH_HUB } from "../../src/services/mapGeo.core";
@@ -32,8 +37,17 @@ export default function BookingConfirmScreen() {
   // labeled placeholder for the anonymous "quick emergency access" path
   // (OnboardingScreen -> /booking/triage directly, skipping auth entirely
   // by design), which must keep working without forcing a login.
-  const sessionUserId = usePatientAuthStore((s) => s.session?.user.id);
+  const session = usePatientAuthStore((s) => s.session);
+  const sessionUserId = session?.user.id;
+  const accessToken = realAccessToken(session);
+  // D-1: dispatch needs a verified phone. The anonymous / mock-session id below only exists so the __DEV__ flow keeps working.
   const patientId = sessionUserId ?? "PAT-ANONYMOUS-0001";
+  const triageResult = usePatientLifecycleStore((s) => s.context.triageResult);
+  const lifecycleState = usePatientLifecycleStore((s) => s.currentState);
+  // One key per visit to this screen: a retry after a lost response returns the same mission instead of a second one.
+  const idempotencyKeyRef = useRef(newIdempotencyKey());
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   // StatutoryFareBottomSheet below has its own internal en/hi toggle with no
   // callback to report changes back up, so this only syncs the *initial*
   // language; if the patient flips the sheet's own toggle, this header stays
@@ -70,30 +84,58 @@ export default function BookingConfirmScreen() {
     };
   }, [jurisdiction, pickupLat, pickupLon]);
 
-  const handleConfirmAndRequest = (fareDetails: ItemizedStatutoryFare) => {
-    // Locks the mission request into machine context - vehicleType,
-    // jurisdiction and pickup travel with the machine from here on, and
-    // the machine recomputes fareDetails from the pure pricing engine
-    // rather than trusting the sheet's own copy (same inputs, same
-    // constant distance, so they agree; the machine's copy is what
-    // downstream screens read).
-    send({
-      type: "REQUEST",
-      payload: {
-        patientId,
-        pickup: {
-          latitude: params.lat ? Number(params.lat) : 28.5672,
-          longitude: params.lon ? Number(params.lon) : 77.21,
-        },
-        careLevel: careLevelFromVehicleType(vehicleType),
+  const handleConfirmAndRequest = async (fareDetails: ItemizedStatutoryFare) => {
+    if (submitting) return;
+    setSubmitError(null);
+    const pickup = {
+      latitude: params.lat ? Number(params.lat) : 28.5672,
+      longitude: params.lon ? Number(params.lon) : 77.21,
+    };
+    const requestPayload = {
+      patientId,
+      pickup,
+      careLevel: careLevelFromVehicleType(vehicleType),
+      vehicleType,
+      jurisdiction,
+      requestedAt: new Date().toISOString(),
+      // The machine re-prices from this, so the locked fare matches the quote the sheet showed.
+      distanceKm: fareDetails.totalDistanceKm,
+      idempotencyKey: idempotencyKeyRef.current,
+    };
+
+    if (accessToken) {
+      // The server creates the mission (jurisdiction from polygons, fare, first event, dispatch wave) BEFORE the machine
+      // moves: a request that never reached the server must not put the patient on a "searching" screen.
+      if (!triageResult || lifecycleState !== "triaged") {
+        setSubmitError(createMissionErrorMessage("triage_required", language));
+        return;
+      }
+      setSubmitting(true);
+      const result = await createMission({
+        idempotencyKey: idempotencyKeyRef.current,
+        pickup,
+        pickupAddress: params.address,
         vehicleType,
-        jurisdiction,
-        requestedAt: new Date().toISOString(),
-        // The machine re-prices from this, so the locked fare matches the quote the sheet showed.
+        urgency: triageResult.tier,
+        triage: { engine_version: "start-esi-1", derived_flags: triageResult.symptomFlags },
         distanceKm: fareDetails.totalDistanceKm,
-        idempotencyKey: `idem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      },
-    });
+      });
+      setSubmitting(false);
+      if (!result.ok) {
+        setSubmitError(createMissionErrorMessage(result.error.code, language));
+        return;
+      }
+      send({ type: "REQUEST", payload: requestPayload });
+      send({ type: "SERVER_MISSION_CREATED", payload: { missionId: result.data.missionId } });
+      // Only the creation event (seq 1) has been seen: an instant no-driver cancel (seq 2) must be replayed, not skipped.
+      await savePersistedMission(authStorage, { missionId: result.data.missionId, lastSeq: 1 });
+    } else if (__DEV__) {
+      // Local development without a verified session: the old mock flow, never compiled into a release build's path.
+      send({ type: "REQUEST", payload: requestPayload });
+    } else {
+      setSubmitError(strings.signInRequired);
+      return;
+    }
 
     router.push({
       pathname: "/booking/matching",
@@ -174,11 +216,17 @@ export default function BookingConfirmScreen() {
               Certified Life-Support • Telemetry Active
             </Text>
           </View>
-          <View style={styles.nearbyTag}>
-            <Text style={styles.nearbyTagText}>3 NEARBY</Text>
-          </View>
         </View>
       </View>
+
+      {submitError && (
+        <View style={styles.errorBanner} accessibilityRole="alert">
+          <Text style={styles.errorBannerText}>{submitError}</Text>
+          <Pressable accessibilityRole="button" style={styles.errorCallButton} onPress={() => void Linking.openURL("tel:108")}>
+            <Text style={styles.errorCallButtonText}>{strings.call108}</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* EXPANDABLE STATUTORY FARE BOTTOM SHEET */}
       <StatutoryFareBottomSheet
@@ -281,6 +329,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.slate600,
     marginTop: 2,
+  },
+  errorBanner: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.slate100,
+    borderWidth: 1.5,
+    borderColor: colors.slate900,
+    gap: spacing.sm,
+  },
+  errorBannerText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  errorCallButton: {
+    minHeight: 48,
+    borderRadius: radii.md,
+    backgroundColor: colors.slate900,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  errorCallButtonText: {
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.white,
   },
   nearbyTag: {
     backgroundColor: colors.successLight,

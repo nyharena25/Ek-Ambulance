@@ -1,15 +1,19 @@
 import { create } from "zustand";
 import { careLevelFromVehicleType, type AIS125VehicleType } from "@sahayak/domain";
 import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
-import { useDriverLifecycleStore } from "./driverLifecycle.store.ts";
+import { useDriverLifecycleStore, getServerAdapter } from "./driverLifecycle.store.ts";
+import { isProfileLocked } from "./driverAvailability.core.ts";
 
-// Synthetic demo identity - no real driver/vehicle IDs exist yet (P04's
-// presence endpoint, which would issue these from an authenticated session,
-// is still a stub). Named placeholders, not silently blank, same pattern as
-// other demo constants already in this codebase (e.g. patient's PAT-DEMO-0001).
+// Synthetic demo identity for LOCAL DEVELOPMENT ONLY. With a verified session the real user id is used and the server
+// (set_driver_presence -> `not_verified`) is the verification gate. `IS_DEV` is true under the node test runner, where
+// `__DEV__` does not exist, so the existing tests keep their seeded state.
+const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
 const DEMO_DRIVER_ID = "DRV-DEMO-0001";
 const DEMO_AMBULANCE_ID = "AMB-DEMO-0001";
 const DEMO_AIS125_CERT_PATH = "storage/certs/demo-driver-kyc.pdf";
+// The machine's GO_ONLINE guard wants a non-empty certificate path; against a real backend the check that matters is the
+// server's (KYC approved, is_verified), so this marker only satisfies the local guard.
+const SERVER_VERIFIED_MARKER = "server-verified";
 
 export type JurisdictionCode = "UP_NOIDA" | "DL_SOUTH";
 
@@ -100,13 +104,14 @@ const SOUTH_DELHI_COORDS: GpsCoordinates = {
 };
 
 function sendGoOnline(ais125Type: AIS125VehicleType, location: GpsCoordinates) {
+  const server = getServerAdapter();
   useDriverLifecycleStore.getState().send({
     type: "GO_ONLINE",
     payload: {
-      driverId: DEMO_DRIVER_ID,
+      driverId: server?.userId ?? DEMO_DRIVER_ID,
       ambulanceId: DEMO_AMBULANCE_ID,
       careLevel: careLevelFromVehicleType(ais125Type),
-      ais125CertPath: DEMO_AIS125_CERT_PATH,
+      ais125CertPath: server ? SERVER_VERIFIED_MARKER : DEMO_AIS125_CERT_PATH,
       location,
       wentOnlineAt: new Date().toISOString(),
     },
@@ -118,10 +123,12 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   // match this store's own demo default (isOnline: true) - without this,
   // SERVER_OFFER_RECEIVED would silently no-op against a machine stuck in
   // "offline" (illegal transitions are rejected by design, not a bug).
-  sendGoOnline("TYPE_D_ALS", NOIDA_COORDS);
+  // Development only: a release build starts offline and the driver must go online (which the server has to accept), instead
+  // of being "online" and dispatchable under a demo identity before authentication or KYC (D4).
+  if (IS_DEV) sendGoOnline("TYPE_D_ALS", NOIDA_COORDS);
 
   return {
-  isOnline: true,
+  isOnline: IS_DEV,
   isTogglingPresence: false,
   shiftStartedAt: "07:30 AM",
   language: "en",
@@ -159,11 +166,20 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       // Prompt confirmation modal before de-indexing from Redis
       set({ isOfflineModalOpen: true });
     } else {
-      // Going online: trigger simulated Redis GEOADD
       set({ isTogglingPresence: true });
-      await new Promise((res) => setTimeout(res, 600));
-
       const { registeredAis125Type, gps } = get();
+      const server = getServerAdapter();
+      if (server) {
+        // The server decides: an unverified driver, or one whose request cannot be recorded, does NOT become dispatchable.
+        const result = await server.setPresence(true, gps);
+        if (!result.ok) {
+          set({ isTogglingPresence: false });
+          return;
+        }
+      } else {
+        // Local development: the former simulated GEOADD delay.
+        await new Promise((res) => setTimeout(res, 600));
+      }
       sendGoOnline(registeredAis125Type, gps);
 
       set((state) => ({
@@ -180,9 +196,11 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   },
 
   confirmGoOffline: () => {
+    const server = getServerAdapter();
+    if (server) void server.setPresence(false);
     useDriverLifecycleStore.getState().send({
       type: "GO_OFFLINE",
-      payload: { driverId: DEMO_DRIVER_ID, wentOfflineAt: new Date().toISOString() },
+      payload: { driverId: server?.userId ?? DEMO_DRIVER_ID, wentOfflineAt: new Date().toISOString() },
     });
     set({
       isOnline: false,
@@ -199,20 +217,24 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   closeOfflineModal: () => set({ isOfflineModalOpen: false }),
 
   setJurisdiction: (jur) => {
+    // The service area is part of the profile, which is frozen from the offer to the end of the mission.
+    if (isProfileLocked(useDriverLifecycleStore.getState().currentState)) return;
     set({
       currentJurisdiction: jur,
       gps: jur === "UP_NOIDA" ? NOIDA_COORDS : SOUTH_DELHI_COORDS,
     });
   },
 
-  setAis125Type: (type) =>
+  setAis125Type: (type) => {
+    if (isProfileLocked(useDriverLifecycleStore.getState().currentState)) return;
     set((state) => ({
       registeredAis125Type: type,
       redisPresence: {
         ...state.redisPresence,
         geoKey: `ambulances:geo:${type.toLowerCase()}`,
       },
-    })),
+    }));
+  },
 
   toggleCharging: () =>
     set((state) => ({

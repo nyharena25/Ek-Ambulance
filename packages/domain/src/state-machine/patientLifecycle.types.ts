@@ -1,5 +1,14 @@
 import type { AIS125VehicleType, CareLevel, GeoPoint, Jurisdiction, TriageSymptomFlag } from "../types/index.ts";
 import type { TriageResult } from "../triage/index.ts";
+import type { ItemizedStatutoryFare } from "../pricing/index.ts";
+import type {
+  AssignedDriverInfo,
+  MaskedCallInfo,
+  MissionCancelledData,
+  MissionCompletedData,
+  MissionStatus,
+  TransportDestination,
+} from "../mission-channel/index.ts";
 
 export interface RequestEventPayload {
   patientId: string;                 // Supabase auth.users.id (uuid)
@@ -44,12 +53,31 @@ export type PatientLifecycleEvent =
   | { type: "CANCEL"; payload: CancelPayload }
   | { type: "CONFIRM_RECEIPT"; payload: ConfirmReceiptPayload };
 
+/** Snapshot of a mission as the server holds it (RLS read of `missions`), used to jump a machine forward (7.5 rule 5). */
+export interface PatientHydratePayload {
+  missionId: string;
+  status: MissionStatus;
+  vehicleType?: AIS125VehicleType;
+  jurisdiction?: Jurisdiction;
+  pickup?: GeoPoint;
+  fareDetails?: ItemizedStatutoryFare;
+}
+
+/**
+ * Every payload field beyond `missionId` is optional: a pre-v1 publisher sends none of them, and the UI then omits the
+ * field instead of showing a made-up one (P-UX-05). The mission id is always the one the subscription is mounted for.
+ */
 export type PatientLifecycleMachineEvent =
   | PatientLifecycleEvent
-  | { type: "SERVER_MISSION_ASSIGNED"; payload: { missionId: string } }
+  | { type: "SERVER_MISSION_CREATED"; payload: { missionId: string } }
+  | { type: "SERVER_MISSION_ASSIGNED"; payload: { missionId: string; driver?: AssignedDriverInfo; maskedCall?: MaskedCallInfo; etaMinutes?: number } }
   | { type: "SERVER_DRIVER_ARRIVED"; payload: { missionId: string } }
-  | { type: "SERVER_TRANSPORT_STARTED"; payload: { missionId: string } }
-  | { type: "SERVER_MISSION_COMPLETED"; payload: { missionId: string } };
+  | { type: "SERVER_TRANSPORT_STARTED"; payload: { missionId: string; destination?: TransportDestination; etaMinutes?: number; wardStatus?: string } }
+  | { type: "SERVER_HOSPITAL_ARRIVED"; payload: { missionId: string } }
+  | { type: "SERVER_MISSION_COMPLETED"; payload: { missionId: string; completion?: MissionCompletedData } }
+  | { type: "SERVER_DRIVER_RELEASED"; payload: { missionId: string } }
+  | { type: "SERVER_MISSION_CANCELLED"; payload: { missionId: string } & MissionCancelledData }
+  | { type: "HYDRATE"; payload: PatientHydratePayload };
 
 export type PatientLifecycleState =
   | "idle"

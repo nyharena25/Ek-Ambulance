@@ -24,8 +24,14 @@ export interface TransportingScreenProps {
   missionId?: string;
   patientName?: string;
   vehicleType?: AIS125VehicleType;
+  /** The hospital the driver selected (TRANSPORT_STARTED.destination). Absent => "not confirmed yet", never a default hospital. */
   hospitalName?: string;
+  /** Only when the server actually made a bed hold; otherwise the ward card is not shown. */
   wardStatus?: string;
+  etaMinutes?: number;
+  /** The driver reached the hospital and is completing the handoff. */
+  hospitalArrived?: boolean;
+  connection?: "live" | "connecting" | "paused";
   initialLanguage?: SupportedLanguage;
   onCallCrew?: () => void;
   onCall108?: () => void;
@@ -58,11 +64,13 @@ export interface TransportingScreenProps {
  * - Full WCAG AAA high-contrast compliance and bilingual localization.
  */
 export default function TransportingScreen({
-  missionId = "MSN-DL-2026-8921",
-  patientName = "Patient",
+  missionId = "",
   vehicleType = "TYPE_D_ALS",
-  hospitalName = "Jai Prakash Narayan Apex Trauma Center, AIIMS",
-  wardStatus = "Trauma ICU Alerted - Bed Held",
+  hospitalName,
+  wardStatus,
+  etaMinutes,
+  hospitalArrived = false,
+  connection = "connecting",
   initialLanguage = "en",
   onCallCrew,
   onCall108,
@@ -77,30 +85,15 @@ export default function TransportingScreen({
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // ETA/distance are still static illustrative figures: DriverTelemetry carries no eta/distance and the
-  // route's own distance/duration is not wired in yet (HANDOVER §23).
-  const etaMinutes = 14;
-  const distanceKm = 8.4;
-
   const strings = transportingStrings[language];
 
-  const hospital = findHospital(hospitalName);
+  const hospital = findHospital(hospitalName ?? "");
 
   // ---------------------------------------------------------------------------
   // FAMILY EMERGENCY SHARE HANDLERS (WHATSAPP & SMS)
   // ---------------------------------------------------------------------------
-  const generateShareMessage = () => {
-    const trackingUrl = `https://track.ek-ambulance.in/m/${missionId}`;
-    return strings.formattedShareMessage({
-      patientName,
-      vehiclePlate: strings.vehicleLicensePlate,
-      hospitalName,
-      etaMinutes,
-      distanceKm,
-      wardStatus,
-      trackingUrl,
-    });
-  };
+  // Only facts the server supplied: no invented plate, ETA, distance or tracking link (nothing serves that domain).
+  const generateShareMessage = () => strings.familyShareMessage({ hospitalName, etaMinutes });
 
   const handleShareWhatsApp = async () => {
     const message = generateShareMessage();
@@ -151,17 +144,6 @@ export default function TransportingScreen({
   // ---------------------------------------------------------------------------
   // CREW & 108 CONTACT HANDLERS
   // ---------------------------------------------------------------------------
-  const handleCallCrew = () => {
-    if (onCallCrew) {
-      onCallCrew();
-      return;
-    }
-    const maskedTel = "tel:+911140840000";
-    Linking.openURL(maskedTel).catch(() => {
-      Alert.alert(strings.callCrewButton, "Calling Onboard Paramedic...");
-    });
-  };
-
   const handleCall108 = () => {
     if (onCall108) {
       onCall108();
@@ -260,7 +242,7 @@ export default function TransportingScreen({
           fitRoute
           driverMarkerRef={driverMarkerRef}
           driverStart={driverStart}
-          speedLabel={strings.speedText(liveSpeedKmh ?? 58)}
+          speedLabel={liveSpeedKmh != null ? strings.speedText(liveSpeedKmh) : "-- km/h"}
           onCall108={handleCall108}
           overlays={
             <>
@@ -268,27 +250,18 @@ export default function TransportingScreen({
               <View style={styles.centrifugoBadge}>
                 <View style={styles.centrifugoPulseDot} />
                 <Text style={styles.centrifugoBadgeText}>
-                  {strings.centrifugoLiveBadge}
+                  {connection === "live" ? strings.centrifugoLiveBadge : connection === "connecting" ? strings.trackingConnectingBadge : strings.trackingPausedBadge}
                 </Text>
               </View>
 
-              {/* LIVE REMAINING TRAVEL TIME & DISTANCE BANNER */}
-              <View style={styles.trafficEtaCard}>
-                <View style={styles.trafficEtaTopRow}>
-                  <Text style={styles.trafficEtaMain}>
-                    {strings.remainingTravelEta(
-                      etaMinutes,
-                      distanceKm
-                    )}
-                  </Text>
-                  <View style={styles.greenCorridorTag}>
-                    <Text style={styles.greenCorridorTagText}>{strings.greenCorridorBadge}</Text>
+              {/* ETA only when the server gave one; no corridor or traffic claims. */}
+              {etaMinutes !== undefined && !hospitalArrived && (
+                <View style={styles.trafficEtaCard}>
+                  <View style={styles.trafficEtaTopRow}>
+                    <Text style={styles.trafficEtaMain}>{strings.etaOnlyLabel(etaMinutes)}</Text>
                   </View>
                 </View>
-                <Text style={styles.routeCorridorNoticeText}>
-                  {strings.routeCorridorNotice}
-                </Text>
-              </View>
+              )}
             </>
           }
         />
@@ -312,7 +285,7 @@ export default function TransportingScreen({
               <Text style={styles.stateBadgeText}>{strings.stateBadge}</Text>
             </View>
             <Text style={styles.stateDescriptionText}>
-              {strings.stateDescription}
+              {hospitalArrived ? strings.hospitalArrivedNotice : strings.stateDescription}
             </Text>
           </View>
 
@@ -327,53 +300,21 @@ export default function TransportingScreen({
                 <AppIcon icon={{ set: "mci", name: "hospital-building" }} size={22} color={colors.slate700} style={styles.hospitalIconEmoji} />
               </View>
               <View style={styles.hospitalTitleGroup}>
-                <Text style={styles.hospitalNameText}>{strings.hospitalName}</Text>
-                <Text style={styles.hospitalSubtitleText}>
-                  {strings.hospitalSubtitle}
-                </Text>
+                <Text style={styles.hospitalNameText}>{hospitalName ?? strings.hospitalPendingText}</Text>
               </View>
             </View>
 
-            {/* PROMINENT WARD READINESS BANNER */}
-            <View style={styles.wardReadinessBanner}>
-              <View style={styles.wardBannerTopRow}>
-                <View style={styles.bedHeldPill}>
-                  <Text style={styles.bedHeldPillText}>
-                    {strings.bedHeldBadge}
-                  </Text>
+            {/* WARD STATUS: only what the server reported (a real bed hold). The itemised checklist that used to sit
+                here (bed number, trauma team, ECG) was static text nothing produced (G-02). */}
+            {wardStatus && (
+              <View style={styles.wardReadinessBanner}>
+                <View style={styles.wardBannerTopRow}>
+                  <View style={styles.bedHeldPill}>
+                    <Text style={styles.bedHeldPillText}>{wardStatus}</Text>
+                  </View>
                 </View>
-                <Text style={styles.wardBannerHeading}>
-                  {strings.wardReadinessBannerTitle}
-                </Text>
               </View>
-              <Text style={styles.wardBannerSubtext}>
-                {strings.wardReadinessBannerSubtitle}
-              </Text>
-            </View>
-
-            {/* Itemized Clinical Readiness Checklist */}
-            <View style={styles.readinessDetailsList}>
-              <View style={styles.readinessItem}>
-                <AppIcon icon={{ set: "ion", name: "bed" }} size={16} color={colors.slate700} style={styles.readinessItemIcon} />
-                <Text style={styles.readinessItemText}>
-                  {strings.bedNumberText}
-                </Text>
-              </View>
-
-              <View style={styles.readinessItem}>
-                <AppIcon icon={{ set: "ion", name: "man" }} size={16} color={colors.slate700} style={styles.readinessItemIcon} />
-                <Text style={styles.readinessItemText}>
-                  {strings.traumaTeamStatus}
-                </Text>
-              </View>
-
-              <View style={styles.readinessItem}>
-                <AppIcon icon={{ set: "ion", name: "radio" }} size={16} color={colors.slate700} style={styles.readinessItemIcon} />
-                <Text style={styles.readinessItemText}>
-                  {strings.preArrivalHandoffStatus}
-                </Text>
-              </View>
-            </View>
+            )}
           </View>
 
           {/* 2. EMERGENCY TRIGGER: SHARE LIVE TRACKING WITH FAMILY */}
@@ -503,12 +444,13 @@ export default function TransportingScreen({
               </View>
             </View>
 
-            {/* Crew Contact Trigger */}
+            {/* Crew Contact Trigger: only with a real relay number (no fixed placeholder number) */}
+            {onCallCrew && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={strings.callCrewButton}
               style={styles.callCrewBtn}
-              onPress={handleCallCrew}
+              onPress={onCallCrew}
             >
               <AppIcon icon={{ set: "ion", name: "call" }} size={18} color={colors.slate700} style={styles.callCrewBtnIcon} />
               <View style={styles.callCrewTextGroup}>
@@ -520,6 +462,7 @@ export default function TransportingScreen({
                 </Text>
               </View>
             </Pressable>
+            )}
           </View>
 
           {/* 5. EMERGENCY 108 HELPLINE FALLBACK */}

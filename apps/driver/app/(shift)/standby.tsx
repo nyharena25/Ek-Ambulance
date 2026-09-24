@@ -11,7 +11,8 @@ export default function StandbyRoute() {
 
   return (
     <DriverStandbyScreen
-      onSimulateOffer={() => {
+      // Development only (G-25): a release build must never offer a driver a fabricated dispatch.
+      onSimulateOffer={!__DEV__ ? undefined : () => {
         // Simulate a real Centrifugo dispatch.offer push (P05 channel stub):
         // a realistic wave across Delhi/NCR + UP districts, driven through
         // the real driverLifecycle machine, then present the offer screen.
@@ -38,6 +39,8 @@ export default function StandbyRoute() {
       onNavigateToOnboarding={() => {
         router.push("/(auth)/onboarding");
       }}
+      onOpenBooking={() => router.push("/(shift)/booking")}
+      onOpenProfile={() => router.push("/(shift)/profile")}
     />
   );
 }

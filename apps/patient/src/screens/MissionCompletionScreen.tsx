@@ -8,7 +8,6 @@ import {
   ScrollView,
   Switch,
   Modal,
-  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
@@ -24,6 +23,10 @@ export interface MissionCompletionScreenProps {
   missionId?: string;
   pickupAddress?: string;
   hospitalName?: string;
+  /** Server time the driver completed the sign-off (MISSION_COMPLETED.data.completedAt). Absent => no timestamp shown. */
+  completedAt?: string;
+  /** Present only once the server has generated a real EMR handoff PDF (bucket `emr-handoffs`); none exists yet. */
+  onDownloadEmr?: () => void;
   /** Statutory receipt breakdown, computed once at booking time (never
    *  recomputed here) - the same shared domain contract StatutoryFareBottomSheet
    *  emits via onConfirmAndRequest. */
@@ -54,9 +57,11 @@ const DEFAULT_FARE_DETAILS: ItemizedStatutoryFare = computeItemizedStatutoryFare
  * - WCAG AAA compliant high-contrast tokens and bilingual localization.
  */
 export default function MissionCompletionScreen({
-  missionId = "MSN-DL-2026-8921",
-  pickupAddress = "AIIMS New Delhi, Main Emergency Ward",
-  hospitalName = "Jai Prakash Narayan Apex Trauma Center, AIIMS",
+  missionId = "",
+  pickupAddress = "",
+  hospitalName,
+  completedAt,
+  onDownloadEmr,
   fareDetails = DEFAULT_FARE_DETAILS,
   initialLanguage = "en",
   onReturnHome,
@@ -83,25 +88,15 @@ export default function MissionCompletionScreen({
   // ---------------------------------------------------------------------------
   // DOWNLOAD EMR HANDOFF PDF HANDLER
   // ---------------------------------------------------------------------------
-  const handleDownloadEmr = async () => {
+  // The former handler shared invented vitals, a fixed plate, a bay number and a URL nothing served (G-02). It is gone:
+  // the button below renders only when the app is given a real, server-generated handoff to open.
+  const handleDownloadEmr = () => {
     showToast(strings.downloadingToast);
-    try {
-      await Share.share({
-        title: "EMR Handoff Record - Ek-Ambulance",
-        message:
-          `📄 [Official Emergency Medical Record (EMR) Handoff Summary]\n\n` +
-          `Mission ID: ${missionId}\n` +
-          `Patient: Safely Transferred to ${hospitalName}\n` +
-          `Fleet Vehicle: ${fareDetails.vehicleType.replace(/_/g, " ")} (DL 1E AM 4092)\n` +
-          `Triage: Category 1 Immediate (Cardiac / Trauma)\n` +
-          `In-Transit Vitals: HR 84 bpm | SpO2 98% | BP 122/80\n` +
-          `Receiving Bay: Resuscitation Bay #04\n\n` +
-          `Official Encrypted PDF Link: https://receipts.ek-ambulance.in/${missionId}/emr-handoff.pdf`,
-      });
-    } catch {
-      // Ignored or dismissed
-    }
+    onDownloadEmr?.();
   };
+  const completedAtText = completedAt
+    ? new Date(completedAt).toLocaleString(language === "hi" ? "hi-IN" : "en-IN", { dateStyle: "medium", timeStyle: "short" })
+    : null;
 
   // ---------------------------------------------------------------------------
   // PREMATURE DELETION TOGGLE HANDLER (DPDP 2025 RULES)
@@ -207,9 +202,7 @@ export default function MissionCompletionScreen({
                 {strings.completionBannerBadge}
               </Text>
             </View>
-            <Text style={styles.timestampText}>
-              22 Sep 2026, 08:35 IST
-            </Text>
+            {completedAtText && <Text style={styles.timestampText}>{completedAtText}</Text>}
           </View>
 
           <Text style={styles.completionBannerTitle}>
@@ -249,14 +242,16 @@ export default function MissionCompletionScreen({
               </Text>
             </View>
 
-            <View style={styles.contextItem}>
-              <Text style={styles.contextItemLabel}>
-                {strings.destinationHospitalLabel}
-              </Text>
-              <Text style={styles.contextItemValue} numberOfLines={2}>
-                {hospitalName}
-              </Text>
-            </View>
+            {hospitalName && (
+              <View style={styles.contextItem}>
+                <Text style={styles.contextItemLabel}>
+                  {strings.destinationHospitalLabel}
+                </Text>
+                <Text style={styles.contextItemValue} numberOfLines={2}>
+                  {hospitalName}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.contextItemHalf}>
               <Text style={styles.contextItemLabel}>
@@ -397,7 +392,8 @@ export default function MissionCompletionScreen({
             {strings.dpdpPanelDescription}
           </Text>
 
-          {/* EMR HANDOFF PDF DOWNLOAD BUTTON */}
+          {/* EMR HANDOFF PDF DOWNLOAD BUTTON: only when a real handoff exists */}
+          {onDownloadEmr && (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={strings.downloadEmrButton}
@@ -418,6 +414,7 @@ export default function MissionCompletionScreen({
             </View>
             <Text style={styles.pdfBadge}>PDF</Text>
           </Pressable>
+          )}
 
           <View style={styles.divider} />
 

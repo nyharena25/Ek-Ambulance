@@ -13,8 +13,16 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import { AIS125VehicleType } from "@sahayak/domain";
+import { colors, typography, spacing, radii, shadows, timerTones } from "@sahayak/ui";
+import {
+  DISPATCH_CONFIG,
+  boardSecondsLeft,
+  boardTimerTone,
+  formatBoardTimer,
+  offerWavesOver,
+  searchWaveAt,
+  type AIS125VehicleType,
+} from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { matchingStrings } from "../i18n/matchingStrings";
 
@@ -24,8 +32,8 @@ export interface ActiveMatchingScreenProps {
   pickupAddress?: string;
   pickupCoords?: { latitude: number; longitude: number };
   initialLanguage?: SupportedLanguage;
-  wave1TimeoutSeconds?: number;
-  wave2TimeoutSeconds?: number;
+  /** When the server created the request (ms). The timer counts from it, like the drivers' card; defaults to when this screen mounted. */
+  startedAtMs?: number;
   onCancel?: (reason: string) => void;
   onBack?: () => void;
   onCall108?: () => void;
@@ -50,20 +58,32 @@ export default function ActiveMatchingScreen({
   pickupAddress = "AIIMS New Delhi, Main Emergency Ward",
   pickupCoords = { latitude: 28.5672, longitude: 77.2100 },
   initialLanguage = "en",
-  wave1TimeoutSeconds = 45,
-  wave2TimeoutSeconds = 45,
+  startedAtMs,
   onCancel,
   onBack,
   onCall108,
   onSimulateMatch,
 }: ActiveMatchingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
-  const [currentWave, setCurrentWave] = useState<1 | 2>(1);
-  const [secondsLeft, setSecondsLeft] = useState<number>(wave1TimeoutSeconds);
   const [isCancelModalVisible, setIsCancelModalVisible] = useState<boolean>(false);
   const [selectedReasonKey, setSelectedReasonKey] = useState<string>("alternative");
 
   const strings = matchingStrings[language];
+
+  // One clock, the same one a driver's Booking card counts: the deadline is one wave window after the request was made, and
+  // the timer goes negative (red) once it has passed. The wave is derived from elapsed time, not from a second timer.
+  const mountedAtMs = useRef(Date.now()).current;
+  const startedAt = startedAtMs ?? mountedAtMs;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const elapsedSeconds = Math.max(0, (nowMs - startedAt) / 1000);
+  const secondsLeft = boardSecondsLeft(new Date(startedAt + DISPATCH_CONFIG.waveWindowSeconds * 1000).toISOString(), nowMs);
+  const tone = timerTones[boardTimerTone(secondsLeft)];
+  const currentWave = searchWaveAt(elapsedSeconds);
+  const wavesOver = offerWavesOver(elapsedSeconds);
 
   // ---------------------------------------------------------------------------
   // RADAR CONCENTRIC ANIMATION RINGS (3 STAGGERED RINGS)
@@ -128,36 +148,6 @@ export default function ActiveMatchingScreen({
   }, [ring1, ring2, ring3, pinPulse]);
 
   // ---------------------------------------------------------------------------
-  // DRIVER ACCEPTANCE COUNTDOWN & WAVE ESCALATION TIMER
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          if (currentWave === 1) {
-            // Escalate to Wave 2 (3-6 km)
-            setCurrentWave(2);
-            return wave2TimeoutSeconds;
-          } else {
-            // Re-loop Wave 2 timer
-            return wave2TimeoutSeconds;
-          }
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [currentWave, wave2TimeoutSeconds]);
-
-  // Format seconds to MM:SS
-  const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remSecs = secs % 60;
-    return `${mins.toString().padStart(2, "0")}:${remSecs.toString().padStart(2, "0")}`;
-  };
-
-  // ---------------------------------------------------------------------------
   // EMERGENCY 108 CALL HANDLER
   // ---------------------------------------------------------------------------
   const handleCall108 = () => {
@@ -214,8 +204,6 @@ export default function ActiveMatchingScreen({
       opacity,
     };
   };
-
-  const isUrgentTimer = secondsLeft <= 10;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -307,7 +295,7 @@ export default function ActiveMatchingScreen({
             <View style={styles.rangeRingInner} />
 
             {/* Range ring labels */}
-            <Text style={styles.rangeRingOuterLabel}>6 km</Text>
+            <Text style={styles.rangeRingOuterLabel}>{currentWave === 3 ? "10 km" : "6 km"}</Text>
             <Text style={styles.rangeRingInnerLabel}>3 km</Text>
 
             {/* Radar Crosshairs */}
@@ -334,10 +322,16 @@ export default function ActiveMatchingScreen({
               <View style={styles.ambulanceBlipDot} />
               <Text style={styles.ambulanceBlipText}>ALS 2</Text>
             </View>
-            {currentWave === 2 && (
+            {currentWave >= 2 && (
               <View style={[styles.ambulanceBlip, { top: 22, right: 36 }]}>
                 <View style={[styles.ambulanceBlipDot, styles.blipWave2]} />
                 <Text style={styles.ambulanceBlipText}>ALS 3</Text>
+              </View>
+            )}
+            {currentWave === 3 && (
+              <View style={[styles.ambulanceBlip, { bottom: 20, left: 30 }]}>
+                <View style={[styles.ambulanceBlipDot, styles.blipWave2]} />
+                <Text style={styles.ambulanceBlipText}>ALS 4</Text>
               </View>
             )}
 
@@ -363,7 +357,7 @@ export default function ActiveMatchingScreen({
               </Text>
             </View>
             <Text style={styles.fleetCountText}>
-              {strings.nearbyFleetCount(currentWave === 1 ? 3 : 6)}
+              {strings.nearbyFleetCount(currentWave === 1 ? 3 : currentWave === 2 ? 6 : 9)}
             </Text>
           </View>
         </View>
@@ -374,35 +368,23 @@ export default function ActiveMatchingScreen({
             <View style={styles.countdownTitleGroup}>
               <Text style={styles.countdownTitle}>{strings.countdownLabel}</Text>
               <Text style={styles.countdownSubtitle}>
-                {strings.countdownSubtext(secondsLeft)}
+                {secondsLeft >= 0 ? strings.countdownSubtext(secondsLeft) : strings.countdownOverdue}
               </Text>
             </View>
 
             {/* Large Clock Display */}
-            <View
-              style={[
-                styles.countdownBadge,
-                isUrgentTimer && styles.countdownBadgeUrgent,
-              ]}
-            >
+            <View style={[styles.countdownBadge, { backgroundColor: tone.surface, borderColor: tone.fill }]}>
               <Text style={styles.countdownClockIcon}>⏱️</Text>
-              <Text
-                style={[
-                  styles.countdownTimeText,
-                  isUrgentTimer && styles.countdownTimeTextUrgent,
-                ]}
-              >
-                {formatTime(secondsLeft)}
-              </Text>
+              <Text style={[styles.countdownTimeText, { color: tone.text }]}>{formatBoardTimer(secondsLeft)}</Text>
             </View>
           </View>
 
-          {/* Wave Escalation Notice if Wave 2 */}
-          {currentWave === 2 && (
+          {/* Wave Escalation Notice once the search has widened past wave 1 */}
+          {currentWave >= 2 && (
             <View style={styles.wave2AlertBanner}>
               <AppIcon icon={{ set: "ion", name: "flash" }} size={16} color={colors.slate700} style={styles.wave2AlertIcon} />
               <Text style={styles.wave2AlertText}>
-                {strings.waveEscalatedNotice}
+                {wavesOver ? strings.searchExtendedNotice : currentWave === 3 ? strings.wave3EscalatedNotice : strings.waveEscalatedNotice}
               </Text>
             </View>
           )}
@@ -444,7 +426,7 @@ export default function ActiveMatchingScreen({
                 <View
                   style={[
                     styles.waveConnectingLine,
-                    currentWave === 2 && styles.waveConnectingLineActive,
+                    currentWave >= 2 && styles.waveConnectingLineActive,
                   ]}
                 />
               </View>
@@ -491,7 +473,9 @@ export default function ActiveMatchingScreen({
                     styles.waveStepCircle,
                     currentWave === 2
                       ? styles.waveStepCircleActive
-                      : styles.waveStepCirclePending,
+                      : currentWave === 3
+                        ? styles.waveStepCircleCompleted
+                        : styles.waveStepCirclePending,
                   ]}
                 >
                   <Text
@@ -499,12 +483,24 @@ export default function ActiveMatchingScreen({
                       styles.waveStepNumber,
                       currentWave === 2
                         ? styles.waveStepNumberActive
-                        : styles.waveStepNumberPending,
+                        : currentWave === 3
+                          ? styles.waveStepNumberCompleted
+                          : styles.waveStepNumberPending,
                     ]}
                   >
-                    2
+                    {currentWave === 3 ? (
+                      <AppIcon icon={{ set: "ion", name: "checkmark" }} size={13} />
+                    ) : (
+                      "2"
+                    )}
                   </Text>
                 </View>
+                <View
+                  style={[
+                    styles.waveConnectingLine,
+                    currentWave === 3 && styles.waveConnectingLineActive,
+                  ]}
+                />
               </View>
 
               <View style={styles.waveDetailsColumn}>
@@ -515,7 +511,9 @@ export default function ActiveMatchingScreen({
                       styles.waveStatusTag,
                       currentWave === 2
                         ? styles.waveStatusTagActive
-                        : styles.waveStatusTagPending,
+                        : currentWave === 3
+                          ? styles.waveStatusTagCompleted
+                          : styles.waveStatusTagPending,
                     ]}
                   >
                     <Text
@@ -523,10 +521,12 @@ export default function ActiveMatchingScreen({
                         styles.waveStatusTagText,
                         currentWave === 2
                           ? styles.waveStatusTagTextActive
-                          : styles.waveStatusTagTextPending,
+                          : currentWave === 3
+                            ? styles.waveStatusTagTextCompleted
+                            : styles.waveStatusTagTextPending,
                       ]}
                     >
-                      {currentWave === 2 ? "ACTIVE" : "NEXT"}
+                      {currentWave === 2 ? "ACTIVE" : currentWave === 3 ? "ELAPSED" : "NEXT"}
                     </Text>
                   </View>
                 </View>
@@ -536,7 +536,67 @@ export default function ActiveMatchingScreen({
                 <Text style={styles.waveStatusDescription}>
                   {currentWave === 2
                     ? strings.wave2StatusActive
-                    : strings.wave2StatusPending}
+                    : currentWave === 3
+                      ? strings.waveWindowElapsed
+                      : strings.wave2StatusPending}
+                </Text>
+              </View>
+            </View>
+
+            {/* Wave 3: 6-10 km */}
+            <View style={styles.waveItem}>
+              <View style={styles.waveIndicatorColumn}>
+                <View
+                  style={[
+                    styles.waveStepCircle,
+                    currentWave === 3
+                      ? styles.waveStepCircleActive
+                      : styles.waveStepCirclePending,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.waveStepNumber,
+                      currentWave === 3
+                        ? styles.waveStepNumberActive
+                        : styles.waveStepNumberPending,
+                    ]}
+                  >
+                    3
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.waveDetailsColumn}>
+                <View style={styles.waveTitleRow}>
+                  <Text style={styles.waveTitleText}>{strings.wave3Title}</Text>
+                  <View
+                    style={[
+                      styles.waveStatusTag,
+                      currentWave === 3
+                        ? styles.waveStatusTagActive
+                        : styles.waveStatusTagPending,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.waveStatusTagText,
+                        currentWave === 3
+                          ? styles.waveStatusTagTextActive
+                          : styles.waveStatusTagTextPending,
+                      ]}
+                    >
+                      {currentWave === 3 ? "ACTIVE" : "NEXT"}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.waveSubtitleText}>
+                  {strings.wave3Subtitle}
+                </Text>
+                <Text style={styles.waveStatusDescription}>
+                  {currentWave === 3
+                    ? strings.wave3StatusActive
+                    : strings.wave3StatusPending}
                 </Text>
               </View>
             </View>
@@ -1016,10 +1076,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.slate300,
   },
-  countdownBadgeUrgent: {
-    backgroundColor: colors.emergencyLight,
-    borderColor: colors.emergency,
-  },
   countdownClockIcon: {
     fontSize: 16,
     marginRight: 6,
@@ -1029,9 +1085,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.extrabold,
     color: colors.slate900,
     letterSpacing: 0.5,
-  },
-  countdownTimeTextUrgent: {
-    color: colors.emergencyDark,
   },
   wave2AlertBanner: {
     flexDirection: "row",

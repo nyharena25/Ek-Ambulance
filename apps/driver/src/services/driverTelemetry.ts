@@ -49,20 +49,19 @@ const CENTRIFUGO_WS_URL =
   "ws://localhost:8001/connection/websocket";
 
 /**
- * POST /realtime/token with { scope: "mission:{missionId}", role: "publisher" }
- * per P05 - the gateway signs a `publish: true` claim into the token,
- * distinguishing it from the patient's read-only token on the same channel.
- * Never cache the result; pass this as the client's `getToken` so a
- * reconnect always fetches a fresh one.
+ * POST /realtime/token with { scope: "connect" }: an authenticated CONNECTION token (sub only). Publish authority is not a
+ * token claim any more (6.5, 6.8): in strict mode Centrifugo asks the gateway's publish proxy, which admits GPS pings from
+ * the assigned driver only. `missionId` stays in the signature for the dev minter's legacy behaviour and existing callers.
+ * Never cache the result; pass this as the client's `getToken` so a reconnect always fetches a fresh one.
  */
-export async function fetchPublisherToken(missionId: string, authToken: string): Promise<string> {
+export async function fetchPublisherToken(_missionId: string, authToken: string): Promise<string> {
   const response = await fetch(`${GATEWAY_URL}/realtime/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${authToken}`,
     },
-    body: JSON.stringify({ scope: missionChannelName(missionId), role: "publisher" }),
+    body: JSON.stringify({ scope: "connect" }),
   });
 
   if (!response.ok) {

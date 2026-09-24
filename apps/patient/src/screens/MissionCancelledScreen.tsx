@@ -16,6 +16,9 @@ import { cancellationStrings } from "../i18n/cancellationStrings";
 import { AppIcon } from "../components";
 export interface MissionCancelledScreenProps {
   missionId?: string;
+  /** From the server's MISSION_CANCELLED.data; absent from a pre-v1 publisher, in which case no cause is claimed. */
+  cancelledBy?: "patient" | "driver" | "system";
+  reason?: string;
   initialLanguage?: SupportedLanguage;
   onCall108?: () => void;
   onReturnHome?: () => void;
@@ -35,7 +38,9 @@ export interface MissionCancelledScreenProps {
  * an emergency.
  */
 export default function MissionCancelledScreen({
-  missionId = "MSN-DL-2026-8921",
+  missionId = "",
+  cancelledBy,
+  reason,
   initialLanguage = "en",
   onCall108,
   onReturnHome,
@@ -94,9 +99,9 @@ export default function MissionCancelledScreen({
             <AppIcon icon={{ set: "ion", name: "close-circle" }} size={16} color={colors.white} style={styles.cancelledBadgeIcon} />
             <Text style={styles.cancelledBadgeText}>{strings.cancelledBadge}</Text>
           </View>
-          <Text style={styles.missionIdText}>{strings.missionIdLabel(missionId)}</Text>
+          {missionId ? <Text style={styles.missionIdText}>{strings.missionIdLabel(missionId)}</Text> : null}
           <Text style={styles.cancelledTitle}>{strings.cancelledTitle}</Text>
-          <Text style={styles.cancelledDescription}>{strings.cancelledDescription}</Text>
+          <Text style={styles.cancelledDescription}>{strings.cancelledDescriptionFor(cancelledBy, reason)}</Text>
         </View>
 
         {/* STATUTORY FALLBACK GUIDANCE WITH DIRECT 108 DIALER */}

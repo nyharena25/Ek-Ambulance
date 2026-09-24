@@ -51,6 +51,14 @@ export interface MissionTrackingScreenProps {
   /** Test-flow hook: fires SERVER_DRIVER_ARRIVED via the lifecycle machine.
    *  Mirrors onSimulateTransportStart / ActiveMatchingScreen.onSimulateMatch. */
   onSimulateDriverArrival?: () => void;
+  /** Server-supplied (DRIVER_ACCEPTED.data). Every field is optional and a missing one is hidden, never invented. */
+  assignedDriver?: { displayName?: string; vehicleRegistration?: string; ais125Type?: string; makeModel?: string; color?: string; crewCount?: number };
+  /** Virtual relay number provisioned for this mission. No number => no call button (no fixed placeholder number). */
+  maskedCall?: { number: string; extension?: string };
+  /** Routed ETA from the server; absent => the ETA card is not shown. */
+  etaMinutes?: number;
+  /** Feed health from useMissionChannel: the "live" badge is only shown when this is `live`. */
+  connection?: "live" | "connecting" | "paused";
 }
 
 /**
@@ -70,7 +78,7 @@ export interface MissionTrackingScreenProps {
  * - WCAG AAA compliance, high-contrast typography, and bilingual i18n.
  */
 export default function MissionTrackingScreen({
-  missionId = "MSN-DL-2026-8921",
+  missionId = "",
   vehicleType = "TYPE_D_ALS",
   triagedSymptom = "chest_pain",
   initialLanguage = "en",
@@ -85,16 +93,15 @@ export default function MissionTrackingScreen({
   liveSpeedKmh,
   driverHasArrived = false,
   onSimulateDriverArrival,
+  assignedDriver,
+  maskedCall,
+  etaMinutes,
+  connection = "connecting",
 }: MissionTrackingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const [isGuideExpanded, setIsGuideExpanded] = useState<boolean>(true);
   const [isChatModalVisible, setIsChatModalVisible] = useState<boolean>(false);
   const [chatToastMessage, setChatToastMessage] = useState<string | null>(null);
-
-  // ETA/distance are still static illustrative figures: DriverTelemetry carries no eta/distance and the
-  // route's own distance/duration is not wired in yet (HANDOVER §23).
-  const etaMinutes = 5;
-  const distanceKm = 1.8;
 
   const strings = trackingStrings[language];
 
@@ -113,22 +120,12 @@ export default function MissionTrackingScreen({
       onCallDriver();
       return;
     }
-    // Telephony masked relay number (Exotel / Twilio privacy proxy)
-    const maskedTel = "tel:+911140840000";
-    Linking.canOpenURL(maskedTel)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(maskedTel);
-        } else {
-          Alert.alert(
-            strings.callDriverButton,
-            "Masked Privacy Relay: +91 11 4084 0000 (Ext: 892)"
-          );
-        }
-      })
-      .catch(() => {
-        Alert.alert(strings.callDriverButton, "Calling Driver Relay...");
-      });
+    // Only ever the number the server provisioned for this mission; the button is not rendered without one.
+    if (!maskedCall) return;
+    const maskedTel = `tel:${maskedCall.number}${maskedCall.extension ? `,${maskedCall.extension}` : ""}`;
+    Linking.openURL(maskedTel).catch(() => {
+      Alert.alert(strings.callDriverButton, maskedCall.number);
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -249,7 +246,7 @@ export default function MissionTrackingScreen({
           route={route}
           driverMarkerRef={driverMarkerRef}
           driverStart={driverStart}
-          speedLabel={strings.speedIndicator(liveSpeedKmh ?? 46)}
+          speedLabel={liveSpeedKmh != null ? strings.speedIndicator(liveSpeedKmh) : "-- km/h"}
           onCall108={handleCall108}
           overlays={
             <>
@@ -257,27 +254,23 @@ export default function MissionTrackingScreen({
               <View style={styles.centrifugoBadge}>
                 <View style={styles.centrifugoPulseDot} />
                 <Text style={styles.centrifugoBadgeText}>
-                  {strings.centrifugoLiveBadge}
+                  {connection === "live" ? strings.centrifugoLiveBadge : connection === "connecting" ? strings.trackingConnectingBadge : strings.trackingPausedBadge}
                 </Text>
               </View>
 
-              {/* LIVE TRAFFIC ETA BANNER OVERLAY */}
-              <View style={styles.trafficEtaCard}>
-                <View style={styles.trafficEtaTopRow}>
-                  <Text style={styles.trafficEtaMain}>
-                    {strings.trafficEtaLabel(
-                      etaMinutes,
-                      distanceKm
+              {/* ETA is shown only when the server supplied one; no traffic or corridor claims are made. */}
+              {etaMinutes !== undefined && (
+                <View style={styles.trafficEtaCard}>
+                  <View style={styles.trafficEtaTopRow}>
+                    <Text style={styles.trafficEtaMain}>{strings.etaOnlyLabel(etaMinutes)}</Text>
+                    {connection === "live" && (
+                      <View style={styles.trafficStatusBadge}>
+                        <Text style={styles.trafficStatusBadgeText}>{strings.liveGpsBadge}</Text>
+                      </View>
                     )}
-                  </Text>
-                  <View style={styles.trafficStatusBadge}>
-                    <Text style={styles.trafficStatusBadgeText}>{strings.liveGpsBadge}</Text>
                   </View>
                 </View>
-                <Text style={styles.trafficCorridorNoticeText}>
-                  {strings.trafficCorridorNotice}
-                </Text>
-              </View>
+              )}
             </>
           }
         />
@@ -376,33 +369,27 @@ export default function MissionTrackingScreen({
           </View>
 
           {/* 2. DRIVER PROFILE & CREDENTIALS CARD */}
-          <View style={styles.card}>
-            <Text style={styles.cardSectionLabel}>
-              {strings.driverSectionTitle}
-            </Text>
-            <View style={styles.driverProfileRow}>
-              <View style={styles.driverAvatarBadge}>
-                <AppIcon icon={{ set: "ion", name: "man" }} size={26} color={colors.slate700} style={styles.driverAvatarEmoji} />
-                <View style={styles.driverOnlineDot} />
-              </View>
-
-              <View style={styles.driverInfoColumn}>
-                <View style={styles.driverNameRow}>
-                  <Text style={styles.driverNameText}>{strings.driverName}</Text>
-                  <View style={styles.verifiedBadge}>
-                    <Text style={styles.verifiedBadgeText}>{strings.verifiedBadgeShort}</Text>
-                  </View>
+          {assignedDriver?.displayName && (
+            <View style={styles.card}>
+              <Text style={styles.cardSectionLabel}>
+                {strings.driverSectionTitle}
+              </Text>
+              <View style={styles.driverProfileRow}>
+                <View style={styles.driverAvatarBadge}>
+                  <AppIcon icon={{ set: "ion", name: "man" }} size={26} color={colors.slate700} style={styles.driverAvatarEmoji} />
                 </View>
 
-                <Text style={styles.driverRoleText}>
-                  {strings.driverRoleBadge}
-                </Text>
-                <Text style={styles.driverRatingText}>
-                  {strings.driverRatingText(4.95, 1240)}
-                </Text>
+                <View style={styles.driverInfoColumn}>
+                  <View style={styles.driverNameRow}>
+                    <Text style={styles.driverNameText}>{assignedDriver.displayName}</Text>
+                    <View style={styles.verifiedBadge}>
+                      <Text style={styles.verifiedBadgeText}>{strings.verifiedBadgeShort}</Text>
+                    </View>
+                  </View>
+                </View>
               </View>
             </View>
-          </View>
+          )}
 
           {/* 3. AMBULANCE LICENSE PLATE & AIS-125 CARE TIER */}
           <View style={styles.card}>
@@ -412,14 +399,14 @@ export default function MissionTrackingScreen({
 
             <View style={styles.vehicleRow}>
               {/* Indian High-Security Registration Plate (HSRP) */}
-              <View style={styles.hsrpPlate}>
-                <View style={styles.hsrpIndStrip}>
-                  <Text style={styles.hsrpIndText}>IND</Text>
+              {assignedDriver?.vehicleRegistration && (
+                <View style={styles.hsrpPlate}>
+                  <View style={styles.hsrpIndStrip}>
+                    <Text style={styles.hsrpIndText}>IND</Text>
+                  </View>
+                  <Text style={styles.hsrpNumberText}>{assignedDriver.vehicleRegistration}</Text>
                 </View>
-                <Text style={styles.hsrpNumberText}>
-                  {strings.licensePlateNumber}
-                </Text>
-              </View>
+              )}
 
               {/* AIS-125 Tier Tag */}
               <View style={styles.careTierPill}>
@@ -428,6 +415,12 @@ export default function MissionTrackingScreen({
                 </Text>
               </View>
             </View>
+
+            {/* What the crew entered on their Profile, so the patient can recognise the ambulance when it arrives */}
+            {(assignedDriver?.makeModel || assignedDriver?.color) && (
+              <Text style={styles.driverNameText}>{[assignedDriver.makeModel, assignedDriver.color].filter(Boolean).join(" · ")}</Text>
+            )}
+            {assignedDriver?.crewCount !== undefined && <Text style={styles.equipmentItemText}>{strings.crewSize(assignedDriver.crewCount)}</Text>}
 
             {/* Equipment Badges */}
             <View style={styles.equipmentGrid}>
@@ -456,7 +449,8 @@ export default function MissionTrackingScreen({
 
           {/* 4. COMMUNICATION ACTIONS (MASKED PHONE & EMERGENCY CHAT) */}
           <View style={styles.actionButtonsRow}>
-            {/* One-Touch Masked Phone Call Button */}
+            {/* One-Touch Masked Phone Call Button: only when the server provisioned a relay number */}
+            {(maskedCall || onCallDriver) && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={strings.callDriverButton}
@@ -476,6 +470,7 @@ export default function MissionTrackingScreen({
                 </Text>
               </View>
             </Pressable>
+            )}
 
             {/* Emergency Chat Trigger */}
             <Pressable

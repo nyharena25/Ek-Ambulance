@@ -1,6 +1,16 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
+import { isUuid } from "@sahayak/domain";
 import { supabase } from "../lib/supabaseClient";
+
+/**
+ * The access token, but only for a session the server can verify. The `__DEV__` mock login writes a fake session
+ * (`dev-patient-uuid`, `dev-mock-access-token`) that no RLS policy, token minter or RPC would accept, so it must not be
+ * treated as "signed in" for anything that reaches the server.
+ */
+export function realAccessToken(session: Session | null): string | null {
+  return session && isUuid(session.user.id) ? session.access_token : null;
+}
 
 export interface PatientAuthStoreState {
   session: Session | null;

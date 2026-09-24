@@ -14,8 +14,9 @@
     "adb:reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8082 tcp:8082 && adb reverse tcp:8000 tcp:8000 && adb reverse tcp:8001 tcp:8001",
     "services:up": "docker compose up -d",
     "services:down": "docker compose down",
-    "test:schema": "node --experimental-strip-types supabase/tests/schema_validation.test.ts",
-    "preflight": "turbo run typecheck lint test --force"
+    "test:schema": "node --experimental-strip-types supabase/tests/schema_validation.test.ts && node --experimental-strip-types supabase/tests/data_sync_schema.test.ts",
+    "test:gateway": "node --experimental-strip-types docker/mock-gateway/gateway.test.mjs",
+    "preflight": "turbo run typecheck lint test --force && pnpm test:schema && pnpm test:gateway"
   },
   "devDependencies": {
     "turbo": "^2.1.3",

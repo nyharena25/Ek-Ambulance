@@ -45,6 +45,7 @@ export interface DriverMissionOfferTranslation {
   // Patient Primary Symptom Summary
   patientSectionTitle: string;
   symptomSummaryLabel: string;
+  symptomNotProvided: string;
   vitalsOverviewLabel: string;
   patientDemographics: (age: number, gender: string) => string;
   vitalsConscious: string;
@@ -162,6 +163,7 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     // Patient Symptoms
     patientSectionTitle: "Patient Clinical Complaint & Triage Summary",
     symptomSummaryLabel: "Primary Reported Symptom",
+    symptomNotProvided: "No symptom details were provided",
     vitalsOverviewLabel: "Field Triage Status",
     patientDemographics: (age, gender) => `${gender}, approx. ${age} years old`,
     vitalsConscious: "Consciousness: Responding to voice",
@@ -251,6 +253,7 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     // Patient Symptoms
     patientSectionTitle: "मरीज की प्राथमिक शिकायत एवं ट्रायज सारांश",
     symptomSummaryLabel: "मुख्य रिपोर्टेड लक्षण",
+    symptomNotProvided: "लक्षणों की कोई जानकारी नहीं दी गई",
     vitalsOverviewLabel: "फील्ड ट्रायज स्थिति",
     patientDemographics: (age, gender) => `${gender === "Male" ? "पुरुष" : "महिला"}, लगभग ${age} वर्ष`,
     vitalsConscious: "चेतना: आवाज पर प्रतिक्रिया दे रहे हैं",

@@ -13,8 +13,8 @@
     {
       "name": "mission",
       "allow_publish_for_client": true,
-      "history_size": 20,
-      "history_ttl": "300s",
+      "history_size": 250,
+      "history_ttl": "600s",
       "force_recovery": true
     },
     {

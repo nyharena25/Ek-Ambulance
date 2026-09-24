@@ -20,6 +20,9 @@ export interface TrackingTranslation {
   screenTitle: string;
   missionIdLabel: (id: string) => string;
   centrifugoLiveBadge: string;
+  trackingConnectingBadge: string;
+  trackingPausedBadge: string;
+  etaOnlyLabel: (mins: number) => string;
   centrifugoConnectingBadge: string;
   languageToggleLabel: string;
   englishLabel: string;
@@ -50,6 +53,8 @@ export interface TrackingTranslation {
 
   // Ambulance Card
   vehicleSectionTitle: string;
+  /** "Force Traveller · White" line under the plate, and the crew size. */
+  crewSize: (count: number) => string;
   licensePlateLabel: string;
   licensePlateNumber: string;
   careTierBadge: string;
@@ -94,7 +99,10 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
   en: {
     screenTitle: "Live Mission Tracking",
     missionIdLabel: (id: string) => `Mission ID: ${id}`,
-    centrifugoLiveBadge: "Centrifugo WS: Live (28ms)",
+    centrifugoLiveBadge: "Live tracking",
+    trackingConnectingBadge: "Connecting to live tracking...",
+    trackingPausedBadge: "Live tracking paused - last position shown",
+    etaOnlyLabel: (mins: number) => `${mins} MINS`,
     centrifugoConnectingBadge: "Centrifugo WS: Connecting...",
     languageToggleLabel: "Language Switch",
     englishLabel: "EN",
@@ -121,6 +129,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     verifiedBadgeShort: "VERIFIED",
 
     vehicleSectionTitle: "AMBULANCE SPECIFICATION",
+    crewSize: (count) => `Crew on board: ${count}`,
     licensePlateLabel: "HSRP REGISTRATION",
     licensePlateNumber: "DL 1E AM 4092",
     careTierBadge: "Type D - Advanced Life Support (ALS)",
@@ -335,7 +344,10 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
   hi: {
     screenTitle: "लाइव मिशन ट्रैकिंग",
     missionIdLabel: (id: string) => `मिशन आईडी: ${id}`,
-    centrifugoLiveBadge: "सेंट्रीफ्यूगो WS: लाइव (28ms)",
+    centrifugoLiveBadge: "लाइव ट्रैकिंग",
+    trackingConnectingBadge: "लाइव ट्रैकिंग से जुड़ रहा है...",
+    trackingPausedBadge: "लाइव ट्रैकिंग रुकी है - आख़िरी स्थिति दिखाई गई",
+    etaOnlyLabel: (mins: number) => `${mins} मिनट`,
     centrifugoConnectingBadge: "सेंट्रीफ्यूगो WS: संपर्क स्थापित हो रहा है...",
     languageToggleLabel: "भाषा चयन",
     englishLabel: "EN",
@@ -362,6 +374,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     verifiedBadgeShort: "सत्यापित",
 
     vehicleSectionTitle: "एंबुलेंस विशिष्टता",
+    crewSize: (count) => `टीम में लोग: ${count}`,
     licensePlateLabel: "HSRP नंबर प्लेट",
     licensePlateNumber: "DL 1E AM 4092",
     careTierBadge: "टाइप D - एडवांस्ड लाइफ सपोर्ट (ALS)",

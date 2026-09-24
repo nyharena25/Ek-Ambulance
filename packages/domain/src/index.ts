@@ -7,5 +7,8 @@ export * from "./state-machine/patientLifecycle.machine.ts";
 export * from "./state-machine/driverLifecycle.types.ts";
 export * from "./state-machine/driverLifecycle.ts";
 export * from "./mission-channel/index.ts";
+export * from "./dispatch/index.ts";
+export * from "./dispatch/board.ts";
+export * from "./api/index.ts";
 export * from "./services/routingService.ts";
 export * from "./services/navigationLinks.ts";

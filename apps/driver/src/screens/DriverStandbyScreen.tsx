@@ -14,16 +14,25 @@ import { colors, semanticColors, typography, spacing, radii, shadows } from "@sa
 import { driverStandbyStrings } from "../i18n/driverStandbyStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
-import { AppIcon, DriverMap } from "../components";
+import { driverBookingStrings } from "../i18n/driverBookingStrings";
+import { useDriverProfileStore } from "../state/driverProfile.store";
+import { useDriverLifecycleStore } from "../state/driverLifecycle.store";
+import { isProfileLocked } from "../state/driverAvailability.core";
+
+import { AppIcon, DriverMap, StandbyBookingSection } from "../components";
 export interface DriverStandbyScreenProps {
   onSimulateOffer?: () => void;
   onNavigateToOnboarding?: () => void;
+  onOpenBooking?: () => void;
+  onOpenProfile?: () => void;
 }
 
 
 export default function DriverStandbyScreen({
   onSimulateOffer,
   onNavigateToOnboarding,
+  onOpenBooking,
+  onOpenProfile,
 }: DriverStandbyScreenProps) {
   const {
     isOnline,
@@ -49,6 +58,9 @@ export default function DriverStandbyScreen({
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
   const strings = driverStandbyStrings[language];
   const ais125Info = strings.ais125TierBadge[registeredAis125Type];
+  const profile = useDriverProfileStore((s) => s.profile);
+  // The service area is part of the profile: the chips freeze from the offer to the end of the mission.
+  const profileLocked = isProfileLocked(useDriverLifecycleStore((s) => s.currentState));
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -56,7 +68,12 @@ export default function DriverStandbyScreen({
 
       {/* TOP NAVBAR & PILOT PROFILE */}
       <View style={styles.header}>
-        <View style={styles.pilotProfileRow}>
+        <Pressable
+          style={styles.pilotProfileRow}
+          onPress={onOpenProfile}
+          accessibilityRole="button"
+          accessibilityLabel={driverBookingStrings[language].profileEntry}
+        >
           <View
             style={[
               styles.pilotAvatarBox,
@@ -72,11 +89,14 @@ export default function DriverStandbyScreen({
             />
           </View>
           <View style={styles.pilotTextWrap}>
-            <Text style={styles.pilotName}>{strings.driverName}</Text>
+            {/* strings.driverName is a demo identity: only a development build may show it. A real driver with no name yet sees the Profile label. */}
+            <Text style={styles.pilotName}>{profile?.fullName || (__DEV__ ? strings.driverName : driverBookingStrings[language].profileEntry)}</Text>
             <View style={styles.plateRow}>
-              <View style={styles.plateMiniBadge}>
-                <Text style={styles.plateMiniText}>{strings.vehiclePlate}</Text>
-              </View>
+              {(profile?.vehicle.registrationNumber || __DEV__) && (
+                <View style={styles.plateMiniBadge}>
+                  <Text style={styles.plateMiniText}>{profile?.vehicle.registrationNumber || strings.vehiclePlate}</Text>
+                </View>
+              )}
               <Pressable
                 onPress={onNavigateToOnboarding}
                 style={styles.manageFleetBtn}
@@ -85,7 +105,7 @@ export default function DriverStandbyScreen({
               </Pressable>
             </View>
           </View>
-        </View>
+        </Pressable>
 
         {/* Language Toggle Button */}
         <Pressable
@@ -121,7 +141,9 @@ export default function DriverStandbyScreen({
         </Pressable>
       </View>
 
-      {/* AMBIENT HARDWARE TELEMETRY STRIP (BATTERY & GPS SIGNAL QUALITY) */}
+      {/* AMBIENT HARDWARE TELEMETRY STRIP (BATTERY & GPS SIGNAL QUALITY): the values are simulated (no battery or satellite
+          source exists), so a release build does not show them (D-UX-01). */}
+      {__DEV__ && (
       <View style={styles.telemetryBar}>
         {/* Battery Monitor */}
         <Pressable
@@ -187,6 +209,7 @@ export default function DriverStandbyScreen({
           </View>
         </Pressable>
       </View>
+      )}
 
       {/* CRITICAL LOW BATTERY WARNING (IF < 20%) */}
       {battery.percentage < 20 && (
@@ -335,6 +358,9 @@ export default function DriverStandbyScreen({
 
         </View>
 
+        {/* BOOKING BOARD: entry with a live count, and the 10 km fallback when nobody nearer answered */}
+        <StandbyBookingSection onOpenBooking={onOpenBooking} />
+
         {/* ACTIVE SERVICE AREA MAP & LIVE GPS HUD */}
         <View style={styles.mapSectionCard}>
           <View style={styles.mapSectionHeader}>
@@ -380,7 +406,9 @@ export default function DriverStandbyScreen({
               style={[
                 styles.jurChip,
                 currentJurisdiction === "UP_NOIDA" && styles.jurChipActive,
+                profileLocked && styles.jurChipLocked,
               ]}
+              disabled={profileLocked}
               onPress={() => setJurisdiction("UP_NOIDA")}
             >
               <View style={styles.jurChipTop}>
@@ -414,7 +442,9 @@ export default function DriverStandbyScreen({
               style={[
                 styles.jurChip,
                 currentJurisdiction === "DL_SOUTH" && styles.jurChipActive,
+                profileLocked && styles.jurChipLocked,
               ]}
+              disabled={profileLocked}
               onPress={() => setJurisdiction("DL_SOUTH")}
             >
               <View style={styles.jurChipTop}>
@@ -487,7 +517,9 @@ export default function DriverStandbyScreen({
 
         </View>
 
-        {/* DAILY COMPLETED MISSIONS & SHIFT STATISTICS */}
+        {/* DAILY COMPLETED MISSIONS & SHIFT STATISTICS: seeded fiction (4 missions, Rs 3,450, a fixed "recent mission")
+            until an earnings model exists, so development builds only (D-UX-01). */}
+        {__DEV__ && (
         <View style={styles.statsCard}>
           <Text style={styles.statsTitle}>{strings.dailyStatsTitle}</Text>
           <View style={styles.statsGrid}>
@@ -561,6 +593,7 @@ export default function DriverStandbyScreen({
             </Text>
           </View>
         </View>
+        )}
 
         {/* DISPATCH OFFER SIMULATION TRIGGER (TESTING) */}
         {onSimulateOffer && (
@@ -1237,6 +1270,9 @@ const styles = StyleSheet.create({
   jurChipActive: {
     borderColor: colors.info,
     backgroundColor: colors.infoLight,
+  },
+  jurChipLocked: {
+    opacity: 0.5,
   },
   jurChipTop: {
     flexDirection: "row",

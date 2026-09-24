@@ -6,7 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types src/state-machine/patientLifecycle.machine.test.ts && node --experimental-strip-types src/state-machine/driverLifecycle.test.ts && node --experimental-strip-types src/services/routingService.test.ts"
+    "test": "node --experimental-strip-types src/state-machine/patientLifecycle.machine.test.ts && node --experimental-strip-types src/state-machine/driverLifecycle.test.ts && node --experimental-strip-types src/services/routingService.test.ts && node --experimental-strip-types src/dataSync.test.ts && node --experimental-strip-types src/dispatch/board.test.ts"
   },
   "devDependencies": {
     "@sahayak/config": "workspace:*",

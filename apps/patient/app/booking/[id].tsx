@@ -8,6 +8,7 @@ import {
 } from "../../src/screens";
 import {
   AIS125VehicleType,
+  ItemizedStatutoryFare,
   Jurisdiction,
   PatientLifecycleState,
   TriageSymptomFlag,
@@ -18,14 +19,10 @@ import {
 import { returnHome } from "../../src/navigation/returnHome";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 import { usePatientAuthStore } from "../../src/state/patientAuth.store";
-import {
-  useMissionChannel,
-  type MissionLifecycleEventType,
-} from "../../src/hooks/useMissionChannel";
-import { translateLifecycleEvent } from "../../src/services/missionLifecycleBridge";
+import { useMissionSync } from "../../src/hooks/useMissionSync";
 import type { DriverMarkerHandle } from "../../src/components";
 import { useDrivingRoute } from "../../src/hooks/useDrivingRoute";
-import { DEFAULT_PICKUP, DISPATCH_HUB, findHospital, parseCoordinate } from "../../src/services/mapGeo.core";
+import { DEFAULT_PICKUP, DISPATCH_HUB, findHospital, formatCoordinates, parseCoordinate } from "../../src/services/mapGeo.core";
 
 
 /**
@@ -57,7 +54,6 @@ export default function BookingMissionTrackingRoute() {
   }>();
   const currentState = usePatientLifecycleStore((s) => s.currentState);
   const context = usePatientLifecycleStore((s) => s.context);
-  const send = usePatientLifecycleStore((s) => s.send);
   const resetLifecycle = usePatientLifecycleStore((s) => s.reset);
 
   // `cancelled` and `receiptConfirmed` are both terminal in the machine (no
@@ -71,20 +67,17 @@ export default function BookingMissionTrackingRoute() {
   // the actor has still processed real events by then - "idle" is the only
   // state a genuinely cold store (no events sent this session) can be in.
   const isStoreWarm = currentState !== "idle";
-  const missionId = context.missionId || params.id || "MSN-DL-2026-8921";
+  // No invented fallback id: a deep link without an id and a cold store simply has no mission to show.
+  const missionId = context.missionId || params.id || "";
 
   // Live pings glide the native map marker through this handle; no screen re-renders per ping.
   const driverMarkerRef = useRef<DriverMarkerHandle>(null);
   const lastDriverRef = useRef<GeoPoint | null>(null);
 
-  const handleLifecycleEvent = (event: MissionLifecycleEventType, eventMissionId: string) => {
-    send(translateLifecycleEvent(event, eventMissionId));
-  };
-
   const sessionAccessToken = usePatientAuthStore((s) => s.session?.access_token ?? null);
 
-  const { throttledTelemetry, mockControls } = useMissionChannel({
-    missionId,
+  const { throttledTelemetry, mockControls, connection } = useMissionSync({
+    missionId: missionId || null,
     // Task 4.1: the real, verified session JWT now authorizes the
     // Centrifugo subscription directly - null only for a patient who
     // reached this screen via the anonymous "quick emergency access" path
@@ -95,14 +88,11 @@ export default function BookingMissionTrackingRoute() {
       lastDriverRef.current = telemetry;
       driverMarkerRef.current?.moveTo(telemetry, telemetry.heading);
     },
-    onLifecycleEvent: handleLifecycleEvent,
   });
   const vehicleType: AIS125VehicleType =
     context.vehicleType || (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
   const jurisdiction: Jurisdiction =
     context.jurisdiction || (params.jurisdiction as Jurisdiction) || "DL";
-  const pickupAddress =
-    params.address || "AIIMS New Delhi, Main Emergency Ward";
   // Every computeTriageUrgency() branch returns >=1 symptomFlags entry, so
   // symptomFlags[0] cannot actually be undefined for a real triage result -
   // this optional chain and the "chest_pain" terminal only matter for a raw
@@ -117,10 +107,18 @@ export default function BookingMissionTrackingRoute() {
     : (params.state as PatientLifecycleState) || "tracking";
 
   const pickup = parseCoordinate(params.lat, params.lon, DEFAULT_PICKUP);
-  const hospital = findHospital(params.hospitalName || "Jai Prakash Narayan Apex Trauma Center, AIIMS");
+  const pickupAddress = params.address || formatCoordinates(pickup);
+  // The hospital is whatever the driver actually selected (TRANSPORT_STARTED.destination); a route param is only a
+  // dev/deep-link hint, and with neither there is no hospital to show (P10: nothing sets it today).
+  const hospitalName = context.destination?.name ?? params.hospitalName;
+  const hospitalCoordinate = context.destination
+    ? { latitude: context.destination.latitude, longitude: context.destination.longitude }
+    : hospitalName
+      ? findHospital(hospitalName).coordinate
+      : pickup;
   const dispatchHub = DISPATCH_HUB[jurisdiction] ?? DISPATCH_HUB.DL;
   const isTransportLeg = missionState === "transporting";
-  const route = useDrivingRoute(isTransportLeg ? pickup : dispatchHub, isTransportLeg ? hospital.coordinate : pickup);
+  const route = useDrivingRoute(isTransportLeg ? pickup : dispatchHub, isTransportLeg ? hospitalCoordinate : pickup);
   const mapProps = { pickup, route, driverMarkerRef, driverStart: lastDriverRef.current ?? (isTransportLeg ? pickup : dispatchHub) };
 
   const handleBack = () => {
@@ -136,11 +134,10 @@ export default function BookingMissionTrackingRoute() {
       <MissionCompletionScreen
         missionId={missionId}
         pickupAddress={pickupAddress}
-        hospitalName={
-          params.hospitalName ||
-          "Jai Prakash Narayan Apex Trauma Center, AIIMS"
-        }
+        hospitalName={hospitalName}
+        completedAt={context.completion?.completedAt}
         fareDetails={
+          (context.completion?.fareDetails as ItemizedStatutoryFare | undefined) ||
           context.fareDetails ||
           computeItemizedStatutoryFare({
             vehicleType,
@@ -158,6 +155,8 @@ export default function BookingMissionTrackingRoute() {
     return (
       <MissionCancelledScreen
         missionId={missionId}
+        cancelledBy={context.cancellation?.cancelledBy ?? undefined}
+        reason={context.cancellation?.reason ?? undefined}
         initialLanguage="en"
         onReturnHome={handleReturnHome}
       />
@@ -169,11 +168,10 @@ export default function BookingMissionTrackingRoute() {
       <TransportingScreen
         missionId={missionId}
         vehicleType={vehicleType}
-        hospitalName={
-          params.hospitalName ||
-          "Jai Prakash Narayan Apex Trauma Center, AIIMS"
-        }
-        wardStatus={params.wardStatus || "Trauma ICU Alerted - Bed Held"}
+        hospitalName={hospitalName}
+        wardStatus={context.wardStatus ?? params.wardStatus}
+        hospitalArrived={context.hospitalArrived}
+        connection={connection}
         initialLanguage="en"
         onBack={handleBack}
         {...mapProps}
@@ -193,6 +191,10 @@ export default function BookingMissionTrackingRoute() {
       {...mapProps}
       liveSpeedKmh={throttledTelemetry?.speed ?? null}
       driverHasArrived={context.driverHasArrived}
+      assignedDriver={context.assignedDriver ?? undefined}
+      maskedCall={context.maskedCall ?? undefined}
+      etaMinutes={context.etaMinutes ?? undefined}
+      connection={connection}
       onSimulateDriverArrival={mockControls?.triggerDriverArrived}
       onSimulateTransportStart={mockControls?.triggerTransportStarted}
     />

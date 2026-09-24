@@ -57,8 +57,9 @@ export default function PhoneAuthScreen({
   const [isTimerActive, setIsTimerActive] = useState(false);
 
   // DPDP Act 2023 Statutory Consent Checkboxes
-  const [consentGeolocation, setConsentGeolocation] = useState(true);
-  const [consentMedical, setConsentMedical] = useState(true);
+  // Consent must be an affirmative act (DPDP): the boxes start unticked.
+  const [consentGeolocation, setConsentGeolocation] = useState(false);
+  const [consentMedical, setConsentMedical] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
 
   // Backend Supabase GoTrue Hook

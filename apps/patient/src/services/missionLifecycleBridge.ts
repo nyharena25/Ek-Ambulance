@@ -1,36 +1,60 @@
-import type { PatientLifecycleMachineEvent } from "@sahayak/domain";
-import type { MissionLifecycleEventType } from "../hooks/useMissionChannel";
+import {
+  readDriverAccepted,
+  readMissionCancelled,
+  readMissionCompleted,
+  readTransportStarted,
+  type MissionLifecycleEventType,
+  type ParsedLifecycleMessage,
+  type PatientLifecycleMachineEvent,
+} from "@sahayak/domain";
 
 /**
- * Translates Centrifugo's wire vocabulary (MissionLifecycleEventType) into
- * the domain machine's own SERVER_* / CANCEL event vocabulary (unchanged
- * since Step 5, already tested there). Pulled out of booking/[id].tsx so
- * the Phase 5 golden-path integration test exercises this exact function
- * rather than a re-implementation of it - a copy could drift from the
- * real route's logic and the test would never catch it.
+ * Translates the wire vocabulary into the domain machine's SERVER_* events.
+ *
+ * `missionId` is ALWAYS the mission the subscription is mounted for, never the payload's (7.5 rule 6): a forged or
+ * mismatched payload cannot rewrite machine context. Server-supplied facts (driver, destination, fare, who cancelled)
+ * travel with the event; anything the server did not send stays absent so screens omit it instead of inventing it.
+ * Pulled out of booking/[id].tsx so the integration tests exercise this exact function.
  */
-export function translateLifecycleEvent(
-  event: MissionLifecycleEventType,
+export function translateLifecycleMessage(
+  message: Pick<ParsedLifecycleMessage, "event" | "data">,
   missionId: string
 ): PatientLifecycleMachineEvent {
-  switch (event) {
-    case "DRIVER_ACCEPTED":
-      return { type: "SERVER_MISSION_ASSIGNED", payload: { missionId } };
+  const data = message.data ?? {};
+  switch (message.event) {
+    case "DRIVER_ACCEPTED": {
+      const d = readDriverAccepted(data);
+      const hasDriver = d.driver.displayName || d.driver.vehicleRegistration || d.driver.ais125Type;
+      return {
+        type: "SERVER_MISSION_ASSIGNED",
+        payload: { missionId, driver: hasDriver ? d.driver : undefined, maskedCall: d.maskedCall, etaMinutes: d.etaMinutes },
+      };
+    }
     case "DRIVER_ARRIVED":
       return { type: "SERVER_DRIVER_ARRIVED", payload: { missionId } };
-    case "TRANSPORT_STARTED":
-      return { type: "SERVER_TRANSPORT_STARTED", payload: { missionId } };
-    case "MISSION_COMPLETED":
-      return { type: "SERVER_MISSION_COMPLETED", payload: { missionId } };
-    case "MISSION_CANCELLED":
+    case "TRANSPORT_STARTED": {
+      const t = readTransportStarted(data);
       return {
-        type: "CANCEL",
-        payload: {
-          missionId,
-          reason: "other",
-          reasonNote: "Cancelled by dispatch or driver",
-          cancelledAt: new Date().toISOString(),
-        },
+        type: "SERVER_TRANSPORT_STARTED",
+        payload: { missionId, destination: t.destination, etaMinutes: t.etaMinutes, wardStatus: t.wardStatus },
       };
+    }
+    case "HOSPITAL_ARRIVED":
+      return { type: "SERVER_HOSPITAL_ARRIVED", payload: { missionId } };
+    case "MISSION_COMPLETED":
+      return { type: "SERVER_MISSION_COMPLETED", payload: { missionId, completion: readMissionCompleted(data) } };
+    case "MISSION_CANCELLED":
+      return { type: "SERVER_MISSION_CANCELLED", payload: { missionId, ...readMissionCancelled(data) } };
+    case "DRIVER_RELEASED":
+      return { type: "SERVER_DRIVER_RELEASED", payload: { missionId } };
   }
+}
+
+/** Back-compat entry point for callers that only have the event name (the dev mock channel, older tests). */
+export function translateLifecycleEvent(
+  event: MissionLifecycleEventType,
+  missionId: string,
+  data: Record<string, unknown> = {}
+): PatientLifecycleMachineEvent {
+  return translateLifecycleMessage({ event, data }, missionId);
 }

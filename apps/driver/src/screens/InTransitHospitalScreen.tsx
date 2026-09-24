@@ -46,7 +46,6 @@ const SLIDER_TRACK_PADDING = 4;
 // throughout the driver app, so this is the same class of demo constant as
 // DEFAULT_DISPATCH_DISTANCE_KM in the patient app's fare engine, not a
 // live-tracked odometer reading.
-const TOTAL_MISSION_DISTANCE_KM = 5.6;
 
 export default function InTransitHospitalScreen({
   missionId = "MSN-2026-8819",
@@ -69,18 +68,19 @@ export default function InTransitHospitalScreen({
   const [isReceiptView, setIsReceiptView] = useState(false);
 
   // Sign-Off Form Fields
-  const [physicianName, setPhysicianName] = useState("Dr. A. K. Singhal, MD");
-  const [medicalRegNo, setMedicalRegNo] = useState("DMC/R/14298");
-  const [department, setDepartment] = useState("Apex Trauma & Resuscitation Unit");
-  const [isEmtSigned, setIsEmtSigned] = useState(true);
-  const [checklistBed, setChecklistBed] = useState(true);
-  const [checklistVentilator, setChecklistVentilator] = useState(true);
-  const [checklistEmr, setChecklistEmr] = useState(true);
+  // D-UX-03: a statutory sign-off starts empty and unticked. It used to be pre-filled with a named physician, a registration
+  // number and every box ticked, so a driver could "sign off" without typing or checking anything.
+  const [physicianName, setPhysicianName] = useState("");
+  const [medicalRegNo, setMedicalRegNo] = useState("");
+  const [department, setDepartment] = useState("");
+  const [isEmtSigned, setIsEmtSigned] = useState(false);
+  const [checklistBed, setChecklistBed] = useState(false);
+  const [checklistVentilator, setChecklistVentilator] = useState(false);
+  const [checklistEmr, setChecklistEmr] = useState(false);
   const [isSubmittingSignOff, setIsSubmittingSignOff] = useState(false);
+  const isSignOffComplete = physicianName.trim() !== "" && medicalRegNo.trim() !== "" && department.trim() !== "";
 
   const strings = driverTransportStrings[language];
-
-  const finalCalculatedFare = 1850;
 
   // Slider animation values
   const sliderWidth = SCREEN_WIDTH - spacing.base * 2;
@@ -146,6 +146,7 @@ export default function InTransitHospitalScreen({
   // the mission is not actually completed (COMPLETE_MISSION) until the
   // driver confirms the receipt below.
   const handleSubmitSignOff = async () => {
+    if (!isSignOffComplete) return;
     setIsSubmittingSignOff(true);
     await new Promise((res) => setTimeout(res, 900));
 
@@ -157,18 +158,21 @@ export default function InTransitHospitalScreen({
   // completes (arrivedHospital -> standby) and daily shift metrics update.
   const handleCompleteAndReturn = () => {
     useDriverStandbyStore.setState((state) => ({
-      dailyMetrics: {
-        ...state.dailyMetrics,
-        completedMissions: state.dailyMetrics.completedMissions + 1,
-        revenueInr: state.dailyMetrics.revenueInr + finalCalculatedFare,
-      },
+      dailyMetrics: { ...state.dailyMetrics, completedMissions: state.dailyMetrics.completedMissions + 1 },
     }));
 
+    // The fare is computed by the server from the measured transport leg (D-2); the driver never sends one.
     const payload: CompleteMissionPayload = {
       missionId,
       driverId: "DRV-DL-8821",
-      finalFareInr: finalCalculatedFare,
       completedAt: new Date().toISOString(),
+      handoff: {
+        physicianName: physicianName.trim(),
+        registrationNumber: medicalRegNo.trim(),
+        department: department.trim(),
+        emtSigned: isEmtSigned,
+        checklist: { bedReady: checklistBed, ventilatorReady: checklistVentilator, emrHanded: checklistEmr },
+      },
     };
 
     if (onCompleteMission) {
@@ -480,14 +484,6 @@ export default function InTransitHospitalScreen({
                 <Text style={styles.tariffHeading}>
                   {strings.statutoryTariffHeading}
                 </Text>
-                <Text style={styles.tariffLine}>{strings.baseTariffLabel}</Text>
-                <Text style={styles.tariffLine}>
-                  {strings.distanceTariffLabel(54)}
-                </Text>
-                <View style={styles.tariffTotalDivider} />
-                <Text style={styles.tariffTotal}>
-                  {strings.totalStatutoryFareLabel(finalCalculatedFare)}
-                </Text>
                 <Text style={styles.dpdpNotice}>{strings.dpdpNotice}</Text>
               </View>
 
@@ -495,10 +491,10 @@ export default function InTransitHospitalScreen({
               <Pressable
                 style={[
                   styles.submitSignOffBtn,
-                  isSubmittingSignOff && styles.submitSignOffBtnDisabled,
+                  (isSubmittingSignOff || !isSignOffComplete) && styles.submitSignOffBtnDisabled,
                 ]}
                 onPress={handleSubmitSignOff}
-                disabled={isSubmittingSignOff}
+                disabled={isSubmittingSignOff || !isSignOffComplete}
               >
                 <Text style={styles.submitSignOffBtnText}>
                   {isSubmittingSignOff
@@ -520,16 +516,6 @@ export default function InTransitHospitalScreen({
                   <Text style={styles.signOffTitle}>{strings.receiptTitle}</Text>
                   <Text style={styles.signOffSubtitle}>{strings.receiptSubtitle}</Text>
                 </View>
-              </View>
-
-              <View style={styles.tariffCard}>
-                <Text style={styles.tariffHeading}>{strings.receiptTotalDistanceLabel(TOTAL_MISSION_DISTANCE_KM)}</Text>
-                <Text style={styles.tariffLine}>{strings.baseTariffLabel}</Text>
-                <Text style={styles.tariffLine}>{strings.distanceTariffLabel(54)}</Text>
-                <View style={styles.tariffTotalDivider} />
-                <Text style={styles.tariffTotal}>
-                  {strings.totalStatutoryFareLabel(finalCalculatedFare)}
-                </Text>
               </View>
 
               <View style={styles.tariffCard}>

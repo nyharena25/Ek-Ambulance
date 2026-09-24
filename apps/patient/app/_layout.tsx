@@ -3,10 +3,12 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { initTracer } from "@sahayak/observability";
 import { assertEnvOrWarn } from "../src/config/env.ts";
+import { useResumeActiveMission } from "../src/hooks/useResumeActiveMission";
 
 assertEnvOrWarn();
 
 export default function RootLayout() {
+  useResumeActiveMission();
   useEffect(() => {
     const tracer = initTracer("sahayak-patient-mobile");
     const span = tracer.startSpan("patient_app_bootstrap");

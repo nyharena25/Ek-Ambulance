@@ -9,14 +9,63 @@ import {
 import { mountDriverTelemetryPublisher, type DriverTelemetryPublisher } from "../services/driverTelemetry.ts";
 import { publishForTransition } from "./driverLifecycleWire.core.ts";
 import { useDriverConnectionStore } from "./driverConnection.store.ts";
+import { newIdempotencyKey, type ApiError, type ApiResult } from "@sahayak/domain";
+import { buildServerCall, type ServerCall } from "../lib/driverServer.core.ts";
+import type { BoardSnapshot, DriverMissionEnd } from "@sahayak/domain";
+import type { DriverProfile, DriverProfilePatch } from "../lib/driverProfile.core.ts";
+
+/**
+ * The server, as the store sees it. Injected by the app layer (app/_layout.tsx) once a verified session exists: this file
+ * is loaded by node tests, so it must not import the supabase client (React Native) itself. While it is null the store
+ * behaves exactly as before (local machine + the __DEV__ Design-B wire publish).
+ */
+export interface ServerAdapter {
+  userId: string;
+  accessToken: string;
+  call: (call: ServerCall) => Promise<ApiResult<{ status?: string; seq?: number }>>;
+  /** Go online / heartbeat / go offline. The server checks verification and writes the position (R-05). */
+  setPresence: (isOnline: boolean, location?: { latitude: number; longitude: number }) => Promise<ApiResult<true>>;
+  /** The Booking board: a per-driver read, so this driver only ever receives what the server allows them to see. */
+  fetchBoard: () => Promise<ApiResult<BoardSnapshot>>;
+  fetchProfile: () => Promise<ApiResult<DriverProfile>>;
+  saveProfile: (patch: DriverProfilePatch) => Promise<ApiResult<DriverProfile>>;
+}
+
+export type SubmitResult = { ok: true; local: boolean } | { ok: false; error: ApiError };
+
+let serverAdapter: ServerAdapter | null = null;
+export function setServerAdapter(adapter: ServerAdapter | null): void {
+  serverAdapter = adapter;
+}
+export const isServerAuthoritative = (): boolean => serverAdapter !== null;
+export const getServerAdapter = (): ServerAdapter | null => serverAdapter;
+
+// A retry after a lost response must reuse the same key so the server answers with the original result (7.8).
+const pendingKeys = new Map<string, string>();
+function keyFor(event: DriverLifecycleMachineEvent): string {
+  const p = (event as { payload?: { missionId?: string; offerId?: string } }).payload;
+  const scope = `${event.type}:${p?.missionId ?? p?.offerId ?? ""}`;
+  let key = pendingKeys.get(scope);
+  if (!key) {
+    key = newIdempotencyKey();
+    pendingKeys.set(scope, key);
+  }
+  return key;
+}
 
 export interface DriverLifecycleStoreState {
   currentState: DriverLifecycleState;
   driverId: string | null;
   activeMissionId: string | null;
   activeOfferId: string | null;
+  missionEnd: DriverMissionEnd | null;
   error: string | null;
   send: (event: DriverLifecycleMachineEvent) => void;
+  /**
+   * Server-authoritative transition (7.5 rule 1): call the server first and advance the machine only on its 200. With no
+   * server adapter (local development) it is the plain `send`.
+   */
+  submit: (event: DriverLifecycleMachineEvent) => Promise<SubmitResult>;
   reset: () => void;
 }
 
@@ -28,10 +77,8 @@ export interface DriverLifecycleStoreState {
 // already reads/writes `activeMissionId` at the top level.
 let actor: Actor<typeof driverLifecycleMachine>;
 
-// No real authenticated session/token store exists yet for the driver app
-// (Phase 1 deliberately skipped one - nothing needed it until now); reuses
-// the same placeholder DriverNavigationScreen.tsx already passes to
-// useGpsPublisher, not a new invented value.
+// Local-development placeholder, used only while no verified session exists (no server adapter). The dev token minter
+// accepts any bearer; the strict minter would reject it, which is the point.
 const DEMO_AUTH_TOKEN = "demo_auth_token";
 
 // Wire Event Publishing Closure: one Centrifugo publisher, mounted for
@@ -49,7 +96,7 @@ function ensurePublisherFor(missionId: string | null) {
   if (missionId === publisherMissionId) return;
   const previous = publisher;
   publisher = missionId
-    ? mountDriverTelemetryPublisher(missionId, DEMO_AUTH_TOKEN, {
+    ? mountDriverTelemetryPublisher(missionId, serverAdapter?.accessToken ?? DEMO_AUTH_TOKEN, {
         onPublishError: () => {
           // Surface the existing low-connectivity indicator
           // (OfflineConnectivityOverlay, driven by driverConnection.store)
@@ -76,6 +123,7 @@ function contextFields(context: DriverLifecycleContext) {
     driverId: context.driverId,
     activeMissionId: context.activeMissionId,
     activeOfferId: context.activeOfferId,
+    missionEnd: context.missionEnd,
     error: context.error,
   };
 }
@@ -109,14 +157,19 @@ export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) =
       // publisher for that mission must still be connected to carry the
       // terminal wire event before ensurePublisherFor (below) tears it
       // down for the now-null missionId.
-      publishForTransition(
-        publisher,
-        event.type,
-        before.value as DriverLifecycleState,
-        after.value as DriverLifecycleState,
-        before.context.activeMissionId,
-        before.context.driverId
-      );
+      // Design A (6.1): with a server adapter the SERVER publishes lifecycle events after its transaction commits, and the
+      // driver publishes GPS only. The direct publish below is the local-development shortcut and would double-publish
+      // (or be denied by the strict publish proxy) against a real backend.
+      if (!serverAdapter) {
+        publishForTransition(
+          publisher,
+          event.type,
+          before.value as DriverLifecycleState,
+          after.value as DriverLifecycleState,
+          before.context.activeMissionId,
+          before.context.driverId
+        );
+      }
 
       // Reconcile which mission (if any) the publisher should be
       // connected to, after any publish above has gone out. Mounts
@@ -125,6 +178,23 @@ export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) =
       // connection time to establish before the first lifecycle publish
       // is needed.
       ensurePublisherFor(after.context.activeMissionId);
+    },
+    submit: async (event) => {
+      const server = serverAdapter;
+      if (!server) {
+        useDriverLifecycleStore.getState().send(event);
+        return { ok: true, local: true };
+      }
+      const built = buildServerCall(event, keyFor(event));
+      if (!built.ok) return { ok: false, error: { code: built.code, status: 0, retryable: false } };
+      if (built.call) {
+        const result = await server.call(built.call);
+        // A refusal leaves the machine where it was: a mission the server did not accept is not one the driver holds.
+        if (!result.ok) return result;
+      }
+      pendingKeys.delete(`${event.type}:${(event as { payload?: { missionId?: string; offerId?: string } }).payload?.missionId ?? (event as { payload?: { offerId?: string } }).payload?.offerId ?? ""}`);
+      useDriverLifecycleStore.getState().send(event);
+      return { ok: true, local: false };
     },
     reset: () => {
       mount();

@@ -50,11 +50,13 @@ export default function OnSceneCareScreen({
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
 
   // Vitals State
-  const [pulse, setPulse] = useState(88);
-  const [spO2, setSpO2] = useState(94);
-  const [systolic, setSystolic] = useState(120);
-  const [diastolic, setDiastolic] = useState(80);
-  const [gcsScore, setGcsScore] = useState(13);
+  // D-UX-05: nothing is pre-set. A blank reading is "not entered" (null) and is never coerced to 0 or shown as a plausible
+  // default; only readings the crew actually entered are sent with the mission.
+  const [pulse, setPulse] = useState<number | null>(null);
+  const [spO2, setSpO2] = useState<number | null>(null);
+  const [systolic, setSystolic] = useState<number | null>(null);
+  const [diastolic, setDiastolic] = useState<number | null>(null);
+  const [gcsScore, setGcsScore] = useState<number | null>(null);
 
   // Immediate Departure Bypass (Load & Go)
   const [isBypassActive, setIsBypassActive] = useState(false);
@@ -71,14 +73,25 @@ export default function OnSceneCareScreen({
   const selectedHospital = (nearby.find((n) => n.hospital.id === selectedHospitalId) ?? nearby[0])!.hospital;
 
   // Mean Arterial Pressure (MAP) computation
-  const mapValue = Math.round(diastolic + (systolic - diastolic) / 3);
+  const mapValue = systolic !== null && diastolic !== null ? Math.round(diastolic + (systolic - diastolic) / 3) : null;
+  const toNumberOrNull = (val: string): number | null => (val.trim() === "" || !Number.isFinite(Number(val)) ? null : Number(val));
 
   const handleStartTransport = () => {
+    const entered = {
+      ...(pulse !== null ? { pulse } : {}),
+      ...(spO2 !== null ? { spO2 } : {}),
+      ...(systolic !== null ? { systolic } : {}),
+      ...(diastolic !== null ? { diastolic } : {}),
+      ...(gcsScore !== null ? { gcs: gcsScore } : {}),
+    };
     const payload: ConfirmPatientOnboardPayload = {
       missionId,
       driverId: "DRV-DL-8821",
       destination: selectedHospital.coordinates,
       onboardAt: new Date().toISOString(),
+      ...(Object.keys(entered).length > 0 ? { vitals: entered } : {}),
+      emergencyType: emergency,
+      bypass: isBypassActive,
     };
 
     if (onConfirmPatientOnboard) {
@@ -182,29 +195,31 @@ export default function OnSceneCareScreen({
                 <Text style={styles.vitalUnit}>{strings.pulseUnit}</Text>
               </View>
               <View style={styles.vitalValueRow}>
-                <Text style={styles.vitalLargeValue}>{pulse}</Text>
+                <Text style={styles.vitalLargeValue}>{pulse ?? "--"}</Text>
                 <View style={styles.quickStepButtons}>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setPulse((p) => Math.max(30, p - 5))}
+                    onPress={() => setPulse((p) => Math.max(30, (p ?? 80) - 5))}
                   >
                     <Text style={styles.stepBtnText}>-5</Text>
                   </Pressable>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setPulse((p) => Math.min(220, p + 5))}
+                    onPress={() => setPulse((p) => Math.min(220, (p ?? 80) + 5))}
                   >
                     <Text style={styles.stepBtnText}>+5</Text>
                   </Pressable>
                 </View>
               </View>
-              <Text style={styles.vitalStatusGood}>
-                {pulse > 100
-                  ? strings.pulseStatusTachycardia
-                  : pulse < 60
-                  ? strings.pulseStatusBradycardia
-                  : strings.pulseStatusNormal}
-              </Text>
+              {pulse !== null && (
+                <Text style={styles.vitalStatusGood}>
+                  {pulse > 100
+                    ? strings.pulseStatusTachycardia
+                    : pulse < 60
+                    ? strings.pulseStatusBradycardia
+                    : strings.pulseStatusNormal}
+                </Text>
+              )}
             </View>
 
             {/* 2. SpO2 Oxygen */}
@@ -214,29 +229,31 @@ export default function OnSceneCareScreen({
                 <Text style={styles.vitalUnit}>{strings.spO2Unit}</Text>
               </View>
               <View style={styles.vitalValueRow}>
-                <Text style={styles.vitalLargeValue}>{spO2}%</Text>
+                <Text style={styles.vitalLargeValue}>{spO2 === null ? "--" : `${spO2}%`}</Text>
                 <View style={styles.quickStepButtons}>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setSpO2((s) => Math.max(50, s - 1))}
+                    onPress={() => setSpO2((s) => Math.max(50, (s ?? 95) - 1))}
                   >
                     <Text style={styles.stepBtnText}>-1</Text>
                   </Pressable>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setSpO2((s) => Math.min(100, s + 1))}
+                    onPress={() => setSpO2((s) => Math.min(100, (s ?? 95) + 1))}
                   >
                     <Text style={styles.stepBtnText}>+1</Text>
                   </Pressable>
                 </View>
               </View>
-              <Text
-                style={
-                  spO2 < 90 ? styles.vitalStatusCritical : styles.vitalStatusGood
-                }
-              >
-                {spO2 < 90 ? strings.spO2StatusHypoxia : strings.spO2StatusNormal}
-              </Text>
+              {spO2 !== null && (
+                <Text
+                  style={
+                    spO2 < 90 ? styles.vitalStatusCritical : styles.vitalStatusGood
+                  }
+                >
+                  {spO2 < 90 ? strings.spO2StatusHypoxia : strings.spO2StatusNormal}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -244,7 +261,7 @@ export default function OnSceneCareScreen({
           <View style={styles.bpContainer}>
             <View style={styles.vitalHeaderRow}>
               <Text style={styles.vitalLabel}>{strings.bpLabel}</Text>
-              <Text style={styles.mapPillText}>MAP: {mapValue} mmHg</Text>
+              <Text style={styles.mapPillText}>MAP: {mapValue === null ? "--" : mapValue} mmHg</Text>
             </View>
 
             <View style={styles.bpInputsRow}>
@@ -252,8 +269,8 @@ export default function OnSceneCareScreen({
                 <Text style={styles.bpSubLabel}>{strings.systolicLabel}</Text>
                 <TextInput
                   style={styles.bpInput}
-                  value={String(systolic)}
-                  onChangeText={(val) => setSystolic(Number(val) || 0)}
+                  value={systolic === null ? "" : String(systolic)}
+                  onChangeText={(val) => setSystolic(toNumberOrNull(val))}
                   keyboardType="numeric"
                   maxLength={3}
                 />
@@ -263,15 +280,15 @@ export default function OnSceneCareScreen({
                 <Text style={styles.bpSubLabel}>{strings.diastolicLabel}</Text>
                 <TextInput
                   style={styles.bpInput}
-                  value={String(diastolic)}
-                  onChangeText={(val) => setDiastolic(Number(val) || 0)}
+                  value={diastolic === null ? "" : String(diastolic)}
+                  onChangeText={(val) => setDiastolic(toNumberOrNull(val))}
                   keyboardType="numeric"
                   maxLength={3}
                 />
               </View>
               <View style={styles.bpSummaryPill}>
                 <Text style={styles.bpSummaryText}>
-                  {systolic}/{diastolic} mmHg
+                  {systolic ?? "--"}/{diastolic ?? "--"} mmHg
                 </Text>
               </View>
             </View>
@@ -281,11 +298,13 @@ export default function OnSceneCareScreen({
           <View style={styles.gcsContainer}>
             <View style={styles.vitalHeaderRow}>
               <Text style={styles.vitalLabel}>{strings.gcsLabel}</Text>
-              <View style={styles.gcsScoreBadge}>
-                <Text style={styles.gcsScoreBadgeText}>
-                  {strings.gcsTotalLabel(gcsScore)}
-                </Text>
-              </View>
+              {gcsScore !== null && (
+                <View style={styles.gcsScoreBadge}>
+                  <Text style={styles.gcsScoreBadgeText}>
+                    {strings.gcsTotalLabel(gcsScore)}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Quick GCS Presets */}

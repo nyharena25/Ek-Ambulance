@@ -1,12 +1,14 @@
 import { useEffect } from "react";
-import { AppState, View } from "react-native";
+import { Alert, AppState, View } from "react-native";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { initTracer } from "@sahayak/observability";
 
 import { OfflineConnectivityOverlay } from "../src/components";
-import { useDriverLifecycleStore } from "../src/state/driverLifecycle.store";
+import { getServerAdapter, useDriverLifecycleStore } from "../src/state/driverLifecycle.store";
+import { useServerSync } from "../src/hooks/useServerSync";
+import { driverErrorMessage } from "../src/lib/driverServer.core";
 import { useDriverConnectionStore } from "../src/state/driverConnection.store";
 import { useDriverStandbyStore } from "../src/state/driverStandby.store";
 import { generateMockDispatchOffer } from "../src/services/mockDispatchWave";
@@ -29,17 +31,25 @@ declare global {
 }
 
 export default function RootLayout() {
-  const { activeMissionId, send, driverId } = useDriverLifecycleStore();
+  const { activeMissionId, send, submit, driverId } = useDriverLifecycleStore();
   useDriverLocation();
+  useServerSync();
 
-  // Accept/Decline buttons on the dispatch notification run the same lifecycle events as the offer screen.
+  // Accept/Decline buttons on the dispatch notification run the same lifecycle events as the offer screen, through the
+  // same server-authoritative path: an Accept the server refuses (offer taken, expired) does not move the machine.
   useEffect(() => {
     setupDispatchNotifications().catch(() => {});
     const unsubscribe = subscribeToOfferActions((response) => {
-      const result = resolveOfferAction(response.actionIdentifier, response.data, driverId || "DRV-DEMO-0001");
+      const result = resolveOfferAction(response.actionIdentifier, response.data, getServerAdapter()?.userId ?? (driverId || "DRV-DEMO-0001"));
       if (!result) return;
-      send(result.event);
-      if (result.kind === "accept") router.replace(result.route);
+      void submit(result.event).then((outcome) => {
+        if (!outcome.ok) {
+          Alert.alert("Not recorded", driverErrorMessage(outcome.error.code));
+          router.replace("/(shift)/standby");
+        } else if (result.kind === "accept") {
+          router.replace(result.route);
+        }
+      });
       dismissNotification(response.notificationId);
     });
     const appStateSub = AppState.addEventListener("change", (s) => {
@@ -49,7 +59,7 @@ export default function RootLayout() {
       unsubscribe();
       appStateSub.remove();
     };
-  }, [driverId, send]);
+  }, [driverId, submit]);
 
   useEffect(() => {
     const tracer = initTracer("sahayak-driver-mobile");

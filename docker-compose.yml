@@ -28,10 +28,14 @@ services:
     command: ["centrifugo", "--config=/centrifugo/config.json"]
     environment:
       CENTRIFUGO_TOKEN_HMAC_SECRET_KEY: *hmac_secret
+      # The dev defaults below match docker/centrifugo.json. For a shared or production deployment run with
+      # CENTRIFUGO_CONFIG=centrifugo.secure.json and real values for all three (see HANDOVER, "Data & Sync").
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-dev-api-key}
+      CENTRIFUGO_ALLOWED_ORIGINS: ${CENTRIFUGO_ALLOWED_ORIGINS:-*}
     ports:
       - "8001:8000"
     volumes:
-      - ./docker/centrifugo.json:/centrifugo/config.json:ro
+      - ./docker/${CENTRIFUGO_CONFIG:-centrifugo.json}:/centrifugo/config.json:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -43,8 +47,14 @@ services:
     command: ["node", "/app/server.mjs"]
     environment:
       HMAC_SECRET: *hmac_secret
+      # dev (default): permissive minter for local work. strict: verifies the caller's JWT with GoTrue, authorizes each
+      # scope through RLS and serves the Centrifugo publish proxy; needs the three Supabase values.
+      AUTH_MODE: ${AUTH_MODE:-dev}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
     volumes:
-      - ./docker/mock-gateway/server.mjs:/app/server.mjs:ro
+      - ./docker/mock-gateway:/app:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 5s

@@ -20,7 +20,7 @@ import {
   TriageBadgeDetails,
 } from "../i18n/driverMissionOfferStrings";
 import { driverOnboardingStrings } from "../i18n/driverOnboardingStrings";
-import type { UrgencyTier, AIS125VehicleType } from "@sahayak/domain";
+import { offerSecondsLeft, type UrgencyTier, type AIS125VehicleType } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import {
   OFFER_WINDOW_SECONDS,
@@ -43,6 +43,12 @@ export interface IncomingMissionModalProps {
   pickupLandmark?: string;
   distanceKm?: number;
   etaMinutes?: number;
+  /** Server time this offer expires (offer.expiresAt). The countdown is derived from it, not from a local counter (rule 11). */
+  expiresAt?: string;
+  /** serverNow - localNow measured when the offer arrived. */
+  clockOffsetMs?: number;
+  /** The only clinical content the driver sees. Absent fields are not shown; nothing is invented. */
+  patientSummary?: { primaryComplaint?: string; derivedFlags?: string[]; ageBand?: string; sex?: string };
   onAccept?: (missionId: string) => void;
   onDecline?: (reason: string) => void;
   onTimeout?: () => void;
@@ -56,13 +62,16 @@ export default function IncomingMissionModal({
   visible = true,
   initialLanguage = "en",
   initialAcuity = "CAT_1_IMMEDIATE",
-  missionId = "MSN-2026-8819",
+  missionId = "",
   requiredVehicleType = "TYPE_D_ALS",
   registeredVehicleType = "TYPE_D_ALS",
-  pickupAddress = "Gate No. 3, Advant Navis Business Park, Sector 142, Noida",
-  pickupLandmark = "Near Metro Pillar 142 • Main Entry Porch (Emergency Ramp Access)",
-  distanceKm = 2.4,
-  etaMinutes = 4,
+  pickupAddress,
+  pickupLandmark,
+  distanceKm,
+  etaMinutes,
+  expiresAt,
+  clockOffsetMs = 0,
+  patientSummary,
   onAccept,
   onDecline,
   onTimeout,
@@ -105,13 +114,15 @@ export default function IncomingMissionModal({
   useEffect(() => {
     if (!visible || isAccepted) return;
 
-    setSecondsLeft(OFFER_WINDOW_SECONDS);
+    // Rule 11: with a server expiry the window is whatever is left of it; the local 15 s is only the no-server fallback.
+    const windowSeconds = expiresAt ? offerSecondsLeft(expiresAt, Date.now(), clockOffsetMs) : OFFER_WINDOW_SECONDS;
+    setSecondsLeft(windowSeconds);
     timerProgressAnim.setValue(1);
 
     // Smooth animation from 1 to 0 over the same window the numeral counts down
     Animated.timing(timerProgressAnim, {
       toValue: 0,
-      duration: OFFER_WINDOW_SECONDS * 1000,
+      duration: Math.max(windowSeconds, 1) * 1000,
       useNativeDriver: false,
     }).start();
 
@@ -133,7 +144,9 @@ export default function IncomingMissionModal({
 
     const interval = setInterval(() => {
       setSecondsLeft((prev) => {
-        const { secondsLeft: next, expired } = tickOfferCountdown(prev);
+        // Recomputed from the server expiry each tick, so a suspended JS thread cannot leave a stale "8 s" on screen.
+        const next = expiresAt ? offerSecondsLeft(expiresAt, Date.now(), clockOffsetMs) : tickOfferCountdown(prev).secondsLeft;
+        const expired = prev > 0 && next === 0;
         if (expired) {
           clearInterval(interval);
           if (onTimeout) onTimeout();
@@ -383,23 +396,31 @@ export default function IncomingMissionModal({
             </View>
 
             {/* Distance & ETA Hero Pill */}
-            <View style={styles.navigationHeroPill}>
-              <View style={styles.navMetricCol}>
-                <Text style={styles.navMetricLabel}>{strings.pickupDistanceLabel}</Text>
-                <Text style={styles.navMetricValue}>{distanceKm.toFixed(1)} km</Text>
+            {(distanceKm !== undefined || etaMinutes !== undefined) && (
+              <View style={styles.navigationHeroPill}>
+                {distanceKm !== undefined && (
+                  <View style={styles.navMetricCol}>
+                    <Text style={styles.navMetricLabel}>{strings.pickupDistanceLabel}</Text>
+                    <Text style={styles.navMetricValue}>{distanceKm.toFixed(1)} km</Text>
+                  </View>
+                )}
+                {distanceKm !== undefined && etaMinutes !== undefined && <View style={styles.navDivider} />}
+                {etaMinutes !== undefined && (
+                  <View style={styles.navMetricCol}>
+                    <Text style={styles.navMetricLabel}>{strings.pickupEtaLabel}</Text>
+                    <Text style={styles.navMetricValueGreen}>{etaMinutes} mins ETA</Text>
+                  </View>
+                )}
               </View>
-              <View style={styles.navDivider} />
-              <View style={styles.navMetricCol}>
-                <Text style={styles.navMetricLabel}>{strings.pickupEtaLabel}</Text>
-                <Text style={styles.navMetricValueGreen}>{etaMinutes} mins ETA</Text>
-              </View>
-            </View>
+            )}
 
-            {/* Street Address */}
-            <View style={styles.addressBox}>
-              <Text style={styles.addressMain}>{pickupAddress}</Text>
-              <Text style={styles.addressLandmark}>{pickupLandmark}</Text>
-            </View>
+            {/* Street Address: only what the offer carried */}
+            {(pickupAddress || pickupLandmark) && (
+              <View style={styles.addressBox}>
+                {pickupAddress ? <Text style={styles.addressMain}>{pickupAddress}</Text> : null}
+                {pickupLandmark ? <Text style={styles.addressLandmark}>{pickupLandmark}</Text> : null}
+              </View>
+            )}
           </View>
 
           {/* REQUIRED AIS-125 VEHICLE CATEGORY & TIER-ELIGIBILITY GATE */}
@@ -453,14 +474,20 @@ export default function IncomingMissionModal({
               <Text style={styles.symptomCategoryLabel}>
                 {strings.symptomSummaryLabel}:
               </Text>
-              <Text style={styles.symptomHeadline}>
-                {isCat1
-                  ? "Severe road traffic injury - suspected multi-system trauma & blunt thoracic injury"
-                  : "Fall from height - suspected compound fracture of lower right leg with controlled bleeding"}
-              </Text>
-              <Text style={styles.demographicsText}>
-                <AppIcon icon={{ set: "ion", name: "person" }} />{" "}{strings.patientDemographics(42, "Male")}
-              </Text>
+              {/* D-UX-02: only reported content. The former fixed headline and "42, Male" were chosen by tier, not by the patient. */}
+              {patientSummary?.primaryComplaint ? (
+                <Text style={styles.symptomHeadline}>{patientSummary.primaryComplaint.replace(/_/g, " ")}</Text>
+              ) : (
+                <Text style={styles.symptomHeadline}>{strings.symptomNotProvided}</Text>
+              )}
+              {patientSummary?.derivedFlags && patientSummary.derivedFlags.length > 0 && (
+                <Text style={styles.demographicsText}>{patientSummary.derivedFlags.map((f) => f.replace(/_/g, " ")).join(" · ")}</Text>
+              )}
+              {patientSummary?.ageBand && patientSummary.sex && (
+                <Text style={styles.demographicsText}>
+                  <AppIcon icon={{ set: "ion", name: "person" }} />{" "}{patientSummary.sex} · {patientSummary.ageBand}
+                </Text>
+              )}
             </View>
           </View>
         </ScrollView>

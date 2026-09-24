@@ -1,13 +1,22 @@
 import { useState } from "react";
+import { Alert } from "react-native";
 import { useRouter, useLocalSearchParams, Redirect } from "expo-router";
 import {
   DriverNavigationScreen,
   OnSceneCareScreen,
   InTransitHospitalScreen,
 } from "../../src/screens";
-import { useDriverLifecycleStore, type DriverLifecycleStoreState } from "../../src/state/driverLifecycle.store";
+import {
+  getServerAdapter,
+  isServerAuthoritative,
+  useDriverLifecycleStore,
+  type DriverLifecycleStoreState,
+} from "../../src/state/driverLifecycle.store";
 import { TraumaCentreItem } from "../../src/i18n/driverOnSceneStrings";
-import type { DriverLifecycleState, GeoPoint } from "@sahayak/domain";
+import { driverErrorMessage, matchHospitalId } from "../../src/lib/driverServer.core";
+import { fetchAssignedMission, fetchHospitals } from "../../src/lib/driverServer";
+import { flushLivePings } from "../../src/services/telemetryUpload";
+import type { DriverLifecycleMachineEvent, DriverLifecycleState, GeoPoint } from "@sahayak/domain";
 
 type MissionPhase = "enRouteToPatient" | "onScene" | "transporting";
 
@@ -33,7 +42,7 @@ export default function MissionExecutionRoute() {
   const { id, pickupLat, pickupLng } = useLocalSearchParams<{ id: string; pickupLat?: string; pickupLng?: string }>();
   const pickupCoordinates =
     pickupLat && pickupLng ? { latitude: Number(pickupLat), longitude: Number(pickupLng) } : undefined;
-  const { currentState, driverId, send } = useDriverLifecycleStore();
+  const { currentState, driverId, submit, send } = useDriverLifecycleStore();
 
   // A stale deep link, a page reload with no accepted mission, or a mission
   // that already completed (currentState back to standby) - nothing here
@@ -45,10 +54,11 @@ export default function MissionExecutionRoute() {
 
   return (
     <MissionExecutionScreens
-      missionId={id || "MSN-2026-8819"}
-      driverId={driverId || "DRV-DEMO-0001"}
+      missionId={id ?? ""}
+      driverId={getServerAdapter()?.userId ?? (driverId || "DRV-DEMO-0001")}
       initialLifecycleState={currentState}
       pickupCoordinates={pickupCoordinates}
+      submit={submit}
       send={send}
     />
   );
@@ -59,32 +69,64 @@ interface MissionExecutionScreensProps {
   driverId: string;
   initialLifecycleState: DriverLifecycleState;
   pickupCoordinates?: GeoPoint;
+  submit: DriverLifecycleStoreState["submit"];
   send: DriverLifecycleStoreState["send"];
 }
 
 /**
- * Separated from the route component so `phase`'s initial value is derived
- * exactly once from the real machine state at mount (not a route param that
- * could drift from it). Subsequent phase advances come from this route's
- * own callbacks below, which only ever fire after the corresponding
- * send() already moved the machine forward - never the reverse.
+ * Separated from the route component so `phase`'s initial value is derived exactly once from the real machine state at
+ * mount. Every confirmation goes to the server FIRST (7.5 rule 1): the machine, and therefore this route's next screen, only
+ * advances on the server's 200. A refusal shows why and re-reads the server's view instead of pretending it happened.
  */
-function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, pickupCoordinates, send }: MissionExecutionScreensProps) {
+function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, pickupCoordinates, submit, send }: MissionExecutionScreensProps) {
   const router = useRouter();
   const [phase, setPhase] = useState<MissionPhase>(phaseForLifecycleState(initialLifecycleState));
   const [selectedHospital, setSelectedHospital] = useState<TraumaCentreItem | null>(null);
 
-  // Closes HANDOVER §14/§15's open item: a driver backing out mid-mission
-  // must not leave the machine stuck in an active-mission state - that
-  // silently rejects the driver's next SERVER_OFFER_RECEIVED (Test 14 in
-  // driverLifecycle.test.ts locks this in). ABORT_MISSION returns to
-  // standby without dropping the shift session, unlike reset().
+  // After a refusal that means "your view of the mission is out of date", ask the server what the mission is now.
+  const refreshFromServer = async () => {
+    const result = await fetchAssignedMission();
+    if (!result.ok) return; // could not reach the server: keep the mission, the alert already said it was not recorded
+    const row = result.data;
+    if (!row || row.missionId !== missionId) {
+      send({ type: "SERVER_MISSION_CANCELLED", payload: { missionId } });
+      router.replace("/(shift)/standby");
+      return;
+    }
+    send({ type: "HYDRATE", payload: { missionId: row.missionId, status: row.status, driverId } });
+    router.replace({ pathname: "/mission/[id]", params: { id: missionId } });
+  };
+
+  const run = async (event: DriverLifecycleMachineEvent): Promise<boolean> => {
+    const result = await submit(event);
+    if (result.ok) return true;
+    Alert.alert("Not recorded", driverErrorMessage(result.error.code));
+    if (isServerAuthoritative() && (result.error.code === "invalid_transition" || result.error.code === "not_found")) {
+      await refreshFromServer();
+    }
+    return false;
+  };
+
+  // Only advance the screen when the machine really is where this step expects it (a refused confirm left it behind).
+  const machineIs = (state: DriverLifecycleState) => useDriverLifecycleStore.getState().currentState === state;
+
+  // D-UX-09: a stray Back must not abort a mission. Before pickup an abort re-dispatches; after pickup it is an incident.
   const abortMissionAndReturnToStandby = () => {
-    send({
-      type: "ABORT_MISSION",
-      payload: { missionId, driverId, reason: "driver_backed_out", abortedAt: new Date().toISOString() },
-    });
-    router.replace("/(shift)/standby");
+    Alert.alert("Leave this mission?", "Leaving now ends your part of this mission. The patient's request may be re-assigned.", [
+      { text: "Stay", style: "cancel" },
+      {
+        text: "Leave mission",
+        style: "destructive",
+        onPress: () => {
+          void run({
+            type: "ABORT_MISSION",
+            payload: { missionId, driverId, reason: "driver_backed_out", abortedAt: new Date().toISOString() },
+          }).then((ok) => {
+            if (ok) router.replace("/(shift)/standby");
+          });
+        },
+      },
+    ]);
   };
 
   if (phase === "enRouteToPatient") {
@@ -93,15 +135,10 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
         missionId={missionId}
         pickupCoordinates={pickupCoordinates}
         onConfirmArrival={(payload) => {
-          // Dispatches server-authoritative CONFIRM_ARRIVAL_SCENE to XState / lifecycle store
-          send({
-            type: "CONFIRM_ARRIVAL_SCENE",
-            payload,
-          });
+          void run({ type: "CONFIRM_ARRIVAL_SCENE", payload });
         }}
         onProceedToPatientHandoff={() => {
-          // Irreversible arrival slider confirmed, advance to on-scene triage and vitals
-          setPhase("onScene");
+          if (machineIs("onScene")) setPhase("onScene");
         }}
         onBackToStandby={abortMissionAndReturnToStandby}
       />
@@ -113,14 +150,15 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
       <OnSceneCareScreen
         missionId={missionId}
         pickupCoordinates={pickupCoordinates}
-        onConfirmPatientOnboard={(payload) => {
-          // Dispatches server-authoritative CONFIRM_PATIENT_ONBOARD to XState / lifecycle store
-          send({
-            type: "CONFIRM_PATIENT_ONBOARD",
-            payload,
-          });
+        onConfirmPatientOnboard={async (payload) => {
+          // The client's hospital list has no ids and the table has four rows (4.5): match the chosen destination to a
+          // registered hospital, which is also what takes the bed hold. No match means the server cannot start transport.
+          const rows = isServerAuthoritative() ? await fetchHospitals() : [];
+          const hospitalId = matchHospitalId(payload.destination, rows) ?? undefined;
+          await run({ type: "CONFIRM_PATIENT_ONBOARD", payload: { ...payload, hospitalId } });
         }}
         onProceedToTransportNavigation={(hospital) => {
+          if (!machineIs("transporting")) return;
           setSelectedHospital(hospital);
           setPhase("transporting");
         }}
@@ -134,31 +172,21 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
   return (
     <InTransitHospitalScreen
       missionId={missionId}
-      hospitalName={
-        selectedHospital?.name || "Jaypee Hospital (Sector 128, Noida)"
-      }
+      hospitalName={selectedHospital?.name}
       hospitalCoordinates={selectedHospital?.coordinates}
       onConfirmArrivalHospital={(payload) => {
-        // Dispatches server-authoritative CONFIRM_ARRIVAL_HOSPITAL to XState / lifecycle store -
-        // must fire BEFORE onCompleteMission below (the machine rejects
-        // COMPLETE_MISSION sent from transporting; see driverLifecycle.test.ts Test 12b).
-        send({
-          type: "CONFIRM_ARRIVAL_HOSPITAL",
-          payload,
-        });
+        // Must succeed BEFORE the completion below: the server (like the machine) rejects COMPLETE from `transporting`.
+        void run({ type: "CONFIRM_ARRIVAL_HOSPITAL", payload });
       }}
-      onCompleteMission={(payload) => {
-        // Fires only after the statutory receipt is confirmed - dispatches
-        // server-authoritative COMPLETE_MISSION to XState / lifecycle store
-        send({
-          type: "COMPLETE_MISSION",
-          payload,
-        });
+      onCompleteMission={async (payload) => {
+        // The fare is computed by the server from the pings it holds for the transport leg, so ship the buffered track first
+        // (the mission is still `arrived_hospital`, which the ingest endpoint accepts).
+        await flushLivePings(missionId);
+        // The signed handoff is validated by the server.
+        if (await run({ type: "COMPLETE_MISSION", payload })) router.replace("/(shift)/standby");
       }}
       onFinishSignOff={() => {
-        // Statutory sign-off completed and signed - COMPLETE_MISSION already
-        // fired above; the machine is already in standby, not an abort.
-        router.replace("/(shift)/standby");
+        // Navigation happens in onCompleteMission, only after the server accepted the completion.
       }}
       onBackToStandby={abortMissionAndReturnToStandby}
     />

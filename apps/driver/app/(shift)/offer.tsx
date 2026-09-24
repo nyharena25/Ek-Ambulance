@@ -1,107 +1,113 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { IncomingMissionModal } from "../../src/screens";
 import { getDrivingRoute, type AIS125VehicleType, type UrgencyTier } from "@sahayak/domain";
-import { useDriverLifecycleStore } from "../../src/state/driverLifecycle.store";
+import { getServerAdapter, useDriverLifecycleStore } from "../../src/state/driverLifecycle.store";
 import { useDriverStandbyStore } from "../../src/state/driverStandby.store";
+import { driverErrorMessage } from "../../src/lib/driverServer.core";
 
 const VALID_TIERS: UrgencyTier[] = ["CAT_1_IMMEDIATE", "CAT_2_URGENT", "CAT_3_DELAYED"];
-const VALID_VEHICLE_TYPES: AIS125VehicleType[] = [
-  "TYPE_D_ALS",
-  "TYPE_C_BLS",
-  "TYPE_B_PTA",
-  "TYPE_A_MFR",
-];
+const VALID_VEHICLE_TYPES: AIS125VehicleType[] = ["TYPE_D_ALS", "TYPE_C_BLS", "TYPE_B_PTA", "TYPE_A_MFR"];
 
 export default function DispatchOfferRoute() {
   const router = useRouter();
-  const { missionId, offerId, acuity, requiredVehicleType, address, landmark, distanceKm, etaMinutes, pickupLat, pickupLng } =
-    useLocalSearchParams<{
-      missionId?: string;
-      offerId?: string;
-      acuity?: string;
-      requiredVehicleType?: string;
-      address?: string;
-      landmark?: string;
-      distanceKm?: string;
-      etaMinutes?: string;
-      pickupLat?: string;
-      pickupLng?: string;
-    }>();
-  const { driverId, send } = useDriverLifecycleStore();
+  const p = useLocalSearchParams<{
+    missionId?: string;
+    offerId?: string;
+    acuity?: string;
+    requiredVehicleType?: string;
+    address?: string;
+    landmark?: string;
+    distanceKm?: string;
+    etaMinutes?: string;
+    pickupLat?: string;
+    pickupLng?: string;
+    expiresAt?: string;
+    clockOffsetMs?: string;
+    patientSummary?: string;
+  }>();
+  const { driverId, send, submit } = useDriverLifecycleStore();
   const registeredVehicleType = useDriverStandbyStore((s) => s.registeredAis125Type);
+  const [busy, setBusy] = useState(false);
 
   const driverGps = useDriverStandbyStore((s) => s.gps);
   const [route, setRoute] = useState<{ distanceKm: number; etaMinutes: number } | null>(null);
-  const hasPickup = Boolean(pickupLat && pickupLng);
+  const hasPickup = Boolean(p.pickupLat && p.pickupLng);
   useEffect(() => {
     if (!hasPickup) return;
     let cancelled = false;
-    void getDrivingRoute(driverGps, { latitude: Number(pickupLat), longitude: Number(pickupLng) }).then((r) => {
+    void getDrivingRoute(driverGps, { latitude: Number(p.pickupLat), longitude: Number(p.pickupLng) }).then((r) => {
       if (!cancelled) setRoute({ distanceKm: r.distanceKm, etaMinutes: r.durationMin });
     });
     return () => {
       cancelled = true;
     };
-  }, [hasPickup, pickupLat, pickupLng, driverGps.latitude, driverGps.longitude]);
+  }, [hasPickup, p.pickupLat, p.pickupLng, driverGps.latitude, driverGps.longitude]);
 
-  const resolvedMissionId = missionId || "MSN-2026-8819";
-  const resolvedOfferId = offerId || `OFFER-${resolvedMissionId}`;
-  const initialAcuity: UrgencyTier = VALID_TIERS.includes(acuity as UrgencyTier)
-    ? (acuity as UrgencyTier)
-    : "CAT_1_IMMEDIATE";
-  const resolvedRequiredVehicleType: AIS125VehicleType = VALID_VEHICLE_TYPES.includes(
-    requiredVehicleType as AIS125VehicleType
-  )
-    ? (requiredVehicleType as AIS125VehicleType)
-    : "TYPE_D_ALS";
+  // No invented ids: with a server offer the ids are real; the local mock generator supplies its own.
+  const missionId = p.missionId ?? "";
+  const offerId = p.offerId ?? "";
+  const actingDriverId = getServerAdapter()?.userId ?? (driverId || "DRV-DEMO-0001");
+  const acuity: UrgencyTier = VALID_TIERS.includes(p.acuity as UrgencyTier) ? (p.acuity as UrgencyTier) : "CAT_1_IMMEDIATE";
+  const requiredVehicleType: AIS125VehicleType = VALID_VEHICLE_TYPES.includes(p.requiredVehicleType as AIS125VehicleType)
+    ? (p.requiredVehicleType as AIS125VehicleType)
+    : registeredVehicleType;
+  // Only the clinical content the offer actually carried (D-UX-02).
+  const patientSummary = useMemo(() => {
+    try {
+      return p.patientSummary ? (JSON.parse(p.patientSummary) as { primaryComplaint?: string; derivedFlags?: string[]; ageBand?: string; sex?: string }) : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [p.patientSummary]);
+
+  const refuse = (code: string) => {
+    Alert.alert("Not recorded", driverErrorMessage(code));
+    // The machine did not move: return it to standby the way an expiry does, so the driver is not stuck on a dead offer.
+    send({ type: "SERVER_OFFER_TIMEOUT", payload: { offerId } });
+    router.replace("/(shift)/standby");
+  };
 
   return (
     <IncomingMissionModal
       visible={true}
-      missionId={resolvedMissionId}
-      initialAcuity={initialAcuity}
-      requiredVehicleType={resolvedRequiredVehicleType}
+      missionId={missionId}
+      initialAcuity={acuity}
+      requiredVehicleType={requiredVehicleType}
       registeredVehicleType={registeredVehicleType}
-      pickupAddress={address}
-      pickupLandmark={landmark}
-      distanceKm={route?.distanceKm ?? (distanceKm ? Number(distanceKm) : undefined)}
-      etaMinutes={route?.etaMinutes ?? (etaMinutes ? Number(etaMinutes) : undefined)}
-      onAccept={(acceptedId) => {
-        // Accidental-tap-proof swipe confirmed - server-authoritative
-        // ACCEPT_DISPATCH: standby's offer pool exits, driver is en route.
-        send({
+      pickupAddress={p.address}
+      pickupLandmark={p.landmark}
+      distanceKm={route?.distanceKm ?? (p.distanceKm ? Number(p.distanceKm) : undefined)}
+      etaMinutes={route?.etaMinutes ?? (p.etaMinutes ? Number(p.etaMinutes) : undefined)}
+      expiresAt={p.expiresAt}
+      clockOffsetMs={p.clockOffsetMs ? Number(p.clockOffsetMs) : 0}
+      patientSummary={patientSummary}
+      onAccept={async (acceptedId) => {
+        if (busy) return;
+        setBusy(true);
+        // Server first (7.5 rule 1): the machine only moves if the server says this driver won the offer.
+        const result = await submit({
           type: "ACCEPT_DISPATCH",
-          payload: {
-            missionId: acceptedId,
-            driverId: driverId || "DRV-DEMO-0001",
-            offerId: resolvedOfferId,
-            acceptedAt: new Date().toISOString(),
-          },
+          payload: { missionId: acceptedId, driverId: actingDriverId, offerId, acceptedAt: new Date().toISOString() },
         });
-        router.replace({
-          pathname: "/mission/[id]",
-          params: { id: acceptedId, pickupLat, pickupLng },
-        });
+        setBusy(false);
+        if (!result.ok) return refuse(result.error.code);
+        router.replace({ pathname: "/mission/[id]", params: { id: acceptedId, pickupLat: p.pickupLat, pickupLng: p.pickupLng } });
       }}
-      onDecline={(_reason) => {
-        // Declined offer, return to standby cockpit - shift session untouched.
-        send({
+      onDecline={(reason) => {
+        void submit({
           type: "DECLINE_DISPATCH",
-          payload: {
-            missionId: resolvedMissionId,
-            driverId: driverId || "DRV-DEMO-0001",
-            offerId: resolvedOfferId,
-            reason: "other",
-            declinedAt: new Date().toISOString(),
-          },
+          payload: { missionId, driverId: actingDriverId, offerId, reason: reason as never, declinedAt: new Date().toISOString() },
+        }).then((result) => {
+          // A decline the server could not record still lets this driver stand down locally: the offer times out on its own.
+          if (!result.ok) send({ type: "SERVER_OFFER_TIMEOUT", payload: { offerId } });
         });
         router.back();
       }}
       onTimeout={() => {
-        // Wave offer's 15s window closed unactioned - SERVER_OFFER_TIMEOUT
-        // returns the driver to standby, same as an explicit decline.
-        send({ type: "SERVER_OFFER_TIMEOUT", payload: { offerId: resolvedOfferId } });
+        // The window (server expiresAt when present) closed unactioned: back to standby, same as an explicit decline.
+        send({ type: "SERVER_OFFER_TIMEOUT", payload: { offerId } });
         router.back();
       }}
     />

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isNewerPing, type ParsedLifecycleMessage } from "@sahayak/domain";
 import {
   mountMissionChannel,
   createMockMissionChannel,
@@ -29,7 +30,17 @@ export interface UseMissionChannelOptions {
    *  for zero-re-render map rendering. */
   onTelemetryReceived?: (telemetry: DriverTelemetry) => void;
   onLifecycleEvent?: (event: MissionLifecycleEventType, missionId: string) => void;
+  /** Parsed v1 message (seq, eventId, data). Takes precedence over `onLifecycleEvent` on the real channel. */
+  onLifecycleMessage?: (message: ParsedLifecycleMessage) => void;
+  /** Subscription re-established after events may have been missed: reconcile against the server. */
+  onResubscribed?: (info: { recovered: boolean }) => void;
 }
+
+/** What the tracking UI may claim about the live feed (P-UX-06): never "live" without evidence. */
+export type TrackingConnection = "live" | "connecting" | "paused";
+
+/** GPS pings arrive about every 3 s, so a silent feed for this long is stale. */
+const STALE_FEED_MS = 20_000;
 
 export interface UseMissionChannelReturn {
   status: CentrifugoConnectionStatus;
@@ -44,6 +55,10 @@ export interface UseMissionChannelReturn {
    *  onSimulateTransportStart and TransportingScreen's
    *  onSimulateHospitalArrival already exist for exactly this. */
   mockControls: MockMissionChannelControls | null;
+  /** `live` only while subscribed and pings are fresh; `paused` after a drop or a silent feed; never assumed. */
+  connection: TrackingConnection;
+  /** True when the feed is the dev mock emitter rather than a real subscription. */
+  isMock: boolean;
 }
 
 /**
@@ -64,7 +79,17 @@ export function useMissionChannel({
   authToken,
   onTelemetryReceived,
   onLifecycleEvent,
+  onLifecycleMessage,
+  onResubscribed,
 }: UseMissionChannelOptions): UseMissionChannelReturn {
+  const [lastPingAt, setLastPingAt] = useState<number | null>(null);
+  const [isMock, setIsMock] = useState(false);
+  const [, setTick] = useState(0);
+  const lastPingIsoRef = useRef<string | null>(null);
+  const onMessageRef = useRef(onLifecycleMessage);
+  onMessageRef.current = onLifecycleMessage;
+  const onResubRef = useRef(onResubscribed);
+  onResubRef.current = onResubscribed;
   const [status, setStatus] = useState<CentrifugoConnectionStatus>("disconnected");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [throttledTelemetry, setThrottledTelemetry] = useState<DriverTelemetry | null>(null);
@@ -91,27 +116,42 @@ export function useMissionChannel({
       if (pendingTelemetryRef.current) {
         setThrottledTelemetry(pendingTelemetryRef.current);
       }
+      // Re-evaluated every flush so a silent feed flips the indicator without another event arriving.
+      setTick((t) => t + 1);
     }, TELEMETRY_DISPLAY_FLUSH_MS);
 
     const callbacks = {
       onStatusChange: setStatus,
       onSubscriptionStateChange: setIsSubscribed,
       onTelemetry: (telemetry: DriverTelemetry) => {
+        // Rule 10: a flushed or recovered ping must never move the marker backwards.
+        if (!isNewerPing(lastPingIsoRef.current, telemetry)) return;
+        lastPingIsoRef.current = telemetry.timestamp;
+        setLastPingAt(Date.now());
         pendingTelemetryRef.current = telemetry;
         onTelemetryRef.current?.(telemetry);
       },
       onLifecycleEvent: (event: MissionLifecycleEventType, id: string) => {
-        onLifecycleRef.current?.(event, id);
+        // The dev mock (and the legacy path) has no seq: surface it as a parsed message so one consumer serves both.
+        if (onMessageRef.current) onMessageRef.current({ event, missionId: id, data: {} });
+        else onLifecycleRef.current?.(event, id);
       },
+      onLifecycleMessage: (message: ParsedLifecycleMessage) => {
+        if (onMessageRef.current) onMessageRef.current(message);
+        else onLifecycleRef.current?.(message.event, missionId);
+      },
+      onResubscribed: (info: { recovered: boolean }) => onResubRef.current?.(info),
       onError: setError,
     };
 
     if (__DEV__ && !authToken) {
       const { controls, teardown } = createMockMissionChannel(missionId, callbacks);
       setMockControls(controls);
+      setIsMock(true);
       return () => {
         clearInterval(flushTimer);
         setMockControls(null);
+        setIsMock(false);
         teardown();
       };
     }
@@ -134,5 +174,15 @@ export function useMissionChannel({
     };
   }, [missionId, authToken]);
 
-  return { status, isSubscribed, throttledTelemetry, error, mockControls };
+  const fresh = lastPingAt !== null && Date.now() - lastPingAt < STALE_FEED_MS;
+  const connection: TrackingConnection =
+    status === "connected" && isSubscribed && (fresh || lastPingAt === null)
+      ? lastPingAt === null
+        ? "connecting"
+        : "live"
+      : status === "connecting"
+        ? "connecting"
+        : "paused";
+
+  return { status, isSubscribed, throttledTelemetry, error, mockControls, connection, isMock };
 }

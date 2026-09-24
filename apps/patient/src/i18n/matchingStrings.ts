@@ -25,6 +25,17 @@ export interface MatchingTranslation {
   wave2StatusPending: string;
   wave2StatusActive: string;
   waveEscalatedNotice: string;
+  wave3Title: string;
+  wave3Subtitle: string;
+  wave3StatusPending: string;
+  wave3StatusActive: string;
+  wave3EscalatedNotice: string;
+  /** Shown instead of the countdown sentence once the timer is negative (the request is still open). */
+  countdownOverdue: string;
+  /** Every offer wave has run; the request stays open to drivers' Booking boards until the server's search window closes. */
+  searchExtendedNotice: string;
+  /** Any wave after it has run its window (wave1StatusCompleted names "the first wave"). */
+  waveWindowElapsed: string;
 
   // Driver Acceptance Countdown
   countdownLabel: string;
@@ -80,6 +91,16 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
     wave2StatusActive: "Escalated: Broadcasting to 3-6 km perimeter",
     waveEscalatedNotice:
       "Perimeter expanded to 3-6 km to ensure prompt ambulance allocation.",
+    wave3Title: "Wave 3: 6-10 km",
+    wave3Subtitle: "Wide-Area Fleet",
+    wave3StatusPending: "Escalates automatically if unaccepted",
+    wave3StatusActive: "Escalated: Broadcasting to 6-10 km perimeter",
+    wave3EscalatedNotice:
+      "Perimeter expanded to 6-10 km to ensure prompt ambulance allocation.",
+    waveWindowElapsed: "Broadcast window elapsed",
+    countdownOverdue: "Still searching. Your request stays open to nearby ambulances.",
+    searchExtendedNotice:
+      "All search waves have run. Your request stays open to every ambulance within 10 km. If none accepts, we will tell you to call 108.",
 
     countdownLabel: "Driver Acceptance Window",
     countdownSubtext: (seconds: number) =>
@@ -131,6 +152,16 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
     wave2StatusActive: "विस्तारित: 3-6 किमी के दायरे में प्रसारण",
     waveEscalatedNotice:
       "एंबुलेंस शीघ्र उपलब्ध कराने हेतु दायरा 3-6 किमी तक विस्तारित किया गया है।",
+    wave3Title: "तरंग 3: 6-10 किमी",
+    wave3Subtitle: "विस्तृत क्षेत्रीय दल",
+    wave3StatusPending: "स्वीकृति न मिलने पर स्वतः विस्तारित होगा",
+    wave3StatusActive: "विस्तारित: 6-10 किमी के दायरे में प्रसारण",
+    wave3EscalatedNotice:
+      "एंबुलेंस शीघ्र उपलब्ध कराने हेतु दायरा 6-10 किमी तक विस्तारित किया गया है।",
+    waveWindowElapsed: "प्रसारण समय सीमा समाप्त",
+    countdownOverdue: "खोज जारी है। आपका अनुरोध आस-पास की एंबुलेंस के लिए खुला है।",
+    searchExtendedNotice:
+      "सभी खोज तरंगें पूरी हो चुकी हैं। आपका अनुरोध 10 किमी के भीतर हर एंबुलेंस के लिए खुला है। कोई स्वीकार न करे तो हम आपको 108 पर कॉल करने के लिए कहेंगे।",
 
     countdownLabel: "चालक स्वीकृति समय सीमा",
     countdownSubtext: (seconds: number) =>

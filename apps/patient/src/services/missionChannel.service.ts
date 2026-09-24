@@ -2,9 +2,10 @@ import { Centrifuge, UnauthorizedError } from "centrifuge";
 import {
   missionChannelName,
   isMissionTelemetryPing,
-  isMissionLifecyclePublication,
+  parseLifecycleMessage,
   type MissionTelemetryPing,
   type MissionLifecycleEventType,
+  type ParsedLifecycleMessage,
 } from "@sahayak/domain";
 
 /**
@@ -44,7 +45,13 @@ export interface MissionChannelCallbacks {
    *  failed (e.g. a 403 on this mission but the client stays up). */
   onSubscriptionStateChange: (isSubscribed: boolean) => void;
   onTelemetry: (telemetry: DriverTelemetry) => void;
+  /** Legacy shape (event name + channel mission id). Used by the dev mock channel, and by the real channel when
+   *  `onLifecycleMessage` is not provided. */
   onLifecycleEvent: (event: MissionLifecycleEventType, missionId: string) => void;
+  /** Preferred: the parsed v1 message (seq, eventId, data) for sequence-aware application. */
+  onLifecycleMessage?: (message: ParsedLifecycleMessage) => void;
+  /** The subscription (re)established. `recovered === false` means events may have been missed: reconcile. */
+  onResubscribed?: (info: { recovered: boolean }) => void;
   onError: (error: Error) => void;
 }
 
@@ -67,13 +74,22 @@ export async function fetchChannelToken(
   missionId: string,
   authToken: string
 ): Promise<string> {
+  return requestToken(missionChannelName(missionId), authToken);
+}
+
+/** Connection token (`scope: "connect"`): the socket is authenticated, so anonymous connects can be disabled (6.8). */
+export async function fetchConnectionToken(authToken: string): Promise<string> {
+  return requestToken("connect", authToken);
+}
+
+async function requestToken(scope: string, authToken: string): Promise<string> {
   const response = await fetch(`${GATEWAY_URL}/realtime/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${authToken}`,
     },
-    body: JSON.stringify({ scope: missionChannelName(missionId) }),
+    body: JSON.stringify({ scope }),
   });
 
   if (response.status === 403) {
@@ -100,7 +116,7 @@ export interface ClientLike {
 export interface SubscriptionLike {
   subscribe(): void;
   unsubscribe(): void;
-  on(event: "subscribed", cb: () => void): unknown;
+  on(event: "subscribed", cb: (ctx?: { wasRecovering?: boolean; recovered?: boolean }) => void): unknown;
   on(event: "unsubscribed", cb: () => void): unknown;
   on(event: "publication", cb: (ctx: { data: unknown }) => void): unknown;
   on(event: "error", cb: (ctx: { error: Error }) => void): unknown;
@@ -128,6 +144,8 @@ export function mountMissionChannel(
   const client = createClient(CENTRIFUGO_WS_URL, {
     minReconnectDelay: 500,
     maxReconnectDelay: 20000,
+    // Fresh connection token on every (re)connect; never cached.
+    getToken: () => fetchConnectionToken(authToken),
   });
 
   client.on("connecting", () => callbacks.onStatusChange("connecting"));
@@ -138,14 +156,28 @@ export function mountMissionChannel(
     getToken: () => fetchChannelToken(missionId, authToken),
   });
 
-  sub.on("subscribed", () => callbacks.onSubscriptionStateChange(true));
+  sub.on("subscribed", (ctx) => {
+    callbacks.onSubscriptionStateChange(true);
+    // Centrifugo history is shared with GPS pings, so a lifecycle event can fall out of the recovery window: whenever
+    // recovery was attempted and did not fully succeed, the caller reconciles against the server (7.5 rule 3).
+    if (ctx?.wasRecovering && ctx.recovered === false) callbacks.onResubscribed?.({ recovered: false });
+  });
   sub.on("unsubscribed", () => callbacks.onSubscriptionStateChange(false));
   sub.on("publication", (ctx) => {
-    const data = ctx.data;
-    if (isMissionTelemetryPing(data)) {
-      callbacks.onTelemetry(data);
-    } else if (isMissionLifecyclePublication(data)) {
-      callbacks.onLifecycleEvent(data.event, data.missionId);
+    // Runs inside the socket callback: nothing here may throw (G-18). Unknown events and shapes are ignored.
+    try {
+      const data = ctx.data;
+      if (isMissionTelemetryPing(data)) {
+        callbacks.onTelemetry(data);
+        return;
+      }
+      const message = parseLifecycleMessage(data);
+      if (!message) return;
+      if (callbacks.onLifecycleMessage) callbacks.onLifecycleMessage(message);
+      // Rule 6: the mission id is the channel's, never the payload's.
+      else callbacks.onLifecycleEvent(message.event, missionId);
+    } catch (error) {
+      callbacks.onError(error instanceof Error ? error : new Error(String(error)));
     }
   });
   sub.on("error", (ctx) => callbacks.onError(ctx.error));

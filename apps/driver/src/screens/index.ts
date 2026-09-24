@@ -17,6 +17,14 @@ export {
   type DriverStandbyScreenProps,
 } from "./DriverStandbyScreen";
 export {
+  default as DriverBookingScreen,
+  type DriverBookingScreenProps,
+} from "./DriverBookingScreen";
+export {
+  default as DriverProfileScreen,
+  type DriverProfileScreenProps,
+} from "./DriverProfileScreen";
+export {
   default as IncomingMissionModal,
   type IncomingMissionModalProps,
 } from "./IncomingMissionModal";

@@ -113,7 +113,7 @@ export const completionStrings: Record<
     surgeMultiplierValue: "1.0x (Regulated Non-Surge)",
     totalFareRow: "Total Regulated Fare",
     paymentStatusLabel: "PAYMENT STATUS",
-    paymentStatusValue: "PAID • Digital Tax Invoice Issued",
+    paymentStatusValue: "Fare payable at the regulated statutory tariff",
     transactionRefLabel: (ref: string) => `Ref: ${ref}`,
     disputeFareButton: "Dispute Statutory Fare Calculation",
 
@@ -129,7 +129,7 @@ export const completionStrings: Record<
         title: "GPS Telemetry & Route Breadcrumbs",
         category: "Location Data",
         description:
-          "248 high-resolution coordinates recorded along the pickup corridor and hospital approach.",
+          "GPS coordinates of the ambulance recorded along the pickup and hospital route.",
         retentionPeriod: "Default: 30 days (Purgeable on request)",
       },
       {
@@ -138,7 +138,7 @@ export const completionStrings: Record<
         title: "Clinical Symptoms & Triage Urgency",
         category: "Health Data",
         description:
-          "START/ESI protocol assessment: Severe Trauma / Chest Pain (Category 1 Immediate).",
+          "The START/ESI triage answers you entered and the urgency category they produced.",
         retentionPeriod: "Default: 30 days (Purgeable on request)",
       },
       {
@@ -147,26 +147,17 @@ export const completionStrings: Record<
         title: "In-Transit Clinical Vitals (AIS-125)",
         category: "Health Data",
         description:
-          "Heart Rate (84 bpm), SpO2 (98%), Blood Pressure (122/80 mmHg), and CPAP flow telemetry.",
+          "Vital signs the ambulance crew entered during transport, when they recorded any.",
         retentionPeriod: "Default: 30 days (Purgeable on request)",
-      },
-      {
-        id: "audio",
-        icon: { set: "ion", name: "call" },
-        title: "Masked Audio Telecom Metadata",
-        category: "Communication Data",
-        description:
-          "1 masked phone call (42s duration). Caller & driver personal numbers concealed by proxy.",
-        retentionPeriod: "Default: 7 days",
       },
       {
         id: "handoff",
         icon: { set: "mci", name: "hospital-building" },
-        title: "Hospital Ward Handoff Record",
+        title: "Hospital Handoff Record",
         category: "Clinical Handoff",
         description:
-          "Pre-arrival ECG transmission log and Resuscitation Bay #04 digital receiving sign-off.",
-        retentionPeriod: "Permanent in Hospital ABHA/NDHM Record",
+          "The receiving physician's sign-off recorded by the ambulance crew at hospital handoff.",
+        retentionPeriod: "Default: 30 days (Purgeable on request)",
       },
     ],
 
@@ -234,7 +225,7 @@ export const completionStrings: Record<
     surgeMultiplierValue: "1.0x (बिना सर्ज शुल्क गारंटी)",
     totalFareRow: "कुल शासकीय किराया",
     paymentStatusLabel: "भुगतान स्थिति",
-    paymentStatusValue: "भुगतान प्राप्त • डिजिटल टैक्स इनवॉइस जारी",
+    paymentStatusValue: "नियंत्रित सरकारी दर पर देय किराया",
     transactionRefLabel: (ref: string) => `संदर्भ: ${ref}`,
     disputeFareButton: "शासकीय किराया गणना पर आपत्ति दर्ज करें",
 
@@ -250,7 +241,7 @@ export const completionStrings: Record<
         title: "जीपीएस टेलीमेट्री व रूट ब्रेडक्रम्ब्स",
         category: "लोकेशन डेटा",
         description:
-          "पिकअप व अस्पताल मार्ग के दौरान 248 उच्च-सटीकता निर्देशांक दर्ज किए गए।",
+          "पिकअप व अस्पताल मार्ग के दौरान एम्बुलेंस के जीपीएस निर्देशांक दर्ज किए गए।",
         retentionPeriod: "मानक अवधि: 30 दिन (अनुरोध पर तत्काल विलोपन योग्य)",
       },
       {
@@ -259,7 +250,7 @@ export const completionStrings: Record<
         title: "चिकित्सीय लक्षण व ट्राइएज स्कोर",
         category: "स्वास्थ्य डेटा",
         description:
-          "START/ESI प्रोटोकॉल मूल्यांकन: गंभीर चोट / सीने में दर्द (श्रेणी 1 तत्काल)।",
+          "आपके द्वारा दिए गए START/ESI ट्राइएज उत्तर और उनसे बनी तात्कालिकता श्रेणी।",
         retentionPeriod: "मानक अवधि: 30 दिन (अनुरोध पर तत्काल विलोपन योग्य)",
       },
       {
@@ -268,26 +259,17 @@ export const completionStrings: Record<
         title: "परिवहन के दौरान लाइव वाइटल्स (AIS-125)",
         category: "स्वास्थ्य डेटा",
         description:
-          "हृदय गति (84 bpm), SpO2 (98%), रक्तचाप (122/80 mmHg) व ऑक्सीजन प्रवाह।",
+          "परिवहन के दौरान एम्बुलेंस क्रू द्वारा दर्ज किए गए वाइटल संकेत, यदि उन्होंने दर्ज किए हों।",
         retentionPeriod: "मानक अवधि: 30 दिन (अनुरोध पर तत्काल विलोपन योग्य)",
-      },
-      {
-        id: "audio",
-        icon: { set: "ion", name: "call" },
-        title: "मास्क्ड टेलीकॉम कॉल मेटाडेटा",
-        category: "संचार डेटा",
-        description:
-          "1 मास्क्ड कॉल (42 सेकंड अवधि)। निजी फोन नंबर प्रॉक्सी द्वारा सुरक्षित रखे गए।",
-        retentionPeriod: "मानक अवधि: 7 दिन",
       },
       {
         id: "handoff",
         icon: { set: "mci", name: "hospital-building" },
-        title: "अस्पताल वार्ड हैंडऑफ रिकॉर्ड",
+        title: "अस्पताल हैंडऑफ रिकॉर्ड",
         category: "हैंडऑफ रिकॉर्ड",
         description:
-          "आगमन-पूर्व ईसीजी डेटा व रिससिटेशन बे #04 की डिजिटल स्वीकृति प्रति।",
-        retentionPeriod: "अस्पताल ABHA/NDHM रिकॉर्ड में स्थायी",
+          "अस्पताल हैंडऑफ पर एम्बुलेंस क्रू द्वारा दर्ज प्राप्तकर्ता चिकित्सक की स्वीकृति।",
+        retentionPeriod: "मानक अवधि: 30 दिन (अनुरोध पर तत्काल विलोपन योग्य)",
       },
     ],
 

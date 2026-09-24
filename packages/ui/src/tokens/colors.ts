@@ -177,5 +177,17 @@ export const colors = {
   infoLight: semanticColors.status.statutorySurface,
 } as const;
 
+/**
+ * The four steps of an emergency's timer, shared by the driver's Booking card and the patient's search countdown so both
+ * sides read the same colour for the same moment: green while fresh, yellow past half the designed time, orange in the last
+ * 10 s, red once overdue. Green, yellow and red are the triage tokens; the triage scale has no orange, so it is defined here.
+ */
+export const timerTones = {
+  green: { fill: semanticColors.triage.green.base, surface: semanticColors.triage.green.surface, text: semanticColors.triage.green.textAccessible },
+  yellow: { fill: semanticColors.triage.yellow.base, surface: semanticColors.triage.yellow.surface, text: semanticColors.triage.yellow.textAccessible },
+  orange: { fill: "#EA580C", surface: "#FFF7ED", text: "#9A3412" }, // Orange-600 / Orange-50 / Orange-800
+  red: { fill: semanticColors.triage.red.base, surface: semanticColors.triage.red.surface, text: semanticColors.triage.red.textAccessible },
+} as const;
+
 export type SemanticColors = typeof semanticColors;
 export type Colors = typeof colors;

@@ -90,38 +90,17 @@ Before issuing the next task prompt to Claude Code, Antigravity must:
 
 | Field | Current Value |
 | :--- | :--- |
-| **Active Task ID** | `Pre-Flight Milestone` (Android Config, Env Setup & Dual-App Harness - see section 18) |
+| **Active Task ID** | `Driver Booking Board & Profile` (see the final section, "Milestone: Driver Booking Board & Profile"); follows the `Data & Sync Milestone`, whose ops steps are still open |
 | **Agent Executing** | Claude Code (CLI) |
-| **Timestamp** | `2026-09-23T19:15:00+05:30` |
-| **Files Touched** | 8 created, 13 modified, 0 deleted (full manifest in section 18) |
-| **Verification Proof** | `pnpm preflight` (`turbo run typecheck lint test --force`): 10/10 successful (6 typecheck, 0 lint [documented no-op, see section 18 Objective 5], 4 test), 0 regressions. `expo prebuild --clean --no-install --platform android` clean for both apps, manifests verified by grep. |
-| **Next Required Action** | Antigravity to review section 18's deviations (lint peer-deps not installed, `EXPO_PUBLIC_SUPABASE_URL` not wired into `supabaseClient.ts`, placeholder icon/splash assets) before any store-facing build; Supabase migration/deploy deliberately left untouched per this phase's own directive. |
+| **Timestamp** | `2026-09-24` |
+| **Files Touched** | Booking/Profile pass: 2 SQL migrations (`20260924000005`, `20260924000006`), 1 behaviour script, `@sahayak/domain` (`dispatch/board.ts` + test, `mission-channel`, `DISPATCH_CONFIG`), driver (2 screens, 2 routes, `EmergencyCard`, `StandbyBookingSection`, 2 stores, 3 hooks, 2 i18n files, profile core, mock feed, standby/server wiring), patient (`ActiveMatchingScreen` wave 3, tracking card crew details). Earlier pass: 3 SQL migrations, 2 test files under `supabase/tests/`, gateway rewrite (`docker/mock-gateway/`), `docker/centrifugo.secure.json`, domain (`mission-channel`, `dispatch`, `api`, both machines, `pricing`), ~45 patient and driver files. Deleted: 4 unused driver stub hooks. Not committed. |
+| **Verification Proof** | Booking/Profile pass: `pnpm preflight` exit 0 (10/10 turbo tasks, both schema suites incl. new Test 14, gateway suite); `driver_board.behaviour.sql` (90 checks) and the existing `mission_api.behaviour.sql` green on a scratch database (Supabase shims; the local `postgres` DB has no migrations); `expo export --platform android` bundles. Never rendered on a device. Earlier pass: `pnpm preflight` exit 0: 10/10 turbo tasks, `test:schema` (both suites) and `test:gateway` green. Behaviour SQL suite green on a scratch Postgres 17 container (not the linked project). Strict gateway verified against a scratch Centrifugo v5 with a fake Supabase (14 checks). Nothing run on a device. Nothing pushed. |
+| **Next Required Action** | Apply migrations `20260924000005` and `20260924000006` (local: `supabase db reset`) and run `supabase/tests/driver_board.behaviour.sql`; render the Booking and Profile screens on a device. Then the ops steps from the Data & Sync milestone: run the ops steps in the milestone section (load `jurisdictions`, schedule `dispatch_tick`, Vault secrets, make Centrifugo reachable from the database). Then run `supabase start` + `supabase db reset` (local only) and the behaviour script once to turn the harness result into a verified one. |
 
 ### Last Completed Action
-- **Action Description:** Patient App Milestone follow-up fix: wired `reset()` into `matching.tsx`'s pre-match cancellation handler, closing the last of the three terminal-state store-reset gaps (the other two - post-match completion and post-match cancellation - were fixed earlier in section 12). Full detail in section 12.
-- **Verification Commands:** `turbo run typecheck --force` and `turbo run test --force`
-- **Verification Output:**
-  ```
-  $ ./node_modules/.bin/turbo run typecheck --force
-   Tasks:    6 successful, 6 total
-
-  $ ./node_modules/.bin/turbo run test --force
-  @sahayak/driver:test:  ALL 6 TEST SUITES PASSED SUCCESSFULLY (100% GREEN)
-  @sahayak/ui:test:      ALL EK-AMBULANCE DESIGN SYSTEM TESTS PASSED (100% GREEN)
-  @sahayak/domain:test:  ALL PATIENT LIFECYCLE MACHINE TESTS PASSED (100% GREEN)
-  @sahayak/patient:test: ALL MISSION CHANNEL SERVICE TESTS PASSED (100% GREEN)
-  @sahayak/patient:test: ALL PATIENT OTP AUTH CORE TESTS PASSED (100% GREEN)
-  @sahayak/patient:test: GOLDEN PATH INTEGRATION TEST PASSED (100% GREEN, including MISSION_CANCELLED)
-   Tasks:    4 successful, 4 total
-
-  $ per-workspace tsc --noEmit
-  packages/domain          0 errors
-  packages/ui              0 errors
-  packages/data            0 errors
-  packages/observability   0 errors
-  apps/patient             0 errors
-  apps/driver              0 errors
-  ```
+- **Action Description:** Driver Booking board (green/red emergencies, timers, claim) and Profile (details, phone, password, service area, hospital, vehicle; locked during an emergency), with the server RPCs, the patient-side crew details and wave 3. Detail, decisions and open questions in the final section. Before it: implemented `DATA_AND_SYNC_SPECIFICATION.md` (migrations, server RPCs, real-time contract, client sync). Full detail, deviations and ops steps in the final section.
+- **Verification Commands:** `pnpm preflight`
+- **Verification Output:** exit 0; `Tasks: 10 successful, 10 total`; `SUPABASE SCHEMA VALIDATION`, `DATA & SYNC SCHEMA VALIDATION` and `REALTIME GATEWAY TESTS` all `PASSED (100% GREEN)`.
 
 ---
 
@@ -1642,3 +1621,98 @@ Tables `driver_push_tokens`, `dispatch_waves`, `mission_events`, `telemetry_logs
 ### Notes
 - Everything is `__DEV__`-gated. Mock session tokens are fake, so any call that needs a real Supabase JWT (RLS-protected queries) will still fail; the mock session expires after 1h and cannot refresh.
 - `pnpm preflight`: **10/10 successful**. Chips/auto-fill UI **not yet checked on device**.
+
+## Milestone: Data & Sync Implementation (`DATA_AND_SYNC_SPECIFICATION.md`)
+
+Design A is adopted: the server is authoritative. Clients call RPCs and the machines advance only on the server's 200. The server publishes lifecycle events; drivers publish GPS only. The driver-publishes-lifecycle path (Design B) survives only as a `__DEV__` fallback when there is no server session.
+
+### What was built
+| Layer | Artifact |
+| :--- | :--- |
+| DB | `supabase/migrations/20260924000002_data_sync_schema.sql` (additive schema, RLS hardening, append-only events, fare guard), `...0003_mission_api.sql` (SECURITY DEFINER RPCs, dispatch, publisher trigger, profile provisioning), `...0004_storage_buckets.sql` (3 private buckets + policies) |
+| DB tests | `supabase/tests/data_sync_schema.test.ts` (static, in `pnpm test:schema`), `supabase/tests/mission_api.behaviour.sql` (local-DB-only psql script, 150+ checks) |
+| Real-time | `docker/mock-gateway/gateway.mjs` (+ `.test.mjs`, in `pnpm test:gateway`), `server.mjs`, `docker/centrifugo.secure.json`, compose wiring |
+| Domain | `mission-channel` (v1 envelope, `decideSeq`, `isNewerPing`), `dispatch` (config, scopes, offers, transition table), `api` (`ApiResult`, `mapRpcError`), both XState machines (`HYDRATE`, `SERVER_*` events), `pricing` (quote now equals locked fare, G-07); `dataSync.test.ts` |
+| Patient | `lib/missionApi*`, `services/missionSync.core.ts`, `missionSession.core.ts`, `useMissionSync`, `useResumeActiveMission`; tracking, transport, completion, cancelled screens driven by server data only |
+| Driver | `lib/driverServer*`, `services/driverRealtime.ts`, `telemetryUpload.ts`, `hooks/useServerSync.ts`; lifecycle store `submit()` = server first, then machine; offer countdown from server `expiresAt`; honest telemetry flush (overlay now uploads to the server) |
+
+### Design notes and deliberate deviations
+- Creation event is seq 1, so the spec's example seq numbers are shifted by one. A replayed create returns 200 with `replay: true`.
+- The patient persists `lastSeq: 1` after create, so an instant `no_ambulance_available` cancel (seq 2, recorded inside `create_mission`) is replayed rather than skipped.
+- `fetchAssignedMission` returns `ApiResult`: a live mission ends only on a successful read that shows no such mission, never on a network error.
+- `handle_new_user` fires on insert and on update of `raw_app_meta_data`; the role only ever comes from app_metadata. A one-shot backfill creates missing profiles (G-11).
+- Final fare = server-measured transport leg (telemetry between `onboard_at` and `arrived_hospital_at`), else the quoted estimate (`audit.distanceSource`).
+- Wave dead time (decision): offers expire at 15 s but the wave escalates at 45 s, leaving a 30 s idle tail. Kept as the spec default.
+- D-7 (no prescriptions bucket), D-9 ("fare payable", not "paid"), D-10 (no chat), other section 8.2 defaults taken as recommended.
+- `gps:{id}` channel split deferred; mission history raised to 250 messages / 600 s instead (allowed by the spec).
+- Hospital fixtures are matched to DB rows by position (within 1 km) until the client reads hospital ids directly.
+
+### Ops steps required before this works end to end
+1. **Load `jurisdictions` boundaries.** The table is unseeded, so every booking returns `jurisdictions_not_loaded` and the patient sees "call 108".
+2. **Schedule the jobs** (pg_cron). Nothing escalates or cancels on exhaustion until `dispatch_tick` runs:
+   `select cron.schedule('dispatch_tick','* * * * *',$$select public.dispatch_tick()$$);` (service_role; sub-minute needs `cron.schedule` with a seconds interval on supported versions), plus `process_erasure_requests()` and `purge_expired_personal_data()`.
+3. **Vault secrets** `centrifugo_api_url` and `centrifugo_api_key`. Without them the publisher is a silent no-op.
+4. **Make Centrifugo reachable from the database.** `pg_net` runs inside Supabase; in this repo Centrifugo runs on the dev machine and Kong points at the remote project. With a real session the driver's direct publish is off, so the patient gets no live lifecycle events until a remount or resubscribe (reconcile catches up). `publish_realtime` swallows failures with a warning, so a failed publish is silent.
+5. **Secure mode:** `CENTRIFUGO_CONFIG=centrifugo.secure.json AUTH_MODE=strict SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=... CENTRIFUGO_API_KEY=... CENTRIFUGO_ALLOWED_ORIGINS=...`. It inherits `CENTRIFUGO_ALLOWED_ORIGINS=*` from the compose default; set real origins. Default (`dev`) mode still allows anonymous connect and client publish on `mission`. Centrifugo was already crash-looping on Redis DNS before this work.
+6. **Run the behaviour script locally:** `supabase start`, `supabase db reset` (never `--linked`), then `psql "$DB_URL" -f supabase/tests/mission_api.behaviour.sql`. Never `db push` or `link` from this repo without an explicit decision (a real project is linked under `supabase/.temp`).
+
+### Verification scope, stated exactly
+- `pnpm preflight` exit 0 (10/10 turbo tasks, both schema suites, gateway suite).
+- The behaviour checks ran on a scratch container (`public.ecr.aws/supabase/postgres:17.6.1.167`) with a rewritten `auth.uid()`, stubbed `storage.*` tables and an added `auth.users.phone` column. Storage-policy creation on the real `storage.objects`, and bucket size/MIME enforcement, are **untested**. Applying to an empty DB and to a DB with legacy rows both pass.
+- 14 gateway checks ran against a scratch Centrifugo v5 and a fake Supabase (anonymous connect refused, forged lifecycle publish denied, GPS ping delivered, others denied).
+- **Not done:** any run on a device or simulator, Supabase advisors, `supabase db reset`, any push.
+
+### Not done (named)
+- **Driver KYC wiring (G-13, D-UX-04, spec 2.3 storage uploads).** The RPCs, buckets and policies exist but no client calls `supabase.storage`. Onboarding still uses `simulateQuickUpload`, a pre-filled demo profile and a fabricated submit. `apps/driver` has no image/document picker installed; adding one is a dependency decision.
+- `requestErasure` and `confirmReceipt` wrappers exist with no caller: the deletion toggle is still local (G-09) and `CONFIRM_RECEIPT` is never sent.
+- Push token registration (G-21); language store (G-15, triage locale still `"en"`); OpenRouter key still bundled in the client (G-26); chat modal still present (D-10 recommended removal).
+- Receipt and EMR PDFs (`receiptPath` is always null); telephony masked relay; payments; ABHA; crew model (D-11); Redis GEO presence (DB `last_seen_at` used); tariff verification against the gazette.
+- Triage does not capture `primary_complaint` or age/sex; offers carry `derived_flags` only.
+- Jurisdiction still uses bounding boxes in the client (G-06).
+
+## Milestone: Driver Booking Board & Profile
+
+Two new driver pages, `(shift)/booking` and `(shift)/profile`, opened from the standby header (avatar opens Profile; a Booking card with a live count sits under the shift card).
+
+### Booking (a per-driver pull, never a broadcast)
+- The spec rejects publishing open missions to every driver (6.4.4, G-23, R-06), so `missions` RLS is **not** widened and no channel was added. `list_nearby_emergencies()` computes what the calling driver may see; `claim_emergency()` re-checks it under a row lock.
+- Only the driver's own vehicle type (strict equality, same as offers). Oldest first, five per page. Two sections, shown as tabs so "five per page" is unambiguous:
+  - **Green**: within 4 km, any age. An overdue one shows here with a negative timer (`-00:52`).
+  - **Red**: 4-7 km, once one designed time has passed with no taker.
+  - **Home-screen fallback**: 7-10 km, once two designed times have passed and no free ambulance of that type is within 7 km. Shown as a card on standby, not on the Booking page.
+- **Designed time = one wave window (45 s).** The timer is green above half, yellow at or below half, orange at 10 s or less, red once negative. It must be more than 20 s or the yellow band never shows (at the 15 s offer TTL, half is below the 10 s orange step). Timers count to the server's `dueAt` with a measured clock offset, not the phone's clock.
+- A driver who holds an offer or a mission still sees the list, but the card has no button (a plain `View`, not a `Pressable`). The state comes from the lifecycle machine (`driverAvailability.core.ts`), never a flag. The server refuses a second claim (`already_on_mission`) regardless.
+- Accepting from the board sends `SERVER_OFFER_RECEIVED` then `ACCEPT_DISPATCH` with `source: "board"`, which `buildServerCall` turns into `claim_emergency`. It asks first ("Accept and go"). No synthetic wave row is created: `dispatch_waves.wave_number` is constrained to 1..3 and unique per mission, and `accept_offer` requires the caller in a wave's eligible list, which a red-section driver never was.
+- Development build with no server session: a mock feed applies the same `boardBand` rule, so emergencies move hidden -> red -> overdue as they age. A release build with no session shows nothing.
+
+### Profile
+- Name, phone (GoTrue phone change plus OTP confirm), password (`auth.updateUser`), service area (DL/UP), affiliated hospital (from `hospitals`), and vehicle: plate, make/model, colour, crew size, tier (read-only).
+- **The profile is locked from the moment an offer is held until the mission ends.** Enforced in four places: the UI (machine state), `update_driver_profile` (`profile_locked`), a trigger on `profiles.full_name` (the table grant is otherwise open), and a trigger on `auth.users.phone` (a phone change mid-mission fails). A **password** change is not lockable server-side (GoTrue owns it); only the UI locks it.
+- Plate and make/model come from the RC document, so they are editable only while KYC is `draft` or `rejected` (same rule as the existing `driver_vehicles` policy); crew size and colour are always editable. Plates are compared ignoring spaces and hyphens (the column is unique on exact text, which let `DL 01 AB 1234` and `DL01AB1234` coexist: the behaviour test caught this).
+- The patient now sees make/model, colour and crew size on the tracking card, through the same `DRIVER_ACCEPTED` payload for a pushed offer and a board claim (`_driver_public_info`; `accept_offer` was redefined in the new migration to use it).
+- `dispatch_config()` gained `boardRadiiKm [4,7,10]`, mirrored in `DISPATCH_CONFIG` and checked by the drift test.
+
+### Patient matching screen
+- Wave 3 (6-10 km) added to `ActiveMatchingScreen`. The screen is still a local simulation (fleet counts and blips are fixed).
+- **The countdown is the driver card's timer**: signed (`00:23`, then `-00:52`), the same four colours (`timerTones` in `@sahayak/ui`, shared by both apps), the same 45 s designed time. It counts from the mission's server `created_at` (`fetchMissionCreatedAt`), so it agrees with the drivers' card and survives leaving and re-entering the screen; without a session it counts from mount. The wave shown is derived from elapsed time (`searchWaveAt`), not from a second timer. After the three waves (135 s) a notice says the request stays open to every ambulance within 10 km. Residual difference: the phone's clock against the server's (the drivers' side corrects for it with the RPC's `serverNow`; a plain table read has no server time).
+
+### Decisions
+- **Confirmed by the product owner:** 3 km / 6 km for the patient search and 4 km / 7 km for the driver lists are intended. They are two constants: `radiiKm [3,6,10]` (offer pushes) and `boardRadiiKm [4,7,10]` (what the board shows).
+- **Confirmed by the product owner:** the auto-cancel is lengthened; the patient's countdown uses the driver card's four colours.
+- Taken without asking: the search window is **10 minutes** (`DISPATCH_CONFIG.searchTtlSeconds` = `dispatch_config().searchTtlSeconds` = 600; one value in each place, kept equal by the drift test). Change both to lengthen or shorten it.
+- Taken without asking: "Change password": sign-in is SMS-OTP only, so nothing reads the password yet. The Profile says so.
+
+### Extended search window (migration `20260924000006`)
+- Before: when the last offer wave closed (3 x 45 s = 135 s) `dispatch_next_wave` cancelled the request. Now, if drivers **were asked** and nobody took it, the request stays `requesting` and stays on every eligible driver's Booking board (none of the bands has an upper age, so an old request shows as green or red with a deeply negative timer) until `created_at + searchTtlSeconds`. Then `dispatch_tick` ends it with the same system cancel the patient app already handles (`no_ambulance_available`).
+- If **nobody could be asked at any radius** (no eligible driver within 10 km) it still ends at once, as before: there is nothing to wait for and the patient is sent to 108 without a ten-minute wait. This is the one place I read "lengthened" narrowly; say if the window should apply there too.
+- The system cancel now lives in one place, `_cancel_unanswered`. `dispatch_tick` gained a second loop for the window, so it must run on a schedule (it already had to, for wave escalation); the window closes to within one tick interval.
+- The existing `mission_api.behaviour.sql` check that a released mission with nobody left "ends the search" was rewritten: it now stays open, then ends when the window closes.
+- A driver who aborts a mission (`DRIVER_RELEASED`) puts it back on the board, and that driver can see and claim it again. Decline is not persisted anywhere, so this is not new, but it is more visible now.
+
+### Things to know
+- **Service area and affiliated hospital are stored and shown, but do not affect dispatch or what the board shows** (radius and vehicle type do). They are informational until a dispatch rule uses them.
+
+### Verification
+- `pnpm preflight` exit 0 (10/10 turbo tasks, both schema suites, gateway suite). New: `board.test.ts` (domain), `driverAvailability`, `mockBoardFeed`, `driverProfile.core`, `driverBoardProfile.store` (driver), `Test 14` (schema drift).
+- Behaviour: `supabase/tests/driver_board.behaviour.sql` (new, 90 checks, including the search window) and the existing `mission_api.behaviour.sql` both pass on a scratch database built from `template0` with Supabase shims (`auth`, `storage`, `vault`, PostGIS, pg_net). The local Supabase `postgres` database had **no migrations applied**, so it was not used. Run yourself: `supabase db reset`, then `psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/driver_board.behaviour.sql`.
+- **Not done:** any run on a device or simulator (the two new screens and the patient countdown are typechecked and linted but have never been rendered), and applying migrations `20260924000005` / `20260924000006` to any real project.

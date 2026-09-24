@@ -1,0 +1,24 @@
+{
+  "admin": false,
+  "allow_anonymous_connect_without_token": false,
+  "engine": "redis",
+  "redis_address": "redis:6379",
+  "client_channel_limit": 10,
+  "proxy_publish_endpoint": "http://token-mint:8080/centrifugo/publish",
+  "proxy_publish_timeout": "3s",
+  "namespaces": [
+    {
+      "name": "mission",
+      "proxy_publish": true,
+      "history_size": 250,
+      "history_ttl": "600s",
+      "force_recovery": true
+    },
+    {
+      "name": "driver",
+      "history_size": 5,
+      "history_ttl": "60s",
+      "force_recovery": true
+    }
+  ]
+}

@@ -122,8 +122,9 @@ export function computeVehiclePricingEstimate(
   }
 
   const careLevel = careLevelFromVehicleType(params.vehicleType);
-  const estimatedTotalInr =
-    baseFareInr + Math.round(params.distanceKm * perKmRateInr);
+  // G-07: the quote must equal the locked fare (computeItemizedStatutoryFare / SQL compute_statutory_fare): 5 km are included.
+  const billableAdditionalKm = Math.max(0, Number((params.distanceKm - 5.0).toFixed(1)));
+  const estimatedTotalInr = baseFareInr + Math.round(billableAdditionalKm * perKmRateInr);
 
   return {
     vehicleType: params.vehicleType,

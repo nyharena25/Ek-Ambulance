@@ -29,6 +29,13 @@ export interface TransportingTranslation {
   greenCorridorBadge: string;
   routeCorridorNotice: string;
   centrifugoLiveBadge: string;
+  trackingConnectingBadge: string;
+  trackingPausedBadge: string;
+  etaOnlyLabel: (mins: number) => string;
+  hospitalPendingText: string;
+  hospitalArrivedNotice: string;
+  /** Built only from facts the server supplied; never a plate, tracking URL or ETA that was not given. */
+  familyShareMessage: (params: { hospitalName?: string; etaMinutes?: number }) => string;
   speedText: (kmh: number) => string;
 
   // Emergency Share with Family
@@ -105,7 +112,16 @@ export const transportingStrings: Record<
     greenCorridorBadge: "GREEN CORRIDOR",
     routeCorridorNotice:
       "Priority Green Corridor Active • Direct Access via Ring Road Flyover",
-    centrifugoLiveBadge: "Centrifugo WS: Live (24ms)",
+    centrifugoLiveBadge: "Live tracking",
+    trackingConnectingBadge: "Connecting to live tracking...",
+    trackingPausedBadge: "Live tracking paused - last position shown",
+    etaOnlyLabel: (mins: number) => `${mins} MINS`,
+    hospitalPendingText: "Destination hospital not confirmed yet",
+    hospitalArrivedNotice: "The ambulance has reached the hospital. The crew is completing the handoff.",
+    familyShareMessage: ({ hospitalName, etaMinutes }) =>
+      `Ek-Ambulance update: the patient is on board an ambulance` +
+      `${hospitalName ? ` going to ${hospitalName}` : ""}` +
+      `${etaMinutes !== undefined ? ` (about ${etaMinutes} min away)` : ""}.`,
     speedText: (kmh: number) => `${kmh} km/h`,
 
     shareSectionTitle: "SHARE LIVE TRACKING WITH FAMILY",
@@ -183,7 +199,16 @@ export const transportingStrings: Record<
     greenCorridorBadge: "ग्रीन कॉरिडोर",
     routeCorridorNotice:
       "प्राथमिकता ग्रीन कॉरिडोर सक्रिय • रिंग रोड फ्लाईओवर द्वारा सीधा मार्ग",
-    centrifugoLiveBadge: "सेंट्रीफ्यूगो WS: लाइव (24ms)",
+    centrifugoLiveBadge: "लाइव ट्रैकिंग",
+    trackingConnectingBadge: "लाइव ट्रैकिंग से जुड़ रहा है...",
+    trackingPausedBadge: "लाइव ट्रैकिंग रुकी है - आख़िरी स्थिति दिखाई गई",
+    etaOnlyLabel: (mins: number) => `${mins} मिनट`,
+    hospitalPendingText: "गंतव्य अस्पताल की पुष्टि अभी नहीं हुई",
+    hospitalArrivedNotice: "एम्बुलेंस अस्पताल पहुँच गई है। क्रू हैंडऑफ पूरा कर रहा है।",
+    familyShareMessage: ({ hospitalName, etaMinutes }) =>
+      `एक-एंबुलेंस अपडेट: मरीज एम्बुलेंस में सवार हैं` +
+      `${hospitalName ? ` और ${hospitalName} की ओर जा रहे हैं` : ""}` +
+      `${etaMinutes !== undefined ? ` (लगभग ${etaMinutes} मिनट दूर)` : ""}।`,
     speedText: (kmh: number) => `${kmh} किमी/घंटा`,
 
     shareSectionTitle: "परिजनों के साथ लाइव ट्रैकिंग साझा करें",

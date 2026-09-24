@@ -1,4 +1,5 @@
 import type { CareLevel, GeoPoint } from "../types/index.ts";
+import type { CancelledBy, MissionStatus } from "../mission-channel/index.ts";
 
 export interface GoOnlinePayload {
   driverId: string;
@@ -20,13 +21,15 @@ export interface AcceptDispatchPayload {
   driverId: string;
   offerId: string;                   // correlates to the specific wave that offered this mission
   acceptedAt: string;                // ISO 8601
+  /** "board": taken from the Booking list, where no wave offered it, so the server claims by mission rather than by offer. */
+  source?: "board";
 }
 
 export interface DeclineDispatchPayload {
   missionId: string;
   driverId: string;
   offerId: string;
-  reason?: "too_far" | "unavailable" | "wrong_care_level" | "other";
+  reason?: "too_far" | "vehicle_issue" | "patient_onboard" | "break" | "unavailable" | "wrong_care_level" | "other";
   declinedAt: string;                // ISO 8601
 }
 
@@ -37,11 +40,25 @@ export interface ConfirmArrivalScenePayload {
   arrivedAt: string;                 // ISO 8601
 }
 
+/** Clinical readings the crew actually entered. A reading left blank is absent, never coerced to 0 (D-UX-05). */
+export interface OnboardVitals {
+  pulse?: number;                    // 0-300
+  spO2?: number;                     // 0-100
+  systolic?: number;                 // 40-300
+  diastolic?: number;                // 20-200
+  gcs?: number;                      // 3-15
+}
+
 export interface ConfirmPatientOnboardPayload {
   missionId: string;
   driverId: string;
   destination: GeoPoint;             // hospital confirmed at this step
+  /** `hospitals.id` of the destination. Required by the server, which takes the bed hold (G-22). */
+  hospitalId?: string;
   onboardAt: string;                 // ISO 8601
+  vitals?: OnboardVitals;
+  emergencyType?: string;
+  bypass?: boolean;
 }
 
 export interface ConfirmArrivalHospitalPayload {
@@ -51,11 +68,22 @@ export interface ConfirmArrivalHospitalPayload {
   arrivedAt: string;                 // ISO 8601
 }
 
+/** The receiving physician's sign-off (5.6). Free text and booleans entered by the crew; never pre-filled (D-UX-03). */
+export interface HandoffSignOff {
+  physicianName: string;
+  registrationNumber: string;
+  department: string;
+  emtSigned: boolean;
+  checklist: { bedReady: boolean; ventilatorReady: boolean; emrHanded: boolean };
+}
+
 export interface CompleteMissionPayload {
   missionId: string;
   driverId: string;
-  finalFareInr: number;              // server-recomputed at completion; echoed for the receipt
+  /** Computed by the server at completion and never taken from the driver (6.4.3); only echoed to the receipt view. */
+  finalFareInr?: number;
   completedAt: string;               // ISO 8601
+  handoff?: HandoffSignOff;
 }
 
 /**
@@ -83,10 +111,22 @@ export type DriverLifecycleEvent =
   | { type: "COMPLETE_MISSION"; payload: CompleteMissionPayload }
   | { type: "ABORT_MISSION"; payload: AbortMissionPayload };
 
+/** Snapshot of the driver's assigned mission (RLS read of `missions`), used to resume after a process kill (7.6). */
+export interface DriverHydratePayload {
+  missionId: string;
+  status: MissionStatus;
+  driverId?: string;
+}
+
 export type DriverLifecycleMachineEvent =
   | DriverLifecycleEvent
   | { type: "SERVER_OFFER_RECEIVED"; payload: { offerId: string; missionId: string } }
-  | { type: "SERVER_OFFER_TIMEOUT"; payload: { offerId: string } };
+  | { type: "SERVER_OFFER_TIMEOUT"; payload: { offerId: string } }
+  /** Another driver took the mission, the patient cancelled, or the wave expired (6.4.4). */
+  | { type: "SERVER_OFFER_REVOKED"; payload: { offerId: string; reason: "taken" | "cancelled" | "expired" } }
+  /** The mission ended on the server while this driver held it (patient cancel, system cancel). Was unmodelled (7.2). */
+  | { type: "SERVER_MISSION_CANCELLED"; payload: { missionId: string; cancelledBy?: CancelledBy; reason?: string } }
+  | { type: "HYDRATE"; payload: DriverHydratePayload };
 
 export type DriverLifecycleState =
   | "offline"

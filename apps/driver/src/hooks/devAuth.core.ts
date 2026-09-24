@@ -1,6 +1,7 @@
 import { DEV_OTP, getDevDriverProfile, type DevDriverProfile } from "../config/devDriverProfiles.ts";
 import { useDriverStandbyStore } from "../state/driverStandby.store.ts";
 import { useDriverOnboardingStore } from "../state/driverOnboarding.store.ts";
+import { useDriverProfileStore } from "../state/driverProfile.store.ts";
 import type { AuthApiError } from "./otpAuth.core.ts";
 
 export interface DevSession {
@@ -61,6 +62,8 @@ export function devVerifyOtp(phone: string, token: string): DevVerifyResult | nu
     standby.setAis125Type(type);
     onboarding.setAIS125VehicleType(type);
   }
+  // After the tier and the onboarding form are set: the mock profile reads both.
+  useDriverProfileStore.getState().seedDev({ phone: profile.phone, jurisdiction: profile.jurisdiction });
   if (profile.isVerified && type) {
     useDriverOnboardingStore.setState({
       submissionResult: {

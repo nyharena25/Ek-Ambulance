@@ -11,13 +11,20 @@ import {
   type LocationObjectLike,
 } from "./backgroundLocation.core";
 import { telemetryQueueService } from "./telemetryQueue.service";
+import { recordLivePing } from "./telemetryUpload";
 
 export const liveFixDeps: LocationFixDeps = {
   setGps: (gps) => useDriverStandbyStore.getState().setGps(gps),
   getActiveMissionId: () => useDriverLifecycleStore.getState().activeMissionId,
   isFallbackActive: () => useDriverConnectionStore.getState().isFallbackActive,
   enqueuePing: (missionId, coords, meta) => telemetryQueueService.enqueuePing(missionId, coords, meta),
-  publish: publishDriverTelemetry,
+  // Live pings go to the patient over the channel AND into the acknowledged upload buffer: the server needs the track to
+  // compute the fare from the measured transport leg (D-2), and the channel alone is best-effort.
+  publish: (ping) => {
+    publishDriverTelemetry(ping);
+    const missionId = useDriverLifecycleStore.getState().activeMissionId;
+    if (missionId) recordLivePing(missionId, ping);
+  },
 };
 
 // defineTask must run at module load (before the OS delivers a fix), so this file is imported from the root hook.

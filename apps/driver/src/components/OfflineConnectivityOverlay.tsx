@@ -16,6 +16,7 @@ import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { driverOfflineStrings } from "../i18n/driverOfflineStrings";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { telemetryQueueService } from "../services/telemetryQueue.service";
+import { syncQueuedPings } from "../services/telemetryUpload";
 
 import { AppIcon } from "./AppIcon";
 export interface OfflineConnectivityOverlayProps {
@@ -86,13 +87,13 @@ export default function OfflineConnectivityOverlay({
   const handleManualSync = async () => {
     setIsSyncingManually(true);
     try {
-      const { syncedCount } = await telemetryQueueService.flushQueue(async () => {
-        // Simulates or initiates real-time channel reconnect & batch ingest
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        return true;
-      });
+      const { syncedCount, remainingCount } = await telemetryQueueService.flushQueue((pings) =>
+        syncQueuedPings(missionId, pings)
+      );
 
       setIsSyncingManually(false);
+      // Not acknowledged by the server: stay in fallback with the queue intact rather than claim a restore.
+      if (remainingCount > 0) return;
       setConnectionStatus("connected");
       setFallbackActive(false);
       markRestored(syncedCount);
