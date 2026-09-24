@@ -3,7 +3,6 @@ import { SupportedLanguage } from "./onboardingStrings";
 export interface MatchingTranslation {
   // Screen & Header
   screenTitle: string;
-  searchingStatus: string;
   stateMachineState: string;
   languageToggleLabel: string;
   englishLabel: string;
@@ -12,7 +11,18 @@ export interface MatchingTranslation {
   // Radar & Pickup Pin
   radarAria: string;
   pickupPinLabel: string;
-  nearbyFleetCount: (count: number) => string;
+  /** Ring label on the radar ("3 km") and a zone's span ("3-6 km"). */
+  kmLabel: (km: number) => string;
+  kmRange: (from: number, to: number) => string;
+  /** Status line while the search is inside a zone. */
+  searchingRadius: (from: number, to: number) => string;
+  /** State word on each zone's legend chip (never colour alone). */
+  zoneSearching: string;
+  zoneSearched: string;
+  zoneNext: string;
+  /** Every zone searched, nobody accepted: the radar is red and this is the status; the action is 108. */
+  noAmbulanceCall108: string;
+  call108Now: string;
 
   // Dispatch Waves Progress Indicator
   wavesSectionTitle: string;
@@ -69,16 +79,21 @@ export interface MatchingTranslation {
 export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
   en: {
     screenTitle: "Searching for Ambulance",
-    searchingStatus: "BROADCASTING TO FLEET",
     stateMachineState: "Active Dispatch • XState: Matching",
     languageToggleLabel: "Language switch",
     englishLabel: "EN",
     hindiLabel: "हिन्दी",
 
-    radarAria: "Radar animation broadcasting dispatch signal to nearby ambulances",
+    radarAria: "Search area around your pickup point in three zones: up to 3, 6 and 10 kilometres",
     pickupPinLabel: "Pickup Beacon",
-    nearbyFleetCount: (count: number) =>
-      `${count} AIS-125 certified ambulances contacted`,
+    kmLabel: (km) => `${km} km`,
+    kmRange: (from, to) => `${from}-${to} km`,
+    searchingRadius: (from, to) => `Searching ${from}-${to} km around you`,
+    zoneSearching: "Searching",
+    zoneSearched: "Searched",
+    zoneNext: "Next",
+    noAmbulanceCall108: "No ambulance has accepted yet. Call 108 now.",
+    call108Now: "Call 108 now",
 
     wavesSectionTitle: "DISPATCH WAVES ESCALATION",
     wave1Title: "Wave 1: 0-3 km",
@@ -100,7 +115,7 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
     waveWindowElapsed: "Broadcast window elapsed",
     countdownOverdue: "Still searching. Your request stays open to nearby ambulances.",
     searchExtendedNotice:
-      "All search waves have run. Your request stays open to every ambulance within 10 km. If none accepts, we will tell you to call 108.",
+      "Your request stays open in case an ambulance accepts.",
 
     countdownLabel: "Driver Acceptance Window",
     countdownSubtext: (seconds: number) =>
@@ -130,16 +145,21 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
   },
   hi: {
     screenTitle: "एंबुलेंस की खोज जारी है",
-    searchingStatus: "एंबुलेंस दल को प्रसारण जारी",
     stateMachineState: "सक्रिय प्रेषण • XState: मैचिंग",
     languageToggleLabel: "भाषा चयन",
     englishLabel: "EN",
     hindiLabel: "हिन्दी",
 
-    radarAria: "निकटवर्ती एंबुलेंसों को प्रेषण संकेत प्रसारित करता रडार एनिमेशन",
+    radarAria: "आपके पिकअप स्थान के आसपास खोज क्षेत्र, तीन दायरों में: 3, 6 और 10 किलोमीटर तक",
     pickupPinLabel: "पिकअप बीकन",
-    nearbyFleetCount: (count: number) =>
-      `${count} AIS-125 प्रमाणित एंबुलेंस से संपर्क जारी`,
+    kmLabel: (km) => `${km} किमी`,
+    kmRange: (from, to) => `${from}-${to} किमी`,
+    searchingRadius: (from, to) => `आपके आसपास ${from}-${to} किमी में खोज जारी`,
+    zoneSearching: "खोज जारी",
+    zoneSearched: "खोजा गया",
+    zoneNext: "अगला",
+    noAmbulanceCall108: "अभी तक किसी एंबुलेंस ने स्वीकार नहीं किया। अभी 108 पर कॉल करें।",
+    call108Now: "अभी 108 पर कॉल करें",
 
     wavesSectionTitle: "प्रेषण तरंग विस्तार (डिस्पैच वेव्स)",
     wave1Title: "तरंग 1: 0-3 किमी",
@@ -161,7 +181,7 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
     waveWindowElapsed: "प्रसारण समय सीमा समाप्त",
     countdownOverdue: "खोज जारी है। आपका अनुरोध आस-पास की एंबुलेंस के लिए खुला है।",
     searchExtendedNotice:
-      "सभी खोज तरंगें पूरी हो चुकी हैं। आपका अनुरोध 10 किमी के भीतर हर एंबुलेंस के लिए खुला है। कोई स्वीकार न करे तो हम आपको 108 पर कॉल करने के लिए कहेंगे।",
+      "कोई एंबुलेंस स्वीकार कर ले, इसलिए आपका अनुरोध खुला रहेगा।",
 
     countdownLabel: "चालक स्वीकृति समय सीमा",
     countdownSubtext: (seconds: number) =>

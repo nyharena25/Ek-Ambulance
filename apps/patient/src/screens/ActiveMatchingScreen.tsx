@@ -5,8 +5,6 @@ import {
   StyleSheet,
   StatusBar,
   Pressable,
-  Animated,
-  Easing,
   Linking,
   Modal,
   Alert,
@@ -26,7 +24,7 @@ import {
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { matchingStrings } from "../i18n/matchingStrings";
 
-import { AppIcon } from "../components";
+import { AppIcon, SearchRadar } from "../components";
 export interface ActiveMatchingScreenProps {
   vehicleType?: AIS125VehicleType;
   pickupAddress?: string;
@@ -44,7 +42,7 @@ export interface ActiveMatchingScreenProps {
  * ActiveMatchingScreen for Ek-Ambulance
  *
  * Represents the XState dispatch broadcast and driver matching lifecycle:
- * - Animated concentric radar circle radiating outward from pickup pin.
+ * - Search radar (SearchRadar): three zones (3 / 6 / 10 km) fill green, yellow, orange as the search arrives; red, then 108.
  * - Multi-wave dispatch progress indicator:
  *     Wave 1: 0-3 km (Immediate Local Fleet)
  *     Wave 2: 3-6 km (Expanded Regional Fleet)
@@ -84,68 +82,6 @@ export default function ActiveMatchingScreen({
   const tone = timerTones[boardTimerTone(secondsLeft)];
   const currentWave = searchWaveAt(elapsedSeconds);
   const wavesOver = offerWavesOver(elapsedSeconds);
-
-  // ---------------------------------------------------------------------------
-  // RADAR CONCENTRIC ANIMATION RINGS (3 STAGGERED RINGS)
-  // ---------------------------------------------------------------------------
-  const ring1 = useRef(new Animated.Value(0)).current;
-  const ring2 = useRef(new Animated.Value(0)).current;
-  const ring3 = useRef(new Animated.Value(0)).current;
-  const pinPulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const createRingAnimation = (anim: Animated.Value, delay: number) => {
-      return Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 2400,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-    };
-
-    const animRing1 = createRingAnimation(ring1, 0);
-    const animRing2 = createRingAnimation(ring2, 800);
-    const animRing3 = createRingAnimation(ring3, 1600);
-
-    const animPinPulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pinPulse, {
-          toValue: 1.15,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pinPulse, {
-          toValue: 1.0,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    animRing1.start();
-    animRing2.start();
-    animRing3.start();
-    animPinPulse.start();
-
-    return () => {
-      animRing1.stop();
-      animRing2.stop();
-      animRing3.stop();
-      animPinPulse.stop();
-    };
-  }, [ring1, ring2, ring3, pinPulse]);
 
   // ---------------------------------------------------------------------------
   // EMERGENCY 108 CALL HANDLER
@@ -189,22 +125,6 @@ export default function ActiveMatchingScreen({
     { key: "other", label: strings.reasonOther },
   ];
 
-  // Ring scale and opacity interpolation
-  const getRingStyle = (anim: Animated.Value) => {
-    const scale = anim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0.25, 2.6],
-    });
-    const opacity = anim.interpolate({
-      inputRange: [0, 0.6, 1],
-      outputRange: [0.75, 0.35, 0],
-    });
-    return {
-      transform: [{ scale }],
-      opacity,
-    };
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
@@ -226,9 +146,9 @@ export default function ActiveMatchingScreen({
           <View style={styles.pulseDotWrapper}>
             <View style={styles.pulseDotCore} />
           </View>
-          <View>
-            <Text style={styles.headerTitle}>{strings.screenTitle}</Text>
-            <Text style={styles.headerStateBadge}>{strings.stateMachineState}</Text>
+          <View style={styles.headerTitleGroup}>
+            <Text style={styles.headerTitle} numberOfLines={2}>{strings.screenTitle}</Text>
+            <Text style={styles.headerStateBadge} numberOfLines={1}>{strings.stateMachineState}</Text>
           </View>
         </View>
 
@@ -283,84 +203,8 @@ export default function ActiveMatchingScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* RADAR SEARCH VISUALIZATION CANVAS */}
-        <View
-          style={styles.radarCard}
-          accessible={true}
-          accessibilityLabel={strings.radarAria}
-        >
-          <View style={styles.radarViewport}>
-            {/* Range Rings / Distance Grid Rings (0-3 km and 3-6 km markers) */}
-            <View style={styles.rangeRingOuter} />
-            <View style={styles.rangeRingInner} />
-
-            {/* Range ring labels */}
-            <Text style={styles.rangeRingOuterLabel}>{currentWave === 3 ? "10 km" : "6 km"}</Text>
-            <Text style={styles.rangeRingInnerLabel}>3 km</Text>
-
-            {/* Radar Crosshairs */}
-            <View style={styles.radarCrosshairHorizontal} />
-            <View style={styles.radarCrosshairVertical} />
-
-            {/* Animated Concentric Waves Radiating Outward */}
-            <Animated.View
-              style={[styles.animatedWaveRing, getRingStyle(ring1)]}
-            />
-            <Animated.View
-              style={[styles.animatedWaveRing, getRingStyle(ring2)]}
-            />
-            <Animated.View
-              style={[styles.animatedWaveRing, getRingStyle(ring3)]}
-            />
-
-            {/* Simulated Nearby Ambulance Blips */}
-            <View style={[styles.ambulanceBlip, { top: 38, left: 65 }]}>
-              <View style={styles.ambulanceBlipDot} />
-              <Text style={styles.ambulanceBlipText}>ALS 1</Text>
-            </View>
-            <View style={[styles.ambulanceBlip, { bottom: 44, right: 55 }]}>
-              <View style={styles.ambulanceBlipDot} />
-              <Text style={styles.ambulanceBlipText}>ALS 2</Text>
-            </View>
-            {currentWave >= 2 && (
-              <View style={[styles.ambulanceBlip, { top: 22, right: 36 }]}>
-                <View style={[styles.ambulanceBlipDot, styles.blipWave2]} />
-                <Text style={styles.ambulanceBlipText}>ALS 3</Text>
-              </View>
-            )}
-            {currentWave === 3 && (
-              <View style={[styles.ambulanceBlip, { bottom: 20, left: 30 }]}>
-                <View style={[styles.ambulanceBlipDot, styles.blipWave2]} />
-                <Text style={styles.ambulanceBlipText}>ALS 4</Text>
-              </View>
-            )}
-
-            {/* Center Pickup Pin with Pulse Beacon */}
-            <Animated.View
-              style={[
-                styles.centerBeacon,
-                { transform: [{ scale: pinPulse }] },
-              ]}
-            >
-              <View style={styles.centerPinIconCircle}>
-                <AppIcon icon={{ set: "ion", name: "location" }} size={16} color={colors.slate700} style={styles.centerPinEmoji} />
-              </View>
-            </Animated.View>
-          </View>
-
-          {/* Radar Status Footer */}
-          <View style={styles.radarFooter}>
-            <View style={styles.broadcastingTag}>
-              <View style={styles.blinkingRedLight} />
-              <Text style={styles.broadcastingTagText}>
-                {strings.searchingStatus}
-              </Text>
-            </View>
-            <Text style={styles.fleetCountText}>
-              {strings.nearbyFleetCount(currentWave === 1 ? 3 : currentWave === 2 ? 6 : 9)}
-            </Text>
-          </View>
-        </View>
+        {/* SEARCH RADAR: three zones (3 / 6 / 10 km) fill green, yellow, orange as the search arrives; red, then 108, when none accepts */}
+        <SearchRadar wave={currentWave} overtime={wavesOver} strings={strings} />
 
         {/* DRIVER ACCEPTANCE COUNTDOWN CARD */}
         <View style={styles.countdownCard}>
@@ -374,16 +218,16 @@ export default function ActiveMatchingScreen({
 
             {/* Large Clock Display */}
             <View style={[styles.countdownBadge, { backgroundColor: tone.surface, borderColor: tone.fill }]}>
-              <Text style={styles.countdownClockIcon}>⏱️</Text>
+              <AppIcon icon={{ set: "ion", name: "timer-outline" }} size={18} color={tone.text} style={styles.countdownClockIcon} />
               <Text style={[styles.countdownTimeText, { color: tone.text }]}>{formatBoardTimer(secondsLeft)}</Text>
             </View>
           </View>
 
           {/* Wave Escalation Notice once the search has widened past wave 1 */}
           {currentWave >= 2 && (
-            <View style={styles.wave2AlertBanner}>
-              <AppIcon icon={{ set: "ion", name: "flash" }} size={16} color={colors.slate700} style={styles.wave2AlertIcon} />
-              <Text style={styles.wave2AlertText}>
+            <View style={[styles.wave2AlertBanner, wavesOver && { backgroundColor: timerTones.red.surface, borderColor: timerTones.red.fill }]}>
+              <AppIcon icon={{ set: "ion", name: wavesOver ? "call" : "flash" }} size={16} color={wavesOver ? timerTones.red.text : colors.slate700} style={styles.wave2AlertIcon} />
+              <Text style={[styles.wave2AlertText, wavesOver && { color: timerTones.red.text }]}>
                 {wavesOver ? strings.searchExtendedNotice : currentWave === 3 ? strings.wave3EscalatedNotice : strings.waveEscalatedNotice}
               </Text>
             </View>
@@ -678,17 +522,17 @@ export default function ActiveMatchingScreen({
       <View style={styles.floatingPillContainer}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${strings.fallbackPillTitle} - ${strings.fallbackPillSubtitle}`}
+          accessibilityLabel={`${wavesOver ? strings.call108Now : strings.fallbackPillTitle} - ${strings.fallbackPillSubtitle}`}
           accessibilityHint="Directly dials national 108 ambulance emergency helpline"
-          style={styles.floating108Pill}
+          style={[styles.floating108Pill, wavesOver && styles.floating108PillUrgent]}
           onPress={handleCall108}
         >
           <View style={styles.pillIconCircle}>
             <AppIcon icon={{ set: "ion", name: "call" }} size={18} color={colors.slate700} style={styles.pillPhoneIcon} />
           </View>
           <View style={styles.pillTextGroup}>
-            <Text style={styles.pillTitleText}>
-              {strings.fallbackPillTitle}
+            <Text style={[styles.pillTitleText, wavesOver && styles.pillTitleTextUrgent]}>
+              {wavesOver ? strings.call108Now : strings.fallbackPillTitle}
             </Text>
             <Text style={styles.pillSubtitleText}>
               {strings.fallbackPillSubtitle}
@@ -830,6 +674,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     backgroundColor: colors.emergency,
   },
+  // flex + minWidth 0 so a long title truncates instead of running under the language switch
+  headerTitleGroup: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: spacing.sm,
+  },
   headerTitle: {
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
@@ -867,172 +717,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: 110, // room for floating 108 pill
+    paddingBottom: 150, // room for the floating 108 pill (taller once it becomes the primary action)
     gap: spacing.base,
-  },
-
-  // ---------------------------------------------------------------------------
-  // RADAR CANVAS
-  // ---------------------------------------------------------------------------
-  radarCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  radarViewport: {
-    width: 230,
-    height: 230,
-    borderRadius: radii.full,
-    backgroundColor: colors.slate50,
-    borderWidth: 2,
-    borderColor: colors.slate300,
-    justifyContent: "center",
-    alignItems: "center",
-    position: "relative",
-    overflow: "hidden",
-    marginVertical: spacing.sm,
-  },
-  rangeRingOuter: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    borderStyle: "dashed",
-  },
-  rangeRingInner: {
-    position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-  },
-  rangeRingOuterLabel: {
-    position: "absolute",
-    top: 6,
-    right: 20,
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.slate500,
-  },
-  rangeRingInnerLabel: {
-    position: "absolute",
-    top: 50,
-    right: 56,
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.slate500,
-  },
-  radarCrosshairHorizontal: {
-    position: "absolute",
-    width: "100%",
-    height: 1,
-    backgroundColor: colors.slate200,
-  },
-  radarCrosshairVertical: {
-    position: "absolute",
-    width: 1,
-    height: "100%",
-    backgroundColor: colors.slate200,
-  },
-  animatedWaveRing: {
-    position: "absolute",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 2.5,
-    borderColor: colors.emergency,
-    backgroundColor: "rgba(220, 38, 38, 0.08)",
-  },
-  centerBeacon: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.full,
-    backgroundColor: colors.emergencyLight,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
-    borderWidth: 2,
-    borderColor: colors.emergency,
-    ...shadows.sm,
-  },
-  centerPinIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.full,
-    backgroundColor: colors.emergency,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  centerPinEmoji: {
-    fontSize: 16,
-  },
-  ambulanceBlip: {
-    position: "absolute",
-    alignItems: "center",
-    zIndex: 5,
-  },
-  ambulanceBlipDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.info,
-    borderWidth: 1.5,
-    borderColor: colors.white,
-  },
-  blipWave2: {
-    backgroundColor: colors.warning,
-  },
-  ambulanceBlipText: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: colors.slate700,
-    backgroundColor: colors.white,
-    paddingHorizontal: 2,
-    borderRadius: 2,
-    marginTop: 1,
-  },
-  radarFooter: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderTopColor: colors.slate200,
-    paddingTop: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  broadcastingTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.emergencyLight,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-  },
-  blinkingRedLight: {
-    width: 8,
-    height: 8,
-    borderRadius: radii.full,
-    backgroundColor: colors.emergency,
-    marginRight: 6,
-  },
-  broadcastingTagText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.emergencyDark,
-    letterSpacing: 0.5,
-  },
-  fleetCountText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate700,
   },
 
   // ---------------------------------------------------------------------------
@@ -1349,6 +1035,15 @@ const styles = StyleSheet.create({
     ...shadows.lg,
     elevation: 8,
   },
+  // Once every zone has been searched, calling 108 is the action: taller, darker, white-edged.
+  floating108PillUrgent: {
+    minHeight: 68,
+    backgroundColor: colors.emergencyDark,
+    borderColor: colors.white,
+  },
+  pillTitleTextUrgent: {
+    fontSize: typography.fontSizes.base,
+  },
   pillIconCircle: {
     width: 38,
     height: 38,
@@ -1371,7 +1066,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   pillSubtitleText: {
-    fontSize: 10,
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.medium,
     color: colors.emergencyLight,
     marginTop: 1,

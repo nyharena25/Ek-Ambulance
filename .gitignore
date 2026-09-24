@@ -24,3 +24,4 @@ ios/
 # Supabase CLI local runtime state (contains generated secrets, e.g.
 # supabase/.temp/start-secrets/**/docker.env)
 supabase/.temp/
+HANDOVER.md 

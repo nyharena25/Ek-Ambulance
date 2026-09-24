@@ -89,7 +89,7 @@ select t.mission(0.045, 60,  'TYPE_D_ALS', 'D 5km old')            as md \gset
 select t.mission(0.072, 60,  'TYPE_D_ALS', 'E 8km young')          as me \gset
 select t.mission(0.072, 100, 'TYPE_D_ALS', 'F 8km old')            as mf \gset
 select t.mission(0.009, 10,  'TYPE_C_BLS', 'G 1km other type')     as mg \gset
-select t.mission(0.100, 500, 'TYPE_D_ALS', 'H 11km')               as mh \gset
+select t.mission(0.100, 300, 'TYPE_D_ALS', 'H 11km')               as mh \gset
 
 \set jwt_d1 '{"sub":"00000000-0000-4000-8000-000000000d01","role":"authenticated"}'
 \set jwt_d3 '{"sub":"00000000-0000-4000-8000-000000000d03","role":"authenticated"}'
@@ -101,7 +101,7 @@ select t.mission(0.100, 500, 'TYPE_D_ALS', 'H 11km')               as mh \gset
 -- ---------------------------------------------------------------------------
 select t.eq((public.dispatch_config()) -> 'boardRadiiKm', '[4, 7, 10]'::jsonb, 'board radii are 4 / 7 / 10 km');
 select t.eq((public.dispatch_config()) -> 'radiiKm', '[3, 6, 10]'::jsonb, 'offer wave radii are unchanged');
-select t.eq((public.dispatch_config()) ->> 'searchTtlSeconds', '600', 'a request nobody took stays open for 10 minutes');
+select t.eq((public.dispatch_config()) ->> 'searchTtlSeconds', '345', 'a request nobody took stays open until its timer would read -05:00');
 
 -- ---------------------------------------------------------------------------
 -- Who can list

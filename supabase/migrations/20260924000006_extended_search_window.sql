@@ -3,7 +3,8 @@
 -- The offer waves (3 / 6 / 10 km, 45 s each) push to the drivers within range and are unchanged. What changed is the end:
 -- when the last wave closes and drivers WERE asked, the request stays `requesting`, still visible on every eligible driver's
 -- Booking board (green within 4 km, red within 7 km, fallback within 10 km; none of those bands has an upper age), until the
--- search window (dispatch_config().searchTtlSeconds, measured from creation) closes. dispatch_tick then ends it with the same
+-- search window (dispatch_config().searchTtlSeconds = 345 s: the 45 s designed time + 5 minutes overdue, measured from
+-- creation, so the signed timer never reads past -05:00) closes. dispatch_tick then ends it with the same
 -- system cancel the patient already handles (reason no_ambulance_available).
 -- With nobody to ask at any radius there is nothing to wait for, so that case still ends at once, as before.
 
@@ -12,7 +13,7 @@ returns jsonb
 language sql
 immutable
 set search_path = ''
-as $$ select jsonb_build_object('offerTtlSeconds', 15, 'waveWindowSeconds', 45, 'radiiKm', jsonb_build_array(3, 6, 10), 'boardRadiiKm', jsonb_build_array(4, 7, 10), 'searchTtlSeconds', 600) $$;
+as $$ select jsonb_build_object('offerTtlSeconds', 15, 'waveWindowSeconds', 45, 'radiiKm', jsonb_build_array(3, 6, 10), 'boardRadiiKm', jsonb_build_array(4, 7, 10), 'searchTtlSeconds', 345) $$;
 
 -- The system end of a search: one place, used by exhaustion with nobody to ask and by the search window closing.
 create function public._cancel_unanswered(p_mission_id uuid)
