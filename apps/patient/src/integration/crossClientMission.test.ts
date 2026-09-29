@@ -3,7 +3,6 @@ import { createActor } from "xstate";
 import {
   patientLifecycleMachine,
   driverLifecycleMachine,
-  resolveJurisdiction,
   computeTriageUrgency,
   computeItemizedStatutoryFare,
   DEFAULT_DISPATCH_DISTANCE_KM,
@@ -11,6 +10,7 @@ import {
   type GeoPoint,
 } from "@sahayak/domain";
 import { translateLifecycleEvent } from "../services/missionLifecycleBridge.ts";
+import { parseCreateMissionResult } from "../lib/missionApi.core.ts";
 
 /**
  * Cross-Client Integration & Stabilization Sweep: mounts the REAL patient
@@ -58,10 +58,14 @@ const driverActor = createActor(driverLifecycleMachine).start();
 // ---------------------------------------------------------------------
 console.log("Step 1: Patient triages, requests, and enters matching (requesting)...");
 const pickup: GeoPoint = { latitude: 28.5672, longitude: 77.21 }; // AIIMS New Delhi
-const jurisdictionResolution = resolveJurisdiction(pickup);
-assert.strictEqual(jurisdictionResolution.jurisdiction, "DL");
-const jurisdiction = jurisdictionResolution.jurisdiction;
-assert.ok(jurisdiction);
+// Jurisdiction is the server's (create_mission reply), never classified by the app (R-12).
+const created = parseCreateMissionResult({
+  replay: false,
+  mission: { id: "00000000-0000-4000-8000-00000000c0de", status: "requesting", stateVersion: 1, jurisdiction: "DL" },
+});
+assert.ok(created);
+const jurisdiction = created.jurisdiction;
+assert.strictEqual(jurisdiction, "DL");
 
 const triageResult = computeTriageUrgency({ primaryComplaint: "chest_pain" });
 patientActor.send({

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Alert, AppState, View } from "react-native";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Stack, router } from "expo-router";
+import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { initTracer } from "@sahayak/observability";
 
@@ -19,6 +19,8 @@ import {
   subscribeToOfferActions,
 } from "../src/services/dispatchNotifications";
 import { resolveOfferAction } from "../src/services/dispatchNotifications.core";
+import { authRedirectTarget } from "../src/hooks/otpAuth.core";
+import { useDriverAuthStore } from "../src/state/driverAuth.store";
 
 assertEnvOrWarn();
 
@@ -26,6 +28,16 @@ export default function RootLayout() {
   const { activeMissionId, submit, driverId } = useDriverLifecycleStore();
   useDriverLocation();
   useServerSync();
+
+  // Route gate: without a verified driver session (Supabase phone OTP + app_metadata.role = driver) only the sign-in
+  // screens are reachable; an expired, signed-out or wrong-role session lands back on phone entry.
+  const authStatus = useDriverAuthStore((s) => s.status);
+  const segments = useSegments();
+  const firstSegment = segments[0] as string | undefined;
+  useEffect(() => {
+    const target = authRedirectTarget(authStatus, firstSegment);
+    if (target) router.replace(target as never);
+  }, [authStatus, firstSegment]);
 
   // Accept/Decline buttons on the dispatch notification run the same lifecycle events as the offer screen, through the
   // same server-authoritative path: an Accept the server refuses (offer taken, expired) does not move the machine.
@@ -72,6 +84,7 @@ export default function RootLayout() {
       <View style={{ flex: 1 }}>
         <SafeAreaInsetsContext.Provider value={bannerShown ? { ...insets, top: 0 } : insets}>
           <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(shift)" />
             <Stack.Screen name="mission/[id]" />

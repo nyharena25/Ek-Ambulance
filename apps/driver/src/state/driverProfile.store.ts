@@ -90,6 +90,7 @@ export const useDriverProfileStore = create<DriverProfileState>((set, get) => ({
       syncStandby(result.data);
       return { ok: true };
     }
+    if (!IS_DEV) return { ok: false, code: "no_session" };
     const next = applyPatch(current, patch, hospitalName);
     set({ profile: next });
     syncStandby(next);

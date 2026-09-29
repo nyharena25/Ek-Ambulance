@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { router } from "expo-router";
 import { driverStateForStatus, type DriverLifecycleState } from "@sahayak/domain";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
+import { verifiedDriverSession } from "./otpAuth.core";
+import { useDriverAuthStore } from "../state/driverAuth.store";
 import {
   callServer,
   fetchAssignedMission,
   fetchBoard,
   fetchDriverProfile,
-  getServerSession,
   registerPushToken,
   saveDriverProfile,
   setPresence,
@@ -32,8 +34,8 @@ const HEARTBEAT_MS = 10_000;
  * The driver app's connection to the server (DATA_AND_SYNC_SPECIFICATION.md 6, 7). Mounted once at the root. With a session the
  * server can verify it: makes the server authoritative for transitions (lifecycle store adapter), receives offers on
  * driver:{id}:offers, watches mission:{id} so a cancellation reaches a driver who is already driving (G-05), resumes an
- * assigned mission after a process kill (7.6) and heartbeats presence. Without such a session (local development with a mock
- * login) it does nothing and the app behaves as it always did.
+ * assigned mission after a process kill (7.6) and heartbeats presence. Without a verified driver session it does nothing,
+ * and the route gate (app/_layout.tsx) keeps the driver on the sign-in screens.
  */
 export function useServerSync(): void {
   const [session, setSession] = useState<ServerSession | null>(null);
@@ -41,12 +43,15 @@ export function useServerSync(): void {
   const currentState = useDriverLifecycleStore((s) => s.currentState);
   const activeMissionId = useDriverLifecycleStore((s) => s.activeMissionId);
 
-  // Adopt the verified session, and drop it on sign-out.
+  // Adopt the verified driver session, and drop it on sign-out, expiry or a wrong-role account. The status is set
+  // synchronously from the auth event, so the route gate already knows when verifyOtp resolves; Supabase calls are
+  // deferred out of the onAuthStateChange callback (calling the client inside it can deadlock on its auth lock).
   useEffect(() => {
     let alive = true;
-    const adopt = async () => {
-      const s = await getServerSession();
+    const adopt = (raw: Session | null) => {
       if (!alive) return;
+      const s: ServerSession | null = verifiedDriverSession(raw);
+      useDriverAuthStore.setState({ status: s ? "signedIn" : "signedOut" });
       setSession(s);
       setServerAdapter(
         s
@@ -66,16 +71,21 @@ export function useServerSync(): void {
       );
       // The header and the offer screen show the driver's own name, plate and tier, so read the profile as soon as the server can answer.
       if (s) {
-        void useDriverProfileStore.getState().load();
-        // Best-effort (G-21): getDevicePushToken() returns null without a real EAS project id, which this
-        // repo does not have configured yet - registration then simply does not happen, never a fake token.
-        void getDevicePushToken().then((device) => {
-          if (device) void registerPushToken(s.userId, device.token, device.platform);
-        });
+        setTimeout(() => {
+          void useDriverProfileStore.getState().load();
+          // Best-effort (G-21): getDevicePushToken() returns null without a real EAS project id, which this
+          // repo does not have configured yet - registration then simply does not happen, never a fake token.
+          void getDevicePushToken().then((device) => {
+            if (device) void registerPushToken(s.userId, device.token, device.platform);
+          });
+        }, 0);
       }
     };
-    void adopt();
-    const { data } = supabase.auth.onAuthStateChange(() => void adopt());
+    supabase.auth
+      .getSession()
+      .then(({ data }) => adopt(data.session))
+      .catch(() => adopt(null));
+    const { data } = supabase.auth.onAuthStateChange((_event, raw) => adopt(raw));
     return () => {
       alive = false;
       data.subscription.unsubscribe();

@@ -2,7 +2,6 @@ import assert from "node:assert";
 import { createActor } from "xstate";
 import {
   patientLifecycleMachine,
-  resolveJurisdiction,
   computeTriageUrgency,
   computeItemizedStatutoryFare,
   DEFAULT_DISPATCH_DISTANCE_KM,
@@ -12,6 +11,7 @@ import {
 import { isValidIndianMobile, toE164IndianPhone } from "../hooks/otpAuth.core.ts";
 import { createMockMissionChannel } from "../services/missionChannel.service.ts";
 import { translateLifecycleEvent } from "../services/missionLifecycleBridge.ts";
+import { parseCreateMissionResult } from "../lib/missionApi.core.ts";
 
 /**
  * Phase 5 golden-path integration test: the full patient mission lifecycle
@@ -55,16 +55,20 @@ const patientId = mockVerifiedUserId;
 console.log(`✓ Authenticated as patient ${patientId} (mock GoTrue session).\n`);
 
 // ---------------------------------------------------------------------
-// Step 2: Submit pickup coordinates, resolving to Delhi/UP jurisdiction
+// Step 2: Pickup coordinates; the jurisdiction comes from the server (R-12)
 // ---------------------------------------------------------------------
-console.log("Step 2: Resolving pickup coordinates to a jurisdiction...");
+// The app no longer classifies coordinates. create_mission resolves them against the shipped DL/UP polygons
+// (proven in supabase/tests/mission_api.behaviour.sql) and returns the zone on the mission; this is that reply.
+console.log("Step 2: Taking the jurisdiction from the server's create_mission reply...");
 const pickup: GeoPoint = { latitude: 28.5672, longitude: 77.21 }; // AIIMS New Delhi
-const jurisdictionResolution = resolveJurisdiction(pickup);
-assert.strictEqual(jurisdictionResolution.isSupported, true, "AIIMS Delhi is inside the supported operating zone");
-assert.strictEqual(jurisdictionResolution.jurisdiction, "DL", "AIIMS Delhi resolves to the DL jurisdiction");
-const jurisdiction = jurisdictionResolution.jurisdiction;
-assert.ok(jurisdiction, "Jurisdiction must be non-null past this point");
-console.log(`✓ Pickup resolved to jurisdiction: ${jurisdiction}.\n`);
+const created = parseCreateMissionResult({
+  replay: false,
+  mission: { id: "00000000-0000-4000-8000-00000000c0de", status: "requesting", stateVersion: 1, jurisdiction: "DL" },
+});
+assert.ok(created, "server reply parses");
+const jurisdiction = created.jurisdiction;
+assert.strictEqual(jurisdiction, "DL", "AIIMS Delhi: DL as decided by the server");
+console.log(`✓ Server-decided jurisdiction: ${jurisdiction}.\n`);
 
 // ---------------------------------------------------------------------
 // Step 3: Submit triage symptoms, deriving urgency tier via the domain

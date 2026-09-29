@@ -134,6 +134,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
     return (
       <DriverNavigationScreen
         missionId={missionId}
+        driverId={driverId}
         pickupCoordinates={pickupCoordinates}
         onConfirmArrival={(payload) => {
           void run({ type: "CONFIRM_ARRIVAL_SCENE", payload });
@@ -150,6 +151,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
     return (
       <OnSceneCareScreen
         missionId={missionId}
+        driverId={driverId}
         pickupCoordinates={pickupCoordinates}
         onConfirmPatientOnboard={async (payload) => {
           // The client's hospital list has no ids and the table has four rows (4.5): match the chosen destination to a
@@ -173,6 +175,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
   return (
     <InTransitHospitalScreen
       missionId={missionId}
+      driverId={driverId}
       hospitalName={selectedHospital?.name}
       hospitalCoordinates={selectedHospital?.coordinates}
       onConfirmArrivalHospital={(payload) => {

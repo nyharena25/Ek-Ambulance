@@ -47,6 +47,14 @@ export interface DriverProfileTranslation {
   fieldError: Record<ProfileFieldError, string>;
   passwordError: Record<PasswordError, string>;
   invalidPhone: string;
+  sessionRequired: string;
+  accountSection: string;
+  signOut: string;
+  signingOut: string;
+  signOutConfirmTitle: string;
+  signOutConfirmBody: string;
+  signOutLocked: string;
+  signOutFailed: string;
 }
 
 export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTranslation> = {
@@ -105,6 +113,14 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
       mismatch: "The two passwords do not match.",
     },
     invalidPhone: "Enter a valid 10-digit Indian mobile number.",
+    sessionRequired: "Sign in again to change your password.",
+    accountSection: "Account",
+    signOut: "Sign out",
+    signingOut: "Signing out...",
+    signOutConfirmTitle: "Sign out?",
+    signOutConfirmBody: "You will go offline and need to sign in with your registered phone number again.",
+    signOutLocked: "Sign-out is available once the current offer or mission has ended.",
+    signOutFailed: "Could not sign out. Check your connection and try again.",
   },
   hi: {
     title: "प्रोफ़ाइल",
@@ -161,5 +177,13 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
       mismatch: "दोनों पासवर्ड मेल नहीं खाते।",
     },
     invalidPhone: "सही 10 अंकों का भारतीय मोबाइल नंबर लिखें।",
+    sessionRequired: "पासवर्ड बदलने के लिए दोबारा साइन इन करें।",
+    accountSection: "खाता",
+    signOut: "साइन आउट",
+    signingOut: "साइन आउट हो रहा है...",
+    signOutConfirmTitle: "साइन आउट करें?",
+    signOutConfirmBody: "आप ऑफ़लाइन हो जाएंगे और पंजीकृत फ़ोन नंबर से दोबारा साइन इन करना होगा।",
+    signOutLocked: "वर्तमान ऑफ़र या मिशन समाप्त होने के बाद साइन आउट उपलब्ध होगा।",
+    signOutFailed: "साइन आउट नहीं हो सका। कनेक्शन जाँचकर फिर कोशिश करें।",
   },
 };

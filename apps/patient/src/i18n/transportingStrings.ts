@@ -54,6 +54,7 @@ export interface TransportingTranslation {
     trackingUrl: string;
   }) => string;
   shareSuccessToast: string;
+  shareOpenedToast: string;
 
   // Onboard Clinical Telemetry
   telemetrySectionTitle: string;
@@ -148,6 +149,7 @@ export const transportingStrings: Record<
       `🔗 ${trackingUrl}\n\n` +
       `Helpline: 108 | Ek-Ambulance Regulated Dispatch`,
     shareSuccessToast: "Emergency tracking details shared with family",
+    shareOpenedToast: "WhatsApp opened with tracking details - press Send to share",
 
     telemetrySectionTitle: "ONBOARD CLINICAL TELEMETRY (AIS-125)",
     vitalHeartRateLabel: "HEART RATE",
@@ -235,6 +237,7 @@ export const transportingStrings: Record<
       `🔗 ${trackingUrl}\n\n` +
       `हेल्पलाइन: 108 | एक-एंबुलेंस नियंत्रित सेवा`,
     shareSuccessToast: "आपातकालीन ट्रैकिंग विवरण परिजनों के साथ साझा किया गया",
+    shareOpenedToast: "ट्रैकिंग विवरण के साथ व्हाट्सएप खुला - भेजने के लिए 'Send' दबाएं",
 
     telemetrySectionTitle: "ऑनबोर्ड चिकित्सकीय टेलीमेट्री (AIS-125)",
     vitalHeartRateLabel: "हृदय गति",

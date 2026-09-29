@@ -29,6 +29,8 @@ export interface DriverProfile {
   hospitalName: string | null;
   ais125Type: AIS125VehicleType | null;
   kycStatus: string;
+  /** Staff's reason, set by reject_kyc; only meaningful while kycStatus is "rejected". */
+  kycRejectReason?: string | null;
   /** Plate and make/model come from the RC document: editable only while the KYC application is (draft or rejected). */
   regulatedEditable: boolean;
   vehicle: DriverVehicleInfo;
@@ -52,6 +54,7 @@ export function parseDriverProfile(data: unknown): DriverProfile | null {
     hospitalName: str(data.hospitalName),
     ais125Type: TYPES.has(String(data.ais125Type)) ? (data.ais125Type as AIS125VehicleType) : null,
     kycStatus: str(data.kycStatus) ?? "draft",
+    kycRejectReason: str(data.kycRejectReason),
     regulatedEditable: data.regulatedEditable === true,
     vehicle: {
       registrationNumber: str(v.registrationNumber) ?? "",

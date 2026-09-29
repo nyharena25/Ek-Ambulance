@@ -1,0 +1,76 @@
+_format_version: "3.0"
+
+# LOCAL-ONLY gateway (G3.2). Same routes as kong.yml, but every Supabase upstream is the local stack's API gateway
+# (`supabase start`, host port 54321 - the local equivalent of https://<ref>.supabase.co), so nothing reaches the
+# hosted project. Select it with:  KONG_CONFIG=kong.local.yml docker compose up -d kong
+# docker/kong.config.test.mjs fails if a *.supabase.co host ever appears here.
+#
+# Adds one route kong.yml does not have yet: Storage object endpoints (see the supabase-storage service below).
+services:
+  - name: supabase-auth
+    url: http://host.docker.internal:54321/auth/v1
+    routes:
+      - name: auth
+        paths: ["/auth/v1"]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 20, policy: local, limit_by: ip }
+
+  - name: supabase-rest
+    url: http://host.docker.internal:54321/rest/v1
+    routes:
+      - name: rest
+        paths: ["/rest/v1"]
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config: { minute: 300, policy: local, limit_by: ip }
+
+  # Storage object endpoints only - what the apps call: KYC upload (POST /object/{bucket}/{path}), signed-link
+  # creation (POST /object/sign/{bucket}/{path}) and the signed download (GET /object/sign/...). A document
+  # replacement is a new upload at a new path (driverServer.uploadKycDocument), so no PUT/DELETE. Bucket
+  # administration, S3 and resumable uploads are not routed. Headers pass through untouched: Storage authorizes
+  # with the caller's own JWT against the storage.objects policies.
+  - name: supabase-storage
+    url: http://host.docker.internal:54321/storage/v1/object
+    routes:
+      - name: storage-object
+        paths: ["/storage/v1/object"]
+        strip_path: true
+        methods: ["GET", "POST", "OPTIONS"]
+    plugins:
+      - name: rate-limiting
+        config: { minute: 120, policy: local, limit_by: ip }
+
+  - name: realtime-token
+    url: http://token-mint:8080/realtime/token
+    routes:
+      - name: realtime-token
+        paths: ["/realtime/token"]
+        strip_path: true
+        methods: ["POST", "OPTIONS"]
+    plugins:
+      - name: rate-limiting
+        config: { minute: 120, policy: local, limit_by: ip }
+
+  - name: triage-extract
+    url: http://token-mint:8080/triage/extract
+    routes:
+      - name: triage-extract
+        paths: ["/triage/extract"]
+        strip_path: true
+        methods: ["POST", "OPTIONS"]
+    plugins:
+      - name: rate-limiting
+        config: { minute: 20, policy: local, limit_by: ip }
+
+plugins:
+  - name: cors
+    config:
+      origins: ["*"]
+      methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      # content-profile / x-supabase-api-version: sent by supabase-js from a BROWSER (the admin console) on RPC POSTs
+      # and auth calls; the mobile apps never trigger a CORS preflight, which is why kong.yml never needed them.
+      headers: [Authorization, Content-Type, apikey, x-client-info, content-profile, x-supabase-api-version]
+      max_age: 3600

@@ -1,6 +1,5 @@
 export * from "./types/index.ts";
 export * from "./pricing/index.ts";
-export * from "./jurisdiction/index.ts";
 export * from "./triage/index.ts";
 export * from "./state-machine/patientLifecycle.types.ts";
 export * from "./state-machine/patientLifecycle.machine.ts";

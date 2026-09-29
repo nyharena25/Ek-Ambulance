@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // Static checks over the migration SQL (no database needed). Behavioural RLS checks need a real
@@ -146,5 +146,38 @@ assert.doesNotMatch(ops, /grant (all|insert|update|delete)\s+on\s+(table\s+)?pub
 assert.match(ops, /grant insert \(driver_id, token, platform\) on public\.driver_push_tokens to authenticated/i);
 assert.doesNotMatch(ops, /grant [^;]*(insert|update|delete)[^;]*on public\.(dispatch_waves|mission_events|telemetry_logs)/i, "waves/audit/telemetry are read-only or server-only");
 console.log("✓ operational schema\n");
+
+console.log("Test: KYC review stays server-authoritative (G3)...");
+const migDir = fileURLToPath(new URL("../migrations/", import.meta.url));
+const allMig = readdirSync(migDir).filter((f) => f.endsWith(".sql")).sort()
+  .map((f) => readFileSync(migDir + f, "utf8").replace(/--.*$/gm, "")).join("\n");
+assert.doesNotMatch(allMig, /grant execute on function public\.(approve_kyc|reject_kyc)[^;]*to\s+[^;]*\b(authenticated|anon|public)\b/i, "approve_kyc/reject_kyc never granted to clients");
+assert.doesNotMatch(allMig, /grant [^;]*\bon (table )?auth\.users\b[^;]*\bto\s+[^;]*\b(authenticated|anon)\b/i, "no client grant on auth.users (app_metadata.role)");
+assert.doesNotMatch(allMig, /grant update \([^)]*\brole\b[^)]*\) on public\.profiles/i, "profiles.role never client-writable");
+const staffMig = readFileSync(migDir + "20260929000001_staff_kyc_review.sql", "utf8").replace(/--.*$/gm, "");
+for (const fn of ["staff_list_kyc_applications", "staff_get_kyc_application", "staff_approve_kyc", "staff_reject_kyc"]) {
+  const body = staffMig.match(new RegExp(`function public\\.${fn}\\([\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, "i"))?.[1] ?? assert.fail(`missing ${fn}`);
+  assert.match(body, /^\s*(declare[\s\S]*?)?begin\s+perform public\._require_staff\(\);/i, `${fn} checks staff first`);
+}
+assert.match(staffMig, /raw_app_meta_data ->> 'role' = 'staff'/i, "staff comes from server-set app_metadata only");
+assert.doesNotMatch(staffMig, /raw_user_meta_data|auth\.jwt\(\)/i, "staff never read from client metadata or a stale JWT claim");
+assert.match(staffMig, /revoke execute on function[\s\S]*?from public, anon, authenticated;/i, "default PUBLIC execute revoked");
+assert.doesNotMatch(staffMig, /create policy \w+ on storage\.objects\s+for (insert|update|delete|all)/i, "staff get no storage write policy");
+console.log("✓ KYC review authorization\n");
+
+console.log("Test: KYC document integrity (G3.1)...");
+const integrity = readFileSync(migDir + "20260929000002_kyc_document_integrity.sql", "utf8").replace(/--.*$/gm, "");
+for (const fn of ["submit_kyc", "approve_kyc"]) {
+  const body = integrity.match(new RegExp(`function public\\.${fn}\\([\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, "i"))?.[1] ?? assert.fail(`missing ${fn}`);
+  assert.match(body, /if not public\._kyc_required_documents_valid\([^)]*\) then perform public\._fail\('documents_invalid'/i, `${fn} enforces the document invariant`);
+}
+assert.match(integrity, /dd\.status in \('uploaded', 'accepted'\)/i, "a rejected document never counts");
+assert.match(integrity, /exists \(select 1 from storage\.objects o where o\.bucket_id = 'driver-kyc-documents' and o\.name = dd\.storage_path\)/i, "the file must exist in Storage");
+assert.match(integrity, /revoke execute on function public\._kyc_required_documents_valid\(uuid\) from public, anon, authenticated;/i);
+const lastDef = (fn: string) => readdirSync(migDir).filter((f) => f.endsWith(".sql")).sort()
+  .filter((f) => new RegExp(`create (or replace )?function public\\.${fn}\\(`, "i").test(readFileSync(migDir + f, "utf8"))).at(-1);
+assert.strictEqual(lastDef("submit_kyc"), "20260929000002_kyc_document_integrity.sql", "no later migration replaces submit_kyc without the check");
+assert.strictEqual(lastDef("approve_kyc"), "20260929000002_kyc_document_integrity.sql", "no later migration replaces approve_kyc without the check");
+console.log("✓ KYC document integrity\n");
 
 console.log("SUPABASE SCHEMA VALIDATION TESTS PASSED (100% GREEN)");

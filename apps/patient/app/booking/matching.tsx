@@ -16,7 +16,8 @@ export default function BookingMatchingRoute() {
   const send = usePatientLifecycleStore((s) => s.send);
   const resetLifecycle = usePatientLifecycleStore((s) => s.reset);
   const currentState = usePatientLifecycleStore((s) => s.currentState);
-  const missionId = usePatientLifecycleStore((s) => s.context.missionId);
+  const context = usePatientLifecycleStore((s) => s.context);
+  const missionId = context.missionId;
   const accessToken = realAccessToken(usePatientAuthStore((s) => s.session));
   const params = useLocalSearchParams<{
     vehicleType?: string;
@@ -46,10 +47,16 @@ export default function BookingMatchingRoute() {
   }, [accessToken, missionId]);
 
   const vehicleType = (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
-  const latitude = params.lat ? parseFloat(params.lat) : 28.5672;
-  const longitude = params.lon ? parseFloat(params.lon) : 77.21;
-  // Re-entry from the Home banner carries only coordinates (the machine stores no address).
-  const pickupAddress = params.address || formatCoordinates({ latitude, longitude });
+  // context.pickup is the real coordinate confirm.tsx sent to create_mission, hydrated into the machine the
+  // moment the mission was created - always present in the same-session flow that reaches this screen. Route
+  // params are a real (not fabricated) fallback only for a cold re-entry deep link. No fabricated coordinate:
+  // if neither is available, there is genuinely no pickup to show.
+  const paramLat = params.lat ? parseFloat(params.lat) : null;
+  const paramLon = params.lon ? parseFloat(params.lon) : null;
+  const latitude = context.pickup?.latitude ?? paramLat;
+  const longitude = context.pickup?.longitude ?? paramLon;
+  const hasRealPickup = latitude !== null && longitude !== null;
+  const pickupAddress = params.address || (hasRealPickup ? formatCoordinates({ latitude, longitude }) : "");
 
   // Listen while searching: DRIVER_ACCEPTED moves the machine to `tracking`; the server ending the search (no ambulance
   // available in any wave) moves it to `cancelled`. The effect below navigates for both.
@@ -64,12 +71,13 @@ export default function BookingMatchingRoute() {
           id: lastMissionIdRef.current ?? "",
           vehicleType,
           address: pickupAddress,
-          lat: String(latitude),
-          lon: String(longitude),
+          // [id].tsx reads the same context.pickup independently once mounted; these are only a real (not
+          // fabricated) hint for a cold re-entry deep link, omitted entirely when there is no real pickup to send.
+          ...(hasRealPickup ? { lat: String(latitude), lon: String(longitude) } : {}),
         },
       });
     }
-  }, [currentState, router, vehicleType, pickupAddress, latitude, longitude]);
+  }, [currentState, router, vehicleType, pickupAddress, hasRealPickup, latitude, longitude]);
 
   const finishCancel = (reason: ReturnType<typeof cancelReasonForKey>) => {
     send({
@@ -127,7 +135,7 @@ export default function BookingMatchingRoute() {
     <ActiveMatchingScreen
       vehicleType={vehicleType}
       pickupAddress={pickupAddress}
-      pickupCoords={{ latitude, longitude }}
+      pickupCoords={hasRealPickup ? { latitude, longitude } : undefined}
       initialLanguage="en"
       startedAtMs={startedAtMs}
       onCancel={(key) => void handleCancel(key)}

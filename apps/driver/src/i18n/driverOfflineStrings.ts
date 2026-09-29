@@ -26,6 +26,8 @@ export interface DriverOfflineTranslation {
   btnSendSmsPing: string;
   smsPromptConfirm: string;
   smsDestinationDesk: string;
+  smsUnavailableNotice: string;
+  smsFailedNotice: string;
 
   // Manual Controls & Reconnection
   btnForceSync: string;
@@ -64,6 +66,8 @@ export const driverOfflineStrings: Record<SupportedLanguage, DriverOfflineTransl
     btnSendSmsPing: "Send Emergency SMS Ping",
     smsPromptConfirm: "Preparing statutory 108 SMS dispatch ping with current coordinates...",
     smsDestinationDesk: "UP Emergency Dispatch (108 / +91-522-2237515)",
+    smsUnavailableNotice: "No SMS-capable app found on this device.",
+    smsFailedNotice: "Could not open the SMS app. Try again or call the 108 desk directly.",
 
     btnForceSync: "Retry Network Sync Now",
     btnForceSyncActive: "Syncing Queued Pings...",
@@ -98,6 +102,8 @@ export const driverOfflineStrings: Record<SupportedLanguage, DriverOfflineTransl
     btnSendSmsPing: "आपातकालीन एसएमएस पिंग भेजें",
     smsPromptConfirm: "वर्तमान निर्देशांकों के साथ वैधानिक 108 एसएमएस तैयार किया जा रहा है...",
     smsDestinationDesk: "यूपी आपातकालीन नियंत्रण कक्ष (108 / +91-522-2237515)",
+    smsUnavailableNotice: "इस डिवाइस पर कोई एसएमएस-सक्षम ऐप नहीं मिला।",
+    smsFailedNotice: "एसएमएस ऐप नहीं खुल सका। पुनः प्रयास करें या सीधे 108 डेस्क को कॉल करें।",
 
     btnForceSync: "अभी नेटवर्क सिंक पुनः प्रयास करें",
     btnForceSyncActive: "कतारबद्ध पिंग सिंक हो रहे हैं...",

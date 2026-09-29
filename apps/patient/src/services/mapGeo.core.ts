@@ -1,4 +1,4 @@
-import type { GeoPoint, Jurisdiction } from "@sahayak/domain";
+import { haversineKm, type GeoPoint, type Jurisdiction } from "@sahayak/domain";
 
 export const DEFAULT_PICKUP: GeoPoint = { latitude: 28.5672, longitude: 77.21 };
 
@@ -17,12 +17,33 @@ export function parseCoordinate(lat: string | undefined, lon: string | undefined
   return lat && lon && Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : fallback;
 }
 
+/**
+ * Local input check only: a pickup the patient actually set (GPS fix, map drag, landmark) with finite, in-range
+ * coordinates. Whether the point is inside the service area is decided by the server (create_mission, R-12), never here.
+ */
+export function isValidPickup(point: GeoPoint | null | undefined): point is GeoPoint {
+  return (
+    !!point &&
+    Number.isFinite(point.latitude) &&
+    Number.isFinite(point.longitude) &&
+    Math.abs(point.latitude) <= 90 &&
+    Math.abs(point.longitude) <= 180
+  );
+}
+
 // ponytail: fixed per-jurisdiction dispatch hubs stand in for the nearest available
 // ambulance until live driver positions reach the patient app.
 export const DISPATCH_HUB: Record<Jurisdiction, GeoPoint> = {
   DL: { latitude: 28.641, longitude: 77.24 },
   UP: { latitude: 28.627, longitude: 77.365 },
 };
+
+// ponytail: nearest fixed hub by straight line, NOT a jurisdiction decision. Pickups far from both hubs
+// (e.g. Lucknow) get a long route estimate; replace with live driver positions.
+export function nearestDispatchHub(pickup: GeoPoint): GeoPoint {
+  const hubs = Object.values(DISPATCH_HUB);
+  return hubs.reduce((best, hub) => (haversineKm(hub, pickup) < haversineKm(best, pickup) ? hub : best), hubs[0]!);
+}
 
 // Coordinates are the four trauma centres seeded in supabase/migrations/20260924000000_core_ems_schema.sql.
 const HOSPITALS: ReadonlyArray<{ keyword: string; label: string; coordinate: GeoPoint }> = [

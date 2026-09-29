@@ -35,6 +35,8 @@ const EMERGENCY_LABELS: Record<EmergencyType, { en: string; hi: string }> = {
 const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 export interface OnSceneCareScreenProps {
   missionId?: string;
+  /** The real, already-validated driver id from the parent route - never re-derived or hardcoded here. */
+  driverId?: string;
   pickupCoordinates?: GeoPoint;
   initialLanguage?: SupportedLanguage;
   onConfirmPatientOnboard?: (payload: ConfirmPatientOnboardPayload) => void;
@@ -44,6 +46,7 @@ export interface OnSceneCareScreenProps {
 
 export default function OnSceneCareScreen({
   missionId = "MSN-2026-8819",
+  driverId,
   pickupCoordinates: pickupCoordinatesProp,
   initialLanguage = "en",
   onConfirmPatientOnboard,
@@ -91,7 +94,7 @@ export default function OnSceneCareScreen({
     };
     const payload: ConfirmPatientOnboardPayload = {
       missionId,
-      driverId: "DRV-DL-8821",
+      driverId: driverId ?? "",
       destination: selectedHospital.coordinates,
       onboardAt: new Date().toISOString(),
       ...(Object.keys(entered).length > 0 ? { vitals: entered } : {}),

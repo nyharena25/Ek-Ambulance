@@ -13,7 +13,6 @@ import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   AIS125VehicleType,
   CareLevel,
-  Jurisdiction,
   UrgencyTier,
   computeVehiclePricingEstimate,
   VehiclePricingEstimateResponse,
@@ -30,7 +29,6 @@ import { AppIcon } from "../components";
 export interface AmbulanceCategoryScreenProps {
   triageCareLevel?: CareLevel; // e.g. "ALS" | "BLS" | "PTA"
   urgencyTier?: UrgencyTier;   // e.g. "CAT_1_IMMEDIATE" | "CAT_2_URGENT" | "CAT_3_DELAYED"
-  jurisdiction?: Jurisdiction; // "DL" | "UP"
   estimatedDistanceKm?: number;
   initialLanguage?: SupportedLanguage;
   onConfirmCategory?: (selection: {
@@ -44,7 +42,6 @@ export interface AmbulanceCategoryScreenProps {
 export default function AmbulanceCategoryScreen({
   triageCareLevel = "ALS",
   urgencyTier = "CAT_1_IMMEDIATE",
-  jurisdiction = "DL",
   estimatedDistanceKm = DEFAULT_DISPATCH_DISTANCE_KM,
   initialLanguage = "en",
   onConfirmCategory,
@@ -84,27 +81,27 @@ export default function AmbulanceCategoryScreen({
     const map: Record<AIS125VehicleType, VehiclePricingEstimateResponse> = {
       TYPE_D_ALS: computeVehiclePricingEstimate({
         vehicleType: "TYPE_D_ALS",
-        jurisdiction,
+        jurisdiction: null,
         distanceKm: estimatedDistanceKm,
       }),
       TYPE_C_BLS: computeVehiclePricingEstimate({
         vehicleType: "TYPE_C_BLS",
-        jurisdiction,
+        jurisdiction: null,
         distanceKm: estimatedDistanceKm,
       }),
       TYPE_B_PTA: computeVehiclePricingEstimate({
         vehicleType: "TYPE_B_PTA",
-        jurisdiction,
+        jurisdiction: null,
         distanceKm: estimatedDistanceKm,
       }),
       TYPE_A_MFR: computeVehiclePricingEstimate({
         vehicleType: "TYPE_A_MFR",
-        jurisdiction,
+        jurisdiction: null,
         distanceKm: estimatedDistanceKm,
       }),
     };
     return map;
-  }, [jurisdiction, estimatedDistanceKm]);
+  }, [estimatedDistanceKm]);
 
   const selectedPricing = pricingEstimates[selectedVehicle];
   const selectedVehicleMeta = AIS125_VEHICLES.find(

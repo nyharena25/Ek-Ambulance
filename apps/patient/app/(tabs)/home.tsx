@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet, Pressable, Linking } from "react-native";
+import { View, Text, StyleSheet, Pressable, Linking, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { homeStrings } from "../../src/i18n/homeStrings";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
+import { realAccessToken, usePatientAuthStore } from "../../src/state/patientAuth.store";
+import { canSignOut } from "../../src/services/missionSession.core";
 import { AppIcon } from "../../src/components";
 
 export default function HomeScreen() {
@@ -28,6 +30,26 @@ export default function HomeScreen() {
   // no prior booking state required.
   const startBooking = () => router.push("/booking/triage");
   const call108 = () => Linking.openURL("tel:108").catch(() => {});
+
+  // Account: sign out / switch account (Supabase signOut; onAuthStateChange clears the stored session).
+  const session = usePatientAuthStore((s) => s.session);
+  const signOut = usePatientAuthStore((s) => s.signOut);
+  const lifecycleState = usePatientLifecycleStore((s) => s.currentState);
+  const signedIn = realAccessToken(session) !== null;
+  const signOutAllowed = canSignOut(lifecycleState);
+  const confirmSignOut = () =>
+    Alert.alert(strings.signOutConfirmTitle, strings.signOutConfirmBody, [
+      { text: strings.signOutCancel, style: "cancel" },
+      {
+        text: strings.signOut,
+        style: "destructive",
+        onPress: () =>
+          void signOut().then((r) => {
+            if (r.ok) router.replace("/(auth)/phone-entry");
+            else Alert.alert(r.code === "mission_in_progress" ? strings.signOutBlocked : strings.signOutFailed);
+          }),
+      },
+    ]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -58,6 +80,25 @@ export default function HomeScreen() {
           <AppIcon icon={{ set: "ion", name: "call" }} size={16} color={colors.slate600} />
           <Text style={styles.call108Text}>{strings.call108Label}</Text>
         </Pressable>
+
+        {signedIn && (
+          <View style={styles.accountRow}>
+            <Text style={styles.accountText} numberOfLines={1}>
+              {strings.signedInAs} {session?.user.phone ? `+${session.user.phone.replace(/^\+/, "")}` : ""}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={strings.signOut}
+              accessibilityHint={signOutAllowed ? undefined : strings.signOutBlocked}
+              accessibilityState={{ disabled: !signOutAllowed }}
+              disabled={!signOutAllowed}
+              style={[styles.signOutButton, !signOutAllowed && styles.signOutDisabled]}
+              onPress={confirmSignOut}
+            >
+              <Text style={styles.signOutText}>{strings.signOut}</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -122,4 +163,19 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
   },
+  accountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    width: "100%",
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.slate200,
+  },
+  accountText: { flex: 1, color: colors.slate600, fontSize: typography.fontSizes.sm },
+  signOutButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderRadius: radii.full, borderWidth: 1, borderColor: colors.slate300 },
+  signOutDisabled: { opacity: 0.4 },
+  signOutText: { color: colors.slate700, fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.semibold },
 });

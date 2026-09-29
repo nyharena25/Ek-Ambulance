@@ -1,22 +1,20 @@
 import { useRouter } from "expo-router";
 import { PickupLocationScreen } from "../../src/screens";
-import { GeoPoint, JurisdictionResolution } from "@sahayak/domain";
+import type { GeoPoint } from "@sahayak/domain";
 
 export default function LocationEntryScreen() {
   const router = useRouter();
 
   const handleConfirmPickup = (data: {
     point: GeoPoint;
-    resolution: JurisdictionResolution;
     address: string;
   }) => {
-    // Proceed to ambulance category selection with confirmed coordinates & jurisdiction
+    // Only the coordinates travel on: the server decides the jurisdiction when the mission is created (R-12).
     router.push({
       pathname: "/booking/category-select",
       params: {
         lat: data.point.latitude.toString(),
         lon: data.point.longitude.toString(),
-        jurisdiction: data.resolution.jurisdiction || "DL",
         address: data.address,
       },
     });

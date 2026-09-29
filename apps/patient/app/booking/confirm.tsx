@@ -10,8 +10,8 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   AIS125VehicleType,
-  Jurisdiction,
   ItemizedStatutoryFare,
+  type Jurisdiction,
   DEFAULT_DISPATCH_DISTANCE_KM,
   careLevelFromVehicleType,
   getDrivingRoute,
@@ -29,20 +29,15 @@ import { authStorage } from "../../src/lib/supabaseClient";
 import { savePersistedMission } from "../../src/services/missionSession.core";
 
 import { AppIcon } from "../../src/components";
-import { DEFAULT_PICKUP, DISPATCH_HUB, formatCoordinates } from "../../src/services/mapGeo.core";
+import { DEFAULT_PICKUP, formatCoordinates, nearestDispatchHub } from "../../src/services/mapGeo.core";
 export default function BookingConfirmScreen() {
   const router = useRouter();
   const send = usePatientLifecycleStore((s) => s.send);
-  // Task 4.1: real UID once verified via phone-OTP. Falls back to a
-  // labeled placeholder for the anonymous "quick emergency access" path
-  // (OnboardingScreen -> /booking/triage directly, skipping auth entirely
-  // by design), which must keep working without forcing a login.
+  // Booking needs a real Supabase session (phone OTP). Quick Emergency Access only reaches triage without one;
+  // this screen asks a signed-out patient to sign in and never sends a request without a session.
   const session = usePatientAuthStore((s) => s.session);
   const sessionUserId = session?.user.id;
   const accessToken = realAccessToken(session);
-  // D-1: dispatch needs a verified phone. The anonymous fallback id below is cosmetic/local only - createMission
-  // authenticates via the real JWT when a session exists, so this id is never what identifies the patient server-side.
-  const patientId = sessionUserId ?? "PAT-ANONYMOUS-0001";
   const triageResult = usePatientLifecycleStore((s) => s.context.triageResult);
   const lifecycleState = usePatientLifecycleStore((s) => s.currentState);
   // One key per visit to this screen: a retry after a lost response returns the same mission instead of a second one.
@@ -58,14 +53,12 @@ export default function BookingConfirmScreen() {
   const params = useLocalSearchParams<{
     vehicleType?: string;
     careLevel?: string;
-    jurisdiction?: string;
     address?: string;
     lat?: string;
     lon?: string;
   }>();
 
   const vehicleType = (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
-  const jurisdiction = (params.jurisdiction as Jurisdiction) || "DL";
 
   // A missing or non-finite lat/lon means this screen was reached without a real pickup location (e.g. a
   // stale deep link past PickupLocationScreen's real geolocation flow). It must never be silently replaced
@@ -81,16 +74,14 @@ export default function BookingConfirmScreen() {
   useEffect(() => {
     if (!hasRealPickup && !__DEV__) return;
     let cancelled = false;
-    void getDrivingRoute(DISPATCH_HUB[jurisdiction] ?? DISPATCH_HUB.DL, {
-      latitude: pickupLat,
-      longitude: pickupLon,
-    }).then((r) => {
+    const pickup = { latitude: pickupLat, longitude: pickupLon };
+    void getDrivingRoute(nearestDispatchHub(pickup), pickup).then((r) => {
       if (!cancelled) setRoutedDistanceKm(r.distanceKm);
     });
     return () => {
       cancelled = true;
     };
-  }, [jurisdiction, pickupLat, pickupLon, hasRealPickup]);
+  }, [pickupLat, pickupLon, hasRealPickup]);
 
   // Surface the missing-location error the moment the screen is reached, not only after a tap - the fare
   // sheet below is never shown without a real pickup point (release builds).
@@ -106,19 +97,9 @@ export default function BookingConfirmScreen() {
     }
     setSubmitError(null);
     const pickup = { latitude: pickupLat, longitude: pickupLon };
-    const requestPayload = {
-      patientId,
-      pickup,
-      careLevel: careLevelFromVehicleType(vehicleType),
-      vehicleType,
-      jurisdiction,
-      requestedAt: new Date().toISOString(),
-      // The machine re-prices from this, so the locked fare matches the quote the sheet showed.
-      distanceKm: fareDetails.totalDistanceKm,
-      idempotencyKey: idempotencyKeyRef.current,
-    };
+    let jurisdiction: Jurisdiction;
 
-    if (accessToken) {
+    if (accessToken && sessionUserId) {
       // The server creates the mission (jurisdiction from polygons, fare, first event, dispatch wave) BEFORE the machine
       // moves: a request that never reached the server must not put the patient on a "searching" screen.
       if (!triageResult || lifecycleState !== "triaged") {
@@ -137,10 +118,25 @@ export default function BookingConfirmScreen() {
       });
       setSubmitting(false);
       if (!result.ok) {
+        // The server is the only authority on the service area: out_of_zone is shown as-is, never retried elsewhere.
         setSubmitError(createMissionErrorMessage(result.error.code, language));
         return;
       }
-      send({ type: "REQUEST", payload: requestPayload });
+      jurisdiction = result.data.jurisdiction;
+      send({
+        type: "REQUEST",
+        payload: {
+          patientId: sessionUserId,
+          pickup,
+          careLevel: careLevelFromVehicleType(vehicleType),
+          vehicleType,
+          jurisdiction,
+          requestedAt: new Date().toISOString(),
+          // The machine re-prices from this, so the locked fare matches the quote the sheet showed.
+          distanceKm: fareDetails.totalDistanceKm,
+          idempotencyKey: idempotencyKeyRef.current,
+        },
+      });
       send({ type: "SERVER_MISSION_CREATED", payload: { missionId: result.data.missionId } });
       // Only the creation event (seq 1) has been seen: an instant no-driver cancel (seq 2) must be replayed, not skipped.
       await savePersistedMission(authStorage, { missionId: result.data.missionId, lastSeq: 1 });
@@ -245,7 +241,6 @@ export default function BookingConfirmScreen() {
       {(hasRealPickup || __DEV__) && (
         <StatutoryFareBottomSheet
           vehicleType={vehicleType}
-          jurisdiction={jurisdiction}
           distanceKm={routedDistanceKm}
           initialExpanded={true}
           initialLanguage={language}

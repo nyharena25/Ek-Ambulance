@@ -114,6 +114,8 @@ insert into public.driver_documents (driver_id, slot, storage_path, file_name) v
   (:'d1', 'vehicle_rc',       :'d1' || '/vehicle_rc/c.pdf',       'c.pdf');
 select t.raises(format($$insert into public.driver_documents (driver_id, slot, storage_path) values (%L, 'commercial_dl', 'elsewhere/x.pdf')$$, :'d1'), '23514', 'document path must match {driver_id}/{slot}/...');
 select t.raises(format($$update public.driver_documents set status = 'accepted' where driver_id = %L$$, :'d1'), '42501', 'driver cannot mark their own document accepted');
+select t.raises($$select public.submit_kyc()$$, 'PT422', 'submit_kyc rejects document rows with no uploaded file (G3.1)');
+insert into storage.objects (bucket_id, name) select 'driver-kyc-documents', storage_path from public.driver_documents;
 select t.eq((public.submit_kyc()) ->> 'kycStatus', 'pending_verification', 'complete application moves to pending_verification');
 select t.ok((select kyc_reference from public.drivers) ~ '^EK-KYC-\d{6}$', 'kyc reference issued');
 select t.raises($$select public.upsert_driver_application('{"licenseNumber":"X","ais125Type":"TYPE_D_ALS"}')$$, 'PT409', 'application locked after submit (kyc_locked)');
@@ -149,14 +151,41 @@ update public.drivers set kyc_status = 'approved', is_verified = true where id =
 -- ---------------------------------------------------------------------------
 -- create_mission
 -- ---------------------------------------------------------------------------
+-- Boundaries ship with migration 20260929000000 (geoBoundaries IND ADM1); no test rows are inserted here.
+select t.eq((select string_agg(zone::text || ':' || name, ',' order by zone) from public.jurisdictions), 'DL:NCT of Delhi,UP:Uttar Pradesh', 'fresh database ships the DL and UP boundaries');
+select t.ok((select bool_and(extensions.st_isvalid(boundary::extensions.geometry)) from public.jurisdictions), 'shipped boundaries are valid geometries');
+select t.ok((select extensions.st_npoints(boundary::extensions.geometry) > 1000 from public.jurisdictions where zone = 'DL'), 'DL is a real boundary, not a bounding box');
+select t.eq((select round(extensions.st_area(extensions.st_intersection(a.boundary::extensions.geometry, b.boundary::extensions.geometry)::extensions.geography)::numeric)
+               from public.jurisdictions a, public.jurisdictions b where a.zone = 'DL' and b.zone = 'UP'), 0::numeric, 'DL and UP do not overlap (zone lookup is unambiguous)');
+
+-- The fail-closed guard still holds when boundary rows are missing (rolled back).
+begin;
+delete from public.jurisdictions;
 select set_config('request.jwt.claims', :'jwt_p1', false);
 set role authenticated;
-select t.raises(format($$select public.create_mission(%L, 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)$$, :'k1'), 'PT503', 'create_mission refuses until jurisdiction boundaries are loaded');
+select t.raises(format($$select public.create_mission(%L, 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)$$, :'k1'), 'PT503', 'create_mission refuses when jurisdiction boundaries are missing');
 reset role;
+rollback;
 
--- Test-only boundary: a coarse Delhi rectangle. NOT authoritative data (see migration 20260924000002).
-insert into public.jurisdictions (zone, name, boundary, statutory_order_ref, tariff_version) values
-  ('DL', 'test rectangle', extensions.st_geogfromtext('SRID=4326;MULTIPOLYGON(((76.90 28.45,77.30 28.45,77.30 28.80,76.90 28.80,76.90 28.45)))'), 'test', 'test');
+-- G-06 regressions against the shipped polygons: the old client boxes put Noida in DL and Gurugram/Faridabad in DL.
+select set_config('request.jwt.claims', :'jwt_p1', false);
+set role authenticated;
+select t.raises(format($$select public.create_mission(%L, 28.4595, 77.0266, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)$$, :'k1'), 'PT422', 'Gurugram (Haryana) is out_of_zone');
+select t.raises(format($$select public.create_mission(%L, 28.4089, 77.3178, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)$$, :'k1'), 'PT422', 'Faridabad (Haryana) is out_of_zone');
+select t.raises(format($$select public.create_mission(%L, 30.3165, 78.0322, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)$$, :'k1'), 'PT422', 'Dehradun (Uttarakhand) is out_of_zone');
+reset role;
+begin;
+select set_config('request.jwt.claims', :'jwt_p1', false);
+set role authenticated;
+select t.eq((public.create_mission(gen_random_uuid(), 28.5708, 77.3261, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)) -> 'mission' -> 'fareDetails' ->> 'jurisdiction', 'UP', 'Noida Sector 18 resolves to UP');
+reset role;
+rollback;
+begin;
+select set_config('request.jwt.claims', :'jwt_p1', false);
+set role authenticated;
+select t.eq((public.create_mission(gen_random_uuid(), 26.8467, 80.9462, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 8.4)) -> 'mission' -> 'fareDetails' ->> 'jurisdiction', 'UP', 'Lucknow resolves to UP');
+reset role;
+rollback;
 
 -- Presence: d1 and d3 are online and near AIIMS, d2 is online but ~25 km away (outside the 3 km wave).
 select set_config('request.jwt.claims', :'jwt_d1', false);

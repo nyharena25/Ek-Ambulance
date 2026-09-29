@@ -22,7 +22,7 @@ import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAut
 import { useMissionSync } from "../../src/hooks/useMissionSync";
 import type { DriverMarkerHandle } from "../../src/components";
 import { useDrivingRoute } from "../../src/hooks/useDrivingRoute";
-import { DEFAULT_PICKUP, DISPATCH_HUB, findHospital, formatCoordinates, parseCoordinate } from "../../src/services/mapGeo.core";
+import { DEFAULT_PICKUP, findHospital, formatCoordinates, nearestDispatchHub, parseCoordinate } from "../../src/services/mapGeo.core";
 import { confirmReceipt, requestErasure } from "../../src/lib/missionApi";
 
 
@@ -101,9 +101,8 @@ export default function BookingMissionTrackingRoute() {
 
   const { throttledTelemetry, connection } = useMissionSync({
     missionId: missionId || null,
-    // The real, verified session JWT authorizes the Centrifugo subscription directly - null only for a
-    // patient who reached this screen via the anonymous "quick emergency access" path with no session, in
-    // which case the channel reports an error rather than connecting (real production behavior).
+    // The real, verified session JWT authorizes the Centrifugo subscription directly - null only without a
+    // session (e.g. signed out or expired), in which case the channel reports an error rather than connecting.
     authToken: sessionAccessToken,
     onTelemetryReceived: (telemetry) => {
       lastDriverRef.current = telemetry;
@@ -112,8 +111,9 @@ export default function BookingMissionTrackingRoute() {
   });
   const vehicleType: AIS125VehicleType =
     context.vehicleType || (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
-  const jurisdiction: Jurisdiction =
-    context.jurisdiction || (params.jurisdiction as Jurisdiction) || "DL";
+  // Server-decided (create_mission / mission row); unknown stays null rather than defaulting to a state.
+  const jurisdiction: Jurisdiction | null =
+    context.jurisdiction ?? (params.jurisdiction === "DL" || params.jurisdiction === "UP" ? params.jurisdiction : null);
   // Every computeTriageUrgency() branch returns >=1 symptomFlags entry, so
   // symptomFlags[0] cannot actually be undefined for a real triage result -
   // this optional chain and the "chest_pain" terminal only matter for a raw
@@ -127,11 +127,16 @@ export default function BookingMissionTrackingRoute() {
     ? currentState
     : (params.state as PatientLifecycleState) || "tracking";
 
-  // context.pickup is the server-synced real location (once the store is warm); params.lat/lon and
-  // DEFAULT_PICKUP are the cold-store fallback for a direct deep link only, same pattern as vehicleType/
-  // jurisdiction above - real data always wins over both.
+  // context.pickup is the server-synced real location (once the store is warm); params.lat/lon are the
+  // cold-store fallback for a direct deep link, same pattern as vehicleType/jurisdiction above - real data
+  // always wins over both. If neither exists (a malformed deep link that bypassed matching.tsx entirely,
+  // which always carries a real pickup by the time it hands off here), the map still needs *a* coordinate to
+  // center on, but the address shown to the patient must never claim that placeholder is their real location.
+  const hasRealPickup =
+    context.pickup != null ||
+    (params.lat != null && params.lon != null && Number.isFinite(Number(params.lat)) && Number.isFinite(Number(params.lon)));
   const pickup = context.pickup ?? parseCoordinate(params.lat, params.lon, DEFAULT_PICKUP);
-  const pickupAddress = params.address || formatCoordinates(pickup);
+  const pickupAddress = params.address || (hasRealPickup ? formatCoordinates(pickup) : "");
   // The hospital is whatever the driver actually selected (TRANSPORT_STARTED.destination); a route param is only a
   // dev/deep-link hint, and with neither there is no hospital to show (P10: nothing sets it today).
   const hospitalName = context.destination?.name ?? params.hospitalName;
@@ -140,7 +145,7 @@ export default function BookingMissionTrackingRoute() {
     : hospitalName
       ? findHospital(hospitalName).coordinate
       : pickup;
-  const dispatchHub = DISPATCH_HUB[jurisdiction] ?? DISPATCH_HUB.DL;
+  const dispatchHub = nearestDispatchHub(pickup);
   const isTransportLeg = missionState === "transporting";
   const route = useDrivingRoute(isTransportLeg ? pickup : dispatchHub, isTransportLeg ? hospitalCoordinate : pickup);
   const mapProps = { pickup, route, driverMarkerRef, driverStart: lastDriverRef.current ?? (isTransportLeg ? pickup : dispatchHub) };

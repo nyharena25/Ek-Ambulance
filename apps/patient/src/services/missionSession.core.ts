@@ -1,4 +1,4 @@
-import { isUuid } from "@sahayak/domain";
+import { isUuid, type PatientLifecycleState } from "@sahayak/domain";
 
 /**
  * The one piece of mission state that must outlive the process (7.5 rules 3, 8, 9): which mission is active and the last
@@ -49,4 +49,9 @@ export async function clearPersistedMission(storage: KeyValueStorage): Promise<v
   } catch {
     // nothing to do
   }
+}
+
+/** Sign-out is offered only with no mission in flight: a request, a live mission or an unconfirmed receipt keeps the account. */
+export function canSignOut(state: PatientLifecycleState): boolean {
+  return state === "idle" || state === "triaged" || state === "receiptConfirmed" || state === "cancelled";
 }

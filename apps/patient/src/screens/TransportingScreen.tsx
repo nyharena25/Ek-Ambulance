@@ -90,6 +90,10 @@ export default function TransportingScreen({
   // Only facts the server supplied: no invented plate, ETA, distance or tracking link (nothing serves that domain).
   const generateShareMessage = () => strings.familyShareMessage({ hospitalName, etaMinutes });
 
+  // Neither Linking.openURL (WhatsApp deep link) nor Share.share's `sharedAction` (Android always reports
+  // `sharedAction` even when the sheet was dismissed - a platform limitation, not something fixable here)
+  // can confirm the family actually received anything. "Opened" and "shared" are kept as distinct, honest
+  // states rather than one claimed "success" - iOS's `dismissedAction` shows no toast at all.
   const handleShareWhatsApp = async () => {
     const message = generateShareMessage();
     const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
@@ -98,32 +102,25 @@ export default function TransportingScreen({
       const supported = await Linking.canOpenURL(whatsappUrl);
       if (supported) {
         await Linking.openURL(whatsappUrl);
-        showToast(strings.shareSuccessToast);
-      } else {
-        // Fallback to system share
-        await Share.share({
-          message,
-          title: strings.shareMessageTitle,
-        });
-        showToast(strings.shareSuccessToast);
+        showToast(strings.shareOpenedToast);
+        return;
       }
     } catch {
-      await Share.share({
-        message,
-        title: strings.shareMessageTitle,
-      });
-      showToast(strings.shareSuccessToast);
+      // Fall through to the native share sheet.
+    }
+    try {
+      const result = await Share.share({ message, title: strings.shareMessageTitle });
+      if (result.action === Share.sharedAction) showToast(strings.shareSuccessToast);
+    } catch {
+      Alert.alert(strings.shareSectionTitle, message);
     }
   };
 
   const handleShareSms = async () => {
     const message = generateShareMessage();
     try {
-      await Share.share({
-        message,
-        title: strings.shareMessageTitle,
-      });
-      showToast(strings.shareSuccessToast);
+      const result = await Share.share({ message, title: strings.shareMessageTitle });
+      if (result.action === Share.sharedAction) showToast(strings.shareSuccessToast);
     } catch {
       Alert.alert(strings.shareSectionTitle, message);
     }

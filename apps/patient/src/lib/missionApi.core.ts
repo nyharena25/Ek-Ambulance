@@ -98,6 +98,8 @@ export interface CreatedMission {
   displayRef?: string;
   stateVersion: number;
   status: MissionStatus;
+  /** Decided by the server from the jurisdiction polygons (R-12); the app never guesses it. */
+  jurisdiction: Jurisdiction;
   fareDetails?: ItemizedStatutoryFare;
   replay: boolean;
 }
@@ -111,11 +113,13 @@ export function parseCreateMissionResult(data: unknown): CreatedMission | null {
   if (typeof mission.id !== "string" || !isMissionStatus(mission.status)) return null;
   const stateVersion = typeof mission.stateVersion === "number" ? mission.stateVersion : NaN;
   if (!Number.isInteger(stateVersion)) return null;
+  if (mission.jurisdiction !== "DL" && mission.jurisdiction !== "UP") return null;
   return {
     missionId: mission.id,
     displayRef: typeof mission.displayRef === "string" ? mission.displayRef : undefined,
     stateVersion,
     status: mission.status,
+    jurisdiction: mission.jurisdiction,
     fareDetails: typeof mission.fareDetails === "object" && mission.fareDetails !== null ? (mission.fareDetails as ItemizedStatutoryFare) : undefined,
     replay: d.replay === true,
   };

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radii, spacing, touchTargets, typography } from "@sahayak/ui";
 import { AppIcon } from "../components";
@@ -18,7 +18,7 @@ import {
   type ProfileDraft,
   type ServiceZone,
 } from "../lib/driverProfile.core";
-import { changePassword, confirmPhoneChange, fetchHospitalOptions, requestPhoneChange, type HospitalOption } from "../lib/driverServer";
+import { changePassword, confirmPhoneChange, fetchHospitalOptions, requestPhoneChange, signOut, type HospitalOption } from "../lib/driverServer";
 import { driverErrorMessage } from "../lib/driverServer.core";
 import { isValidIndianMobile, toE164IndianPhone } from "../hooks/otpAuth.core";
 
@@ -48,6 +48,38 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
   const [notice, setNotice] = useState<Notice>(null);
   const [phone, setPhone] = useState({ step: "idle" as "idle" | "number" | "code", number: "", code: "", busy: false, error: null as string | null });
   const [pw, setPw] = useState({ next: "", confirm: "", busy: false, error: null as string | null });
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Sign out / switch account. Go offline on the server first (while the session can still say so), then Supabase signOut;
+  // the auth listener clears the server adapter and the route gate returns to phone entry. Refused mid-offer/mission.
+  const doSignOut = async () => {
+    if (isProfileLocked(useDriverLifecycleStore.getState().currentState)) return Alert.alert(t.signOutLocked);
+    setSigningOut(true);
+    const standby = useDriverStandbyStore.getState();
+    if (standby.isOnline) await getServerAdapter()?.setPresence(false);
+    const result = await signOut();
+    setSigningOut(false);
+    if (!result.ok) return Alert.alert(t.signOutFailed);
+    // Local state only (the server adapter is already gone): offline, and no previous driver's profile for the next account.
+    if (standby.isOnline) standby.confirmGoOffline();
+    useDriverProfileStore.setState({ profile: null, status: "idle", errorCode: null });
+  };
+  const confirmSignOut = () =>
+    Alert.alert(t.signOutConfirmTitle, t.signOutConfirmBody, [
+      { text: t.cancel, style: "cancel" },
+      { text: t.signOut, style: "destructive", onPress: () => void doSignOut() },
+    ]);
+  const signOutButton = (
+    <Pressable
+      style={[styles.secondaryBtn, (locked || signingOut) && styles.off]}
+      disabled={locked || signingOut}
+      onPress={confirmSignOut}
+      accessibilityRole="button"
+      accessibilityHint={locked ? t.signOutLocked : undefined}
+    >
+      <Text style={styles.secondaryText}>{signingOut ? t.signingOut : t.signOut}</Text>
+    </Pressable>
+  );
 
   useEffect(() => {
     void load();
@@ -77,6 +109,7 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
               <Pressable style={styles.secondaryBtn} onPress={() => void load()} accessibilityRole="button">
                 <Text style={styles.secondaryText}>{t.retry}</Text>
               </Pressable>
+              {signOutButton}
             </>
           ) : (
             <>
@@ -135,7 +168,8 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
     const problem = validateNewPassword(pw.next, pw.confirm);
     if (problem) return setPw({ ...pw, error: t.passwordError[problem] });
     setPw({ ...pw, busy: true, error: null });
-    const result = getServerAdapter() ? await changePassword(pw.next) : ({ ok: true } as const);
+    if (!getServerAdapter()) return setPw((p) => ({ ...p, busy: false, error: t.sessionRequired }));
+    const result = await changePassword(pw.next);
     if (!result.ok) return setPw((p) => ({ ...p, busy: false, error: result.error.detail ?? driverErrorMessage(result.error.code) }));
     setPw({ next: "", confirm: "", busy: false, error: null });
     setNotice({ kind: "ok", text: t.passwordUpdated });
@@ -253,6 +287,11 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
             </View>
             <Text style={styles.hint}>{fieldError("crew") ?? t.crewHint}</Text>
             <Text style={styles.hint}>{t.shownToPatient}</Text>
+          </Section>
+
+          <Section title={t.accountSection}>
+            {signOutButton}
+            {locked && <Text style={styles.hint}>{t.signOutLocked}</Text>}
           </Section>
 
           {notice && <Text style={[styles.notice, notice.kind === "error" ? styles.noticeError : styles.noticeOk]}>{notice.text}</Text>}

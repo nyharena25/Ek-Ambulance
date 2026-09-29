@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { parseLifecycleMessage, type ParsedLifecycleMessage } from "@sahayak/domain";
 import { createMissionSync, type MissionSyncDeps } from "./missionSync.core.ts";
 import {
+  canSignOut,
   clearPersistedMission,
   loadPersistedMission,
   savePersistedMission,
@@ -227,6 +228,9 @@ console.log("Test 6: persisted mission session survives bad data...");
   await savePersistedMission(broken, { missionId: M, lastSeq: 1 });
   await clearPersistedMission(broken);
 }
+// Sign-out / switch account is offered only with no mission in flight.
+for (const st of ["idle", "triaged", "receiptConfirmed", "cancelled"] as const) assert.strictEqual(canSignOut(st), true, st);
+for (const st of ["requesting", "tracking", "transporting", "awaitingReceipt"] as const) assert.strictEqual(canSignOut(st), false, st);
 console.log("✓ session persistence\n");
 
 console.log("Test 7: RPC errors map to actionable codes (PostgREST PTnnn)...");
@@ -251,10 +255,10 @@ const params = buildCreateMissionParams({
 assert.deepStrictEqual(Object.keys(params).sort(), ["p_distance_km", "p_idempotency_key", "p_pickup_address", "p_pickup_lat", "p_pickup_lng", "p_triage", "p_urgency", "p_vehicle_type"]);
 assert.ok(!("p_district" in params) && !("p_duration_min" in params));
 assert.strictEqual(params.p_pickup_lng, 77.21);
-const created = parseCreateMissionResult({ replay: false, mission: { id: M, displayRef: "MSN-DL-2026-000123", status: "requesting", stateVersion: 1, fareDetails: { estimatedTotalInr: 585 } } });
-assert.deepStrictEqual(created && { id: created.missionId, v: created.stateVersion, replay: created.replay }, { id: M, v: 1, replay: false });
-assert.strictEqual(parseCreateMissionResult({ replay: true, mission: { id: M, status: "requesting", stateVersion: 1 } })?.replay, true);
-for (const bad of [null, {}, { mission: null }, { mission: { id: M, status: "flying", stateVersion: 1 } }, { mission: { id: M, status: "requesting" } }, { mission: { id: M, status: "requesting", stateVersion: 1.5 } }]) {
+const created = parseCreateMissionResult({ replay: false, mission: { id: M, displayRef: "MSN-DL-2026-000123", status: "requesting", stateVersion: 1, jurisdiction: "DL", fareDetails: { estimatedTotalInr: 585 } } });
+assert.deepStrictEqual(created && { id: created.missionId, v: created.stateVersion, replay: created.replay, j: created.jurisdiction }, { id: M, v: 1, replay: false, j: "DL" });
+assert.strictEqual(parseCreateMissionResult({ replay: true, mission: { id: M, status: "requesting", stateVersion: 1, jurisdiction: "UP" } })?.replay, true);
+for (const bad of [null, {}, { mission: null }, { mission: { id: M, status: "flying", stateVersion: 1 } }, { mission: { id: M, status: "requesting" } }, { mission: { id: M, status: "requesting", stateVersion: 1.5, jurisdiction: "DL" } }, { mission: { id: M, status: "requesting", stateVersion: 1 } }, { mission: { id: M, status: "requesting", stateVersion: 1, jurisdiction: "HR" } }]) {
   assert.strictEqual(parseCreateMissionResult(bad), null, `rejected ${JSON.stringify(bad)}`);
 }
 assert.match(newIdempotencyKey(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);

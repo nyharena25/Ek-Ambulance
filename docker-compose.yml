@@ -76,8 +76,12 @@ services:
       KONG_PROXY_ERROR_LOG: /dev/stderr
     ports:
       - "8000:8000"
+    # KONG_CONFIG=kong.local.yml routes auth/rest/storage to the local `supabase start` stack (host port 54321)
+    # instead of the hosted project; the default is unchanged.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./docker/kong.yml:/kong/kong.yml:ro
+      - ./docker/${KONG_CONFIG:-kong.yml}:/kong/kong.yml:ro
     depends_on:
       token-mint:
         condition: service_healthy

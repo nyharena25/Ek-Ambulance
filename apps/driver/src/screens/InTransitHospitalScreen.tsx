@@ -30,6 +30,9 @@ const DEMO_HOSPITAL: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 
 export interface InTransitHospitalScreenProps {
   missionId?: string;
+  /** The real, already-validated driver id from the parent route (getServerAdapter()?.userId, or the
+   *  safe DEMO_DRIVER_ID fallback it already resolved) - never re-derived or hardcoded here. */
+  driverId?: string;
   initialLanguage?: SupportedLanguage;
   hospitalName?: string;
   hospitalCoordinates?: GeoPoint;
@@ -53,6 +56,7 @@ const SLIDER_TRACK_PADDING = 4;
 
 export default function InTransitHospitalScreen({
   missionId = "MSN-2026-8819",
+  driverId,
   initialLanguage = "en",
   hospitalName = "Jaypee Hospital (Sector 128, Noida)",
   hospitalCoordinates,
@@ -119,7 +123,7 @@ export default function InTransitHospitalScreen({
 
             const arrivalPayload: ConfirmArrivalHospitalPayload = {
               missionId,
-              driverId: getServerAdapter()?.userId ?? "DRV-DL-8821",
+              driverId: getServerAdapter()?.userId ?? driverId ?? "",
               location: hospitalTarget,
               arrivedAt: new Date().toISOString(),
             };
@@ -161,14 +165,10 @@ export default function InTransitHospitalScreen({
   // Statutory receipt confirmed - this is where the mission actually
   // completes (arrivedHospital -> standby) and daily shift metrics update.
   const handleCompleteAndReturn = () => {
-    useDriverStandbyStore.setState((state) => ({
-      dailyMetrics: { ...state.dailyMetrics, completedMissions: state.dailyMetrics.completedMissions + 1 },
-    }));
-
     // The fare is computed by the server from the measured transport leg (D-2); the driver never sends one.
     const payload: CompleteMissionPayload = {
       missionId,
-      driverId: getServerAdapter()?.userId ?? "DRV-DL-8821",
+      driverId: getServerAdapter()?.userId ?? driverId ?? "",
       completedAt: new Date().toISOString(),
       handoff: {
         physicianName: physicianName.trim(),

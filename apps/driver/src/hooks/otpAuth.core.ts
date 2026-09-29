@@ -1,4 +1,5 @@
 import type { AuthError } from "@supabase/supabase-js";
+import { isUuid } from "@sahayak/domain";
 
 /** Pure helpers backing useOtpAuth.ts, unit-testable without a live
  *  Supabase/network connection - same split as the patient app's
@@ -82,4 +83,29 @@ export function networkErrorToApiError(_err: unknown): AuthApiError {
  */
 export function hasDriverRole(role: string | null | undefined): role is "driver" {
   return role === "driver";
+}
+
+/**
+ * The one definition of "signed in as a driver" (verify, restore, refresh, route gate): a Supabase session whose
+ * user id is a real UUID and whose server-set app_metadata.role is "driver". Anything else is treated as signed out.
+ */
+export function verifiedDriverSession(
+  session: { access_token: string; user: { id: string; app_metadata?: Record<string, unknown> } } | null | undefined
+): { accessToken: string; userId: string } | null {
+  if (!session || !isUuid(session.user.id)) return null;
+  const role = session.user.app_metadata?.role;
+  return hasDriverRole(typeof role === "string" ? role : null) ? { accessToken: session.access_token, userId: session.user.id } : null;
+}
+
+export type DriverAuthStatus = "loading" | "signedIn" | "signedOut";
+
+/**
+ * Where the router must go for the current auth state, or null to stay. `firstSegment` is expo-router's first route
+ * segment (undefined at the index route). Signed out: only the (auth) screens are reachable. Signed in: the index
+ * route opens the shift; (auth) stays reachable because onboarding lives there. Loading: never redirect (no flash).
+ */
+export function authRedirectTarget(status: DriverAuthStatus, firstSegment: string | undefined): string | null {
+  if (status === "loading") return null;
+  if (status === "signedOut") return firstSegment === "(auth)" ? null : "/(auth)/phone-entry";
+  return firstSegment === undefined ? "/(shift)/standby" : null;
 }

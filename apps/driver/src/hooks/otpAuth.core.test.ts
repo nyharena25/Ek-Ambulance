@@ -7,6 +7,8 @@ import {
   mapAuthError,
   networkErrorToApiError,
   hasDriverRole,
+  verifiedDriverSession,
+  authRedirectTarget,
 } from "./otpAuth.core.ts";
 
 console.log("=================================================");
@@ -71,6 +73,29 @@ const mapped = mapAuthError(dnsError, false);
 assert.strictEqual(mapped.error, "network_error");
 assert.ok(!/java|UnknownHost|sahayak/i.test(mapped.error_description), "no raw exception text in error_description");
 console.log("✓ Network failures sanitized.\n");
+
+console.log("Test: a verified driver session needs a UUID user AND server-set app_metadata.role = driver...");
+const U = "00000000-0000-4000-8000-0000000000d1";
+const sess = (id: string, app_metadata: Record<string, unknown>) => ({ access_token: "jwt", user: { id, app_metadata } });
+assert.deepStrictEqual(verifiedDriverSession(sess(U, { role: "driver" })), { accessToken: "jwt", userId: U });
+assert.strictEqual(verifiedDriverSession(sess(U, { role: "patient" })), null, "a patient account is not a driver in the driver app");
+assert.strictEqual(verifiedDriverSession(sess(U, {})), null, "a fresh OTP signup (no role yet) is not a driver");
+assert.strictEqual(verifiedDriverSession({ access_token: "jwt", user: { id: U } }), null, "missing app_metadata");
+assert.strictEqual(verifiedDriverSession(sess("DRV-DEMO-0001", { role: "driver" })), null, "a non-UUID (local/mock) id never counts");
+assert.strictEqual(verifiedDriverSession(null), null);
+console.log("✓ Verified driver session.\n");
+
+console.log("Test: route gate...");
+assert.strictEqual(authRedirectTarget("loading", undefined), null, "never redirect while the stored session is read");
+assert.strictEqual(authRedirectTarget("loading", "(shift)"), null);
+assert.strictEqual(authRedirectTarget("signedOut", undefined), "/(auth)/phone-entry", "cold start without a session");
+assert.strictEqual(authRedirectTarget("signedOut", "(shift)"), "/(auth)/phone-entry", "expired/signed-out session leaves the shift");
+assert.strictEqual(authRedirectTarget("signedOut", "mission"), "/(auth)/phone-entry", "deep link to a mission needs a session");
+assert.strictEqual(authRedirectTarget("signedOut", "(auth)"), null, "sign-in screens stay reachable (wrong-role error stays visible)");
+assert.strictEqual(authRedirectTarget("signedIn", undefined), "/(shift)/standby", "restored session opens the shift");
+assert.strictEqual(authRedirectTarget("signedIn", "(auth)"), null, "onboarding (in (auth)) stays reachable when signed in");
+assert.strictEqual(authRedirectTarget("signedIn", "(shift)"), null);
+console.log("✓ Route gate.\n");
 
 console.log("=================================================");
 console.log("ALL DRIVER OTP AUTH CORE TESTS PASSED (100% GREEN)");

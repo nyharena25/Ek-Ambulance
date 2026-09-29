@@ -29,25 +29,6 @@ export interface GpsCoordinates {
   altitudeMeters: number;
 }
 
-export interface BatteryStatus {
-  percentage: number;
-  isCharging: boolean;
-  temperatureC: number;
-}
-
-export interface GpsQualityStatus {
-  status: "EXCELLENT" | "GOOD" | "POOR";
-  satellitesLocked: number;
-  provider: string;
-}
-
-export interface DailyShiftMetrics {
-  completedMissions: number;
-  onlineMinutes: number;
-  distanceKm: number;
-  revenueInr: number;
-}
-
 export interface RedisPresenceTelemetry {
   geoKey: string;
   isIndexed: boolean;
@@ -63,9 +44,6 @@ export interface DriverStandbyStoreState {
   language: SupportedLanguage;
   currentJurisdiction: JurisdictionCode;
   gps: GpsCoordinates;
-  battery: BatteryStatus;
-  gpsQuality: GpsQualityStatus;
-  dailyMetrics: DailyShiftMetrics;
   registeredAis125Type: AIS125VehicleType;
   redisPresence: RedisPresenceTelemetry;
   isOfflineModalOpen: boolean;
@@ -85,8 +63,6 @@ export interface DriverStandbyStoreState {
   setGps: (gps: GpsCoordinates) => void;
   setJurisdiction: (jur: JurisdictionCode) => void;
   setAis125Type: (type: AIS125VehicleType) => void;
-  toggleCharging: () => void;
-  toggleLowBatterySimulation: () => void;
   toggleLanguage: () => void;
   setLanguage: (lang: SupportedLanguage) => void;
   recenterGps: () => void;
@@ -144,22 +120,6 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   language: "en",
   currentJurisdiction: "UP_NOIDA",
   gps: NOIDA_COORDS,
-  battery: {
-    percentage: 88,
-    isCharging: true,
-    temperatureC: 28,
-  },
-  gpsQuality: {
-    status: "EXCELLENT",
-    satellitesLocked: 14,
-    provider: "NavIC / IRNSS + GPS GLONASS",
-  },
-  dailyMetrics: {
-    completedMissions: 4,
-    onlineMinutes: 342, // 5 hours 42 mins
-    distanceKm: 68.4,
-    revenueInr: 3450,
-  },
   registeredAis125Type: "TYPE_D_ALS",
   redisPresence: {
     geoKey: "ambulances:geo:tier_d",
@@ -257,23 +217,6 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       },
     }));
   },
-
-  toggleCharging: () =>
-    set((state) => ({
-      battery: {
-        ...state.battery,
-        isCharging: !state.battery.isCharging,
-      },
-    })),
-
-  toggleLowBatterySimulation: () =>
-    set((state) => ({
-      battery: {
-        ...state.battery,
-        percentage: state.battery.percentage > 25 ? 14 : 88,
-        isCharging: state.battery.percentage > 25 ? false : true,
-      },
-    })),
 
   toggleLanguage: () =>
     set((state) => ({ language: state.language === "en" ? "hi" : "en" })),

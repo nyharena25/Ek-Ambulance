@@ -52,8 +52,8 @@ export interface ActiveMatchingScreenProps {
  */
 export default function ActiveMatchingScreen({
   vehicleType = "TYPE_D_ALS",
-  pickupAddress = "AIIMS New Delhi, Main Emergency Ward",
-  pickupCoords = { latitude: 28.5672, longitude: 77.2100 },
+  pickupAddress = "",
+  pickupCoords,
   initialLanguage = "en",
   startedAtMs,
   onCancel,
@@ -477,10 +477,12 @@ export default function ActiveMatchingScreen({
               <Text style={styles.contextMainValue} numberOfLines={2}>
                 {pickupAddress}
               </Text>
-              <Text style={styles.contextSubValue}>
-                GPS: {pickupCoords.latitude.toFixed(4)}° N,{" "}
-                {pickupCoords.longitude.toFixed(4)}° E
-              </Text>
+              {pickupCoords && (
+                <Text style={styles.contextSubValue}>
+                  GPS: {pickupCoords.latitude.toFixed(4)}° N,{" "}
+                  {pickupCoords.longitude.toFixed(4)}° E
+                </Text>
+              )}
             </View>
           </View>
         </View>

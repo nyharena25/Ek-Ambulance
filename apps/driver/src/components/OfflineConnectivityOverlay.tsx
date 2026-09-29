@@ -63,29 +63,36 @@ export default function OfflineConnectivityOverlay({
   // sends an actual SMS to the real 108 desk, which must never carry a fabricated mission id. The button
   // itself is disabled in that case (below), so reaching here with no missionId shouldn't happen; guarded
   // anyway since onPress handlers can still fire.
+  // `Linking` can only ever tell us the composer opened (or didn't) - it has no visibility into whether the
+  // driver actually pressed Send in the native app. That's the truth ceiling of this API without adding a
+  // new native dependency (expo-sms), so the three states below are UNAVAILABLE / FAILED / "composer opened" -
+  // never a claim that the SMS itself was sent.
   const handleSendSmsPing = async () => {
     if (!missionId) return;
+    const payload = telemetryQueueService.formatSmsFallbackPayload(missionId);
+    const smsUrl =
+      Platform.OS === "ios"
+        ? `sms:${payload.smsNumber}&body=${encodeURIComponent(payload.body)}`
+        : `sms:${payload.smsNumber}?body=${encodeURIComponent(payload.body)}`;
+
+    let supported: boolean;
     try {
-      const payload = telemetryQueueService.formatSmsFallbackPayload(missionId);
-      setSmsFeedback(strings.smsPromptConfirm);
+      supported = await Linking.canOpenURL(smsUrl);
+    } catch {
+      setSmsFeedback(strings.smsUnavailableNotice);
+      return;
+    }
+    if (!supported) {
+      setSmsFeedback(strings.smsUnavailableNotice);
+      return;
+    }
 
-      const smsUrl =
-        Platform.OS === "ios"
-          ? `sms:${payload.smsNumber}&body=${encodeURIComponent(payload.body)}`
-          : `sms:${payload.smsNumber}?body=${encodeURIComponent(payload.body)}`;
-
-      const supported = await Linking.canOpenURL(smsUrl);
-      if (supported) {
-        await Linking.openURL(smsUrl);
-      } else {
-        // Fallback for simulators or environments without telephony
-        await Linking.openURL(`sms:${payload.smsNumber}`);
-      }
-
+    try {
+      await Linking.openURL(smsUrl);
+      setSmsFeedback(strings.a11ySmsSentConfirmation);
       onSmsSent?.();
     } catch {
-      // Graceful fallback notice
-      setSmsFeedback("SMS carrier dispatched to 108");
+      setSmsFeedback(strings.smsFailedNotice);
     }
   };
 

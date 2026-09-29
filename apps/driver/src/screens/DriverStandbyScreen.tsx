@@ -39,17 +39,12 @@ export default function DriverStandbyScreen({
     language,
     currentJurisdiction,
     gps,
-    battery,
-    gpsQuality,
-    dailyMetrics,
     registeredAis125Type,
     isOfflineModalOpen,
     toggleOnlineState,
     confirmGoOffline,
     closeOfflineModal,
     setJurisdiction,
-    toggleCharging,
-    toggleLowBatterySimulation,
     toggleLanguage,
     recenterGps,
   } = useDriverStandbyStore();
@@ -140,93 +135,6 @@ export default function DriverStandbyScreen({
         </Pressable>
       </View>
 
-      {/* AMBIENT HARDWARE TELEMETRY STRIP (BATTERY & GPS SIGNAL QUALITY): the values are simulated (no battery or satellite
-          source exists), so a release build does not show them (D-UX-01). */}
-      {__DEV__ && (
-      <View style={styles.telemetryBar}>
-        {/* Battery Monitor */}
-        <Pressable
-          style={styles.telemetryWidget}
-          onPress={toggleLowBatterySimulation}
-          accessibilityLabel="Toggle battery charge simulation"
-        >
-          <View style={styles.telemetryIconBox}>
-            <Text style={styles.telemetryEmoji}>
-              <AppIcon
-                icon={
-                  battery.isCharging
-                    ? { set: "ion", name: "flash" }
-                    : battery.percentage < 20
-                      ? { set: "ion", name: "battery-dead" }
-                      : { set: "ion", name: "battery-full" }
-                }
-                size={14}
-              />
-            </Text>
-          </View>
-          <View style={styles.telemetryTextBox}>
-            <View style={styles.telemetryValueRow}>
-              <Text
-                style={[
-                  styles.telemetryValue,
-                  battery.percentage < 20 && styles.telemetryValueCritical,
-                ]}
-              >
-                {battery.percentage}%
-              </Text>
-              <Text style={styles.telemetrySubValue}>
-                {battery.isCharging ? "Charging" : "Batt"}
-              </Text>
-            </View>
-            <Text style={styles.telemetryMetaText} numberOfLines={1}>
-              {battery.isCharging ? strings.batteryCharging : strings.batteryDischarging}
-            </Text>
-          </View>
-        </Pressable>
-
-        <View style={styles.telemetryDivider} />
-
-        {/* GPS Signal Quality Monitor */}
-        <Pressable
-          style={styles.telemetryWidget}
-          onPress={recenterGps}
-          accessibilityLabel="Recenter GPS Satellite Lock"
-        >
-          <View style={styles.telemetryIconBox}>
-            <AppIcon icon={{ set: "mci", name: "satellite-variant" }} size={14} color={colors.slate700} style={styles.telemetryEmoji} />
-          </View>
-          <View style={styles.telemetryTextBox}>
-            <View style={styles.telemetryValueRow}>
-              <View style={styles.signalPulseDot} />
-              <Text style={styles.telemetryValue}>
-                {strings.gpsSignalExcellent}
-              </Text>
-            </View>
-            <Text style={styles.telemetryMetaText} numberOfLines={1}>
-              {strings.gpsSatellitesLocked(gpsQuality.satellitesLocked)}
-            </Text>
-          </View>
-        </Pressable>
-      </View>
-      )}
-
-      {/* CRITICAL LOW BATTERY WARNING (IF < 20%) */}
-      {battery.percentage < 20 && (
-        <Pressable
-          style={styles.criticalBatteryBanner}
-          onPress={toggleCharging}
-        >
-          <AppIcon icon={{ set: "ion", name: "warning" }} size={18} color={colors.slate700} style={styles.criticalBatteryIcon} />
-          <View style={styles.criticalBatteryTextWrap}>
-            <Text style={styles.criticalBatteryTitle}>
-              {strings.batteryWarningCritical}
-            </Text>
-            <Text style={styles.criticalBatteryAction}>
-              <AppIcon icon={{ set: "ion", name: "arrow-forward" }} size={10} />{" "}{strings.batteryWarningAction}
-            </Text>
-          </View>
-        </Pressable>
-      )}
 
       {/* SCROLLABLE DASHBOARD BODY */}
       <ScrollView
@@ -525,83 +433,6 @@ export default function DriverStandbyScreen({
 
         </View>
 
-        {/* DAILY COMPLETED MISSIONS & SHIFT STATISTICS: seeded fiction (4 missions, Rs 3,450, a fixed "recent mission")
-            until an earnings model exists, so development builds only (D-UX-01). */}
-        {__DEV__ && (
-        <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>{strings.dailyStatsTitle}</Text>
-          <View style={styles.statsGrid}>
-            {/* Missions Completed */}
-            <View style={styles.statMetricBox}>
-              <Text style={styles.statNumber}>
-                {dailyMetrics.completedMissions}
-              </Text>
-              <Text style={styles.statLabel}>
-                {strings.statMissionsCompleted}
-              </Text>
-              <Text style={styles.statSub}>
-                {strings.statMissionsCompletedSubtitle}
-              </Text>
-            </View>
-
-            {/* Shift Duration */}
-            <View style={styles.statMetricBox}>
-              <Text style={styles.statNumber}>
-                {Math.floor(dailyMetrics.onlineMinutes / 60)}h{" "}
-                {dailyMetrics.onlineMinutes % 60}m
-              </Text>
-              <Text style={styles.statLabel}>{strings.statShiftDuration}</Text>
-              <Text style={styles.statSub}>
-                {strings.statShiftDurationSubtitle}
-              </Text>
-            </View>
-
-            {/* Distance Covered */}
-            <View style={styles.statMetricBox}>
-              <Text style={styles.statNumber}>
-                {dailyMetrics.distanceKm} km
-              </Text>
-              <Text style={styles.statLabel}>
-                {strings.statDistanceTraveled}
-              </Text>
-              <Text style={styles.statSub}>
-                {strings.statDistanceTraveledSubtitle}
-              </Text>
-            </View>
-
-            {/* Regulated Revenue */}
-            <View style={styles.statMetricBox}>
-              <Text style={styles.statNumberGreen}>
-                ₹ {dailyMetrics.revenueInr}
-              </Text>
-              <Text style={styles.statLabel}>{strings.statGrossTariff}</Text>
-              <Text style={styles.statSub}>
-                {strings.statGrossTariffSubtitle}
-              </Text>
-            </View>
-          </View>
-
-          {/* Most Recent Mission Card */}
-          <View style={styles.recentMissionCard}>
-            <View style={styles.recentMissionTop}>
-              <View style={styles.recentCareBadge}>
-                <Text style={styles.recentCareText}>
-                  {strings.recentMissionCareBadge}
-                </Text>
-              </View>
-              <Text style={styles.recentMissionFare}>
-                {strings.recentMissionFare(1850)}
-              </Text>
-            </View>
-            <Text style={styles.recentMissionTitle}>
-              {strings.recentMissionTitle}
-            </Text>
-            <Text style={styles.recentMissionDetails}>
-              {strings.recentMissionDetails}
-            </Text>
-          </View>
-        </View>
-        )}
 
       </ScrollView>
 

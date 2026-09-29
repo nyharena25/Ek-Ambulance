@@ -15,23 +15,12 @@ import type { DocumentSlotKey } from "../state/driverOnboarding.store";
 
 /**
  * Supabase-bound Mission API for the driver app (DATA_AND_SYNC_SPECIFICATION.md 6.4.5). Never throws: failures return
- * `{ ok: false, error }`. Everything here needs a session the server can verify; the `__DEV__` mock login does not qualify.
+ * `{ ok: false, error }`. Everything here needs a verified driver session (Supabase phone OTP, app_metadata.role = driver).
  */
 
 export interface ServerSession {
   accessToken: string;
   userId: string;
-}
-
-/** The session, but only if the server can verify it. Mock dev sessions use non-UUID ids and are treated as "no server". */
-export async function getServerSession(): Promise<ServerSession | null> {
-  try {
-    const { data } = await supabase.auth.getSession();
-    const s = data.session;
-    return s && isUuid(s.user.id) ? { accessToken: s.access_token, userId: s.user.id } : null;
-  } catch {
-    return null;
-  }
 }
 
 const fail = (e: unknown): { ok: false; error: ReturnType<typeof mapRpcError> } => ({
@@ -169,6 +158,17 @@ export async function requestPhoneChange(phone: string): Promise<ApiResult<true>
 export async function confirmPhoneChange(phone: string, token: string): Promise<ApiResult<true>> {
   try {
     const { error } = await supabase.auth.verifyOtp({ phone, token, type: "phone_change" });
+    return error ? authFail(error) : { ok: true, data: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Supabase signOut. The SDK clears the stored session; useServerSync (onAuthStateChange) drops the server adapter and the
+ *  root layout's route gate returns to phone entry. */
+export async function signOut(): Promise<ApiResult<true>> {
+  try {
+    const { error } = await supabase.auth.signOut();
     return error ? authFail(error) : { ok: true, data: true };
   } catch (e) {
     return fail(e);

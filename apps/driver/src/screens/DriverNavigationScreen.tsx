@@ -29,6 +29,8 @@ import { IS_DEV } from "../config/env";
 
 export interface DriverNavigationScreenProps {
   missionId?: string;
+  /** The real, already-validated driver id from the parent route - never re-derived or hardcoded here. */
+  driverId?: string;
   pickupCoordinates?: GeoPoint;
   initialLanguage?: SupportedLanguage;
   onConfirmArrival?: (payload: ConfirmArrivalScenePayload) => void;
@@ -45,6 +47,7 @@ const SLIDER_TRACK_PADDING = 4;
 
 export default function DriverNavigationScreen({
   missionId = "MSN-2026-8819",
+  driverId,
   pickupCoordinates,
   initialLanguage = "en",
   onConfirmArrival,
@@ -105,8 +108,10 @@ export default function DriverNavigationScreen({
 
             const payload: ConfirmArrivalScenePayload = {
               missionId,
-              driverId: "DRV-DL-8821",
-              location: { latitude: 28.5034, longitude: 77.4112 },
+              driverId: driverId ?? "",
+              // The driver's real, live GPS position (see driverPos above) - this is what the server records
+              // as the on-scene arrival location, never a fixed coordinate unrelated to where the driver is.
+              location: driverPos,
               arrivedAt: new Date().toISOString(),
             };
 

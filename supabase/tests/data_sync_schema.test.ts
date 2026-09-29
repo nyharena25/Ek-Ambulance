@@ -30,6 +30,15 @@ for (const t of NEW_TABLES) {
 assert.ok(!/create policy \w+ on public\.jurisdictions/i.test(schema), "jurisdictions has no client policy");
 assert.doesNotMatch(schema, /insert into public\.jurisdictions/i, "jurisdictions is NOT seeded (bounding boxes would recreate G-06)");
 assert.match(schema, /add column jurisdiction\s+public\.jurisdiction_zone,/i);
+// Boundaries ship in their own generated migration, from a pinned real dataset (never bounding boxes).
+const boundariesRaw = readFileSync(fileURLToPath(new URL("../migrations/20260929000000_jurisdiction_boundaries.sql", import.meta.url)), "utf8");
+assert.match(boundariesRaw, /sha256 47aa0acb6f69868daee49143276f3ce323f18905ba7d38d0a86816b405028736/, "boundaries: pinned source sha256");
+assert.match(boundariesRaw, /geoBoundaries\/raw\/9469f09\/releaseData\/gbOpen\/IND\/ADM1\//, "boundaries: pinned source release");
+assert.deepStrictEqual([...boundariesRaw.matchAll(/^  \('(\w+)', '([^']+)',$/gm)].map((m) => `${m[1]}:${m[2]}`), ["DL:NCT of Delhi", "UP:Uttar Pradesh"]);
+const geometries = [...boundariesRaw.matchAll(/\$geo\$(.*?)\$geo\$/g)].map((m) => JSON.parse(m[1]!) as { coordinates: unknown });
+assert.strictEqual(geometries.length, 2, "boundaries: one geometry per zone");
+for (const g of geometries) assert.ok(JSON.stringify(g.coordinates).split("],[").length > 1000, "boundaries: real polygons, not boxes");
+assert.match(boundariesRaw, /on conflict \(zone\) do update/i, "boundaries: idempotent upsert");
 console.log("✓ new tables\n");
 
 console.log("Test 2: every policy is authenticated-only and uses (select auth.uid())...");

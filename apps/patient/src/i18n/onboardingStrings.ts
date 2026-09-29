@@ -75,13 +75,13 @@ export const onboardingStrings: Record<SupportedLanguage, OnboardingTranslation>
       },
     ],
     quickEmergencyTitle: "Quick Emergency Access",
-    quickEmergencySubtitle: "Instant Dispatch • Skip Registration",
+    quickEmergencySubtitle: "Fastest path • Quick phone sign-in to book",
     quickEmergencyAccessibility:
-      "Quick Emergency Access: Immediately request an ambulance without registering. Button.",
+      "Quick Emergency Access: Start the fastest ambulance request. A quick phone number sign-in is needed before the ambulance is booked. Button.",
     signInPhoneTitle: "Sign In with Phone",
-    signInPhoneSubtitle: "For planned transport, records & tracking",
+    signInPhoneSubtitle: "Sign in first, then request, track & keep records",
     signInPhoneAccessibility:
-      "Sign In with Phone: Log in using phone number and OTP for full account features. Button.",
+      "Sign In with Phone: Sign in with your phone number and a one-time code. Required to book an ambulance. Button.",
     emergencyDisclaimer:
       "For extreme cardiac arrest, stroke, or fatal trauma emergencies, direct line 108 / 102 is also supported.",
     tollFreeCall: "Call 108",
@@ -130,13 +130,13 @@ export const onboardingStrings: Record<SupportedLanguage, OnboardingTranslation>
       },
     ],
     quickEmergencyTitle: "त्वरित आपातकालीन सेवा",
-    quickEmergencySubtitle: "बिना लॉगिन तुरंत एंबुलेंस बुलाएं",
+    quickEmergencySubtitle: "सबसे तेज़ रास्ता • बुकिंग हेतु फ़ोन से त्वरित साइन इन",
     quickEmergencyAccessibility:
-      "त्वरित आपातकालीन सेवा: बिना लॉगिन किए तुरंत एंबुलेंस का अनुरोध करें। बटन।",
+      "त्वरित आपातकालीन सेवा: सबसे तेज़ एंबुलेंस अनुरोध शुरू करें। एंबुलेंस बुक होने से पहले फ़ोन नंबर से त्वरित साइन इन आवश्यक है। बटन।",
     signInPhoneTitle: "फ़ोन नंबर से साइन इन करें",
-    signInPhoneSubtitle: "नियोजित यात्रा, मेडिकल रिकॉर्ड और ट्रैकिंग हेतु",
+    signInPhoneSubtitle: "पहले साइन इन करें, फिर अनुरोध, ट्रैकिंग और रिकॉर्ड",
     signInPhoneAccessibility:
-      "फ़ोन नंबर से साइन इन करें: फोन नंबर और OTP के साथ लॉगिन करें। बटन।",
+      "फ़ोन नंबर से साइन इन करें: फ़ोन नंबर और OTP से साइन इन करें। एंबुलेंस बुक करने के लिए आवश्यक। बटन।",
     emergencyDisclaimer:
       "अति गंभीर हृदय गति रुकने या बड़ी सड़क दुर्घटना की स्थिति में राष्ट्रीय हेल्पलाइन 108 / 102 भी उपलब्ध है।",
     tollFreeCall: "108 पर कॉल करें",

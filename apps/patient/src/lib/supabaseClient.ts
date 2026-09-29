@@ -18,10 +18,8 @@ const GATEWAY_URL =
   process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000"; // adb reverse tcp:8000 (pnpm adb:reverse) makes this reach the host
 
 /**
- * No real anon/publishable key exists yet - Kong's GoTrue proxy issues its
- * own, and none has been provisioned. Placeholder, same pattern as
- * booking/confirm.tsx's anonymous `patientId` fallback: named, documented,
- * not silently blank.
+ * The project's anon (publishable) key comes from EXPO_PUBLIC_SUPABASE_ANON_KEY. Without it the
+ * placeholder below is named rather than silently blank; every auth call then fails.
  */
 const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "unconfigured-anon-key";

@@ -101,3 +101,8 @@ assert.strictEqual(validateNewPassword("goodpass1", "goodpass2"), "mismatch");
 assert.strictEqual(validateNewPassword("goodpass1", "goodpass1"), null);
 
 console.log("\nDriver profile core tests passed.");
+
+console.log("Test: the staff rejection reason reaches the driver (G3)...");
+assert.strictEqual(parseDriverProfile({ kycStatus: "rejected", kycRejectReason: "RC photo is illegible" })!.kycRejectReason, "RC photo is illegible");
+assert.strictEqual(parseDriverProfile({ kycStatus: "approved" })!.kycRejectReason, null, "absent reason is null, never invented");
+console.log("✓ rejection reason parsed\n");

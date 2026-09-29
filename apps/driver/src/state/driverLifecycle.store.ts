@@ -88,10 +88,6 @@ export interface DriverLifecycleStoreState {
 // already reads/writes `activeMissionId` at the top level.
 let actor: Actor<typeof driverLifecycleMachine>;
 
-// Local-development placeholder, used only while no verified session exists (no server adapter). The dev token minter
-// accepts any bearer; the strict minter would reject it, which is the point.
-const DEMO_AUTH_TOKEN = "demo_auth_token";
-
 // Wire Event Publishing Closure: one Centrifugo publisher, mounted for
 // whichever mission is currently active and torn down when none is. Owned
 // here (not per-screen like useGpsPublisher's telemetry publisher) because
@@ -106,8 +102,10 @@ let publisherMissionId: string | null = null;
 function ensurePublisherFor(missionId: string | null) {
   if (missionId === publisherMissionId) return;
   const previous = publisher;
-  publisher = missionId
-    ? mountDriverTelemetryPublisher(missionId, serverAdapter?.accessToken ?? DEMO_AUTH_TOKEN, {
+  // Only a verified driver session may publish: without one there is no publisher (never a placeholder bearer).
+  const accessToken = serverAdapter?.accessToken;
+  publisher = missionId && accessToken
+    ? mountDriverTelemetryPublisher(missionId, accessToken, {
         onPublishError: () => {
           // Surface the existing low-connectivity indicator
           // (OfflineConnectivityOverlay, driven by driverConnection.store)

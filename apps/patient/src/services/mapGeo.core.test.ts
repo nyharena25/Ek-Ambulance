@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { DISPATCH_HUB, findHospital, formatAddress, formatCoordinates, isFittable, parseCoordinate } from "./mapGeo.core.ts";
+import { DISPATCH_HUB, findHospital, nearestDispatchHub, formatAddress, formatCoordinates, isFittable, parseCoordinate } from "./mapGeo.core.ts";
 
 const FALLBACK = { latitude: 28.5672, longitude: 77.21 };
 
@@ -21,6 +21,9 @@ console.log("✓ hospitals\n");
 
 console.log("Test 4: dispatch hubs cover both jurisdictions...");
 assert.ok(DISPATCH_HUB.DL && DISPATCH_HUB.UP);
+// Straight-line nearest hub, independent of any jurisdiction guess.
+assert.deepStrictEqual(nearestDispatchHub({ latitude: 28.5672, longitude: 77.21 }), DISPATCH_HUB.DL);
+assert.deepStrictEqual(nearestDispatchHub({ latitude: 28.5708, longitude: 77.3261 }), DISPATCH_HUB.UP);
 console.log("✓ hubs\n");
 
 console.log("Test 5: route fitting is skipped for coincident points...");

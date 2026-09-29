@@ -3,7 +3,6 @@ import { AmbulanceCategoryScreen } from "../../src/screens";
 import {
   AIS125VehicleType,
   CareLevel,
-  Jurisdiction,
   UrgencyTier,
   VehiclePricingEstimateResponse,
   DEFAULT_DISPATCH_DISTANCE_KM,
@@ -15,7 +14,6 @@ export default function BookingCategorySelectRoute() {
   const params = useLocalSearchParams<{
     careLevel?: string;
     tier?: string;
-    jurisdiction?: string;
     lat?: string;
     lon?: string;
     address?: string;
@@ -29,7 +27,6 @@ export default function BookingCategorySelectRoute() {
     triageResult?.recommendedCareLevel ?? ((params.careLevel as CareLevel) || "ALS");
   const urgencyTier: UrgencyTier =
     triageResult?.tier ?? ((params.tier as UrgencyTier) || "CAT_1_IMMEDIATE");
-  const jurisdiction = (params.jurisdiction as Jurisdiction) || "DL";
 
   const handleConfirmCategory = (selection: {
     vehicleType: AIS125VehicleType;
@@ -42,7 +39,6 @@ export default function BookingCategorySelectRoute() {
       params: {
         vehicleType: selection.vehicleType,
         careLevel: selection.careLevel,
-        jurisdiction,
         lat: params.lat,
         lon: params.lon,
         address: params.address,
@@ -62,7 +58,6 @@ export default function BookingCategorySelectRoute() {
     <AmbulanceCategoryScreen
       triageCareLevel={triageCareLevel}
       urgencyTier={urgencyTier}
-      jurisdiction={jurisdiction}
       estimatedDistanceKm={DEFAULT_DISPATCH_DISTANCE_KM}
       onConfirmCategory={handleConfirmCategory}
       onBack={handleBack}

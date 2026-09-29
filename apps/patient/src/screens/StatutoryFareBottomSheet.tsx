@@ -25,7 +25,8 @@ import { AppIcon } from "../components";
 
 export interface StatutoryFareBottomSheetProps {
   vehicleType?: AIS125VehicleType;
-  jurisdiction?: Jurisdiction;
+  // Known only once the server has created the mission (R-12); before that the sheet names no state.
+  jurisdiction?: Jurisdiction | null;
   distanceKm?: number;
   initialExpanded?: boolean;
   initialLanguage?: SupportedLanguage;
@@ -35,7 +36,7 @@ export interface StatutoryFareBottomSheetProps {
 
 export default function StatutoryFareBottomSheet({
   vehicleType = "TYPE_D_ALS",
-  jurisdiction = "DL",
+  jurisdiction = null,
   distanceKm = 12.4,
   initialExpanded = true,
   initialLanguage = "en",
@@ -80,10 +81,8 @@ export default function StatutoryFareBottomSheet({
         {/* Persistent Language Toggle in Sheet Header */}
         <View style={styles.sheetHeaderTopRow}>
           <Text style={styles.sheetHeaderCategoryTitle}>
-            {itemizedFare.vehicleType.replace(/_/g, " ")} •{" "}
-            {itemizedFare.jurisdiction === "DL"
-              ? "NCT of Delhi"
-              : "Uttar Pradesh"}
+            {itemizedFare.vehicleType.replace(/_/g, " ")}
+            {itemizedFare.jurisdiction === "DL" ? " • NCT of Delhi" : itemizedFare.jurisdiction === "UP" ? " • Uttar Pradesh" : ""}
           </Text>
 
           {/* Bilingual Switcher */}
@@ -247,9 +246,9 @@ export default function StatutoryFareBottomSheet({
             <View style={[styles.tableRow, styles.totalRow]}>
               <View style={styles.tableLabelGroup}>
                 <Text style={styles.totalLabel}>{strings.totalFareRow}</Text>
-                <Text style={styles.totalSubtitle}>
-                  {itemizedFare.statutoryOrderRef}
-                </Text>
+                {itemizedFare.statutoryOrderRef !== "" && (
+                  <Text style={styles.totalSubtitle}>{itemizedFare.statutoryOrderRef}</Text>
+                )}
               </View>
               <Text style={styles.totalValue}>
                 ₹{itemizedFare.estimatedTotalInr.toFixed(2)}

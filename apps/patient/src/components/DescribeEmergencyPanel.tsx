@@ -34,7 +34,7 @@ export interface DescribeEmergencyPanelProps {
   /** Applies the suggestion to the form; returns true if the AI's tier was more severe than the engine's. */
   onExtracted: (extraction: TriageExtraction) => boolean;
   /** The caller's real Supabase session token (verified by the gateway's /triage/extract proxy). Null/absent
-   *  (no real session, e.g. the anonymous quick-emergency path) degrades to manual triage below - the same
+   *  (no real session yet, e.g. Quick Emergency Access before sign-in) degrades to manual triage below - the same
    *  behavior the old "no key configured" case had, now gated on real auth instead of an env var. */
   authToken?: string | null;
 }

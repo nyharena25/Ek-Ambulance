@@ -20,18 +20,20 @@ export interface PricingEstimateResponse {
 
 export interface VehiclePricingEstimateParams {
   vehicleType: AIS125VehicleType;
-  jurisdiction: Jurisdiction;
+  // null before booking: only the server decides the jurisdiction (R-12). Amounts do not depend on it.
+  jurisdiction: Jurisdiction | null;
   distanceKm: number;
 }
 
-export interface VehiclePricingEstimateResponse extends PricingEstimateResponse {
+export interface VehiclePricingEstimateResponse extends Omit<PricingEstimateResponse, "jurisdiction"> {
   vehicleType: AIS125VehicleType;
+  jurisdiction: Jurisdiction | null;
 }
 
 export interface ItemizedStatutoryFare {
   vehicleType: AIS125VehicleType;
   careLevel: CareLevel;
-  jurisdiction: Jurisdiction;
+  jurisdiction: Jurisdiction | null;
   totalDistanceKm: number;
   initialIncludedKm: number;
   baseFareInr: number;
@@ -44,7 +46,7 @@ export interface ItemizedStatutoryFare {
   estimatedTotalInr: number;
   currency: "INR";
   tariffVersion: string;
-  statutoryOrderRef: string;
+  statutoryOrderRef: string; // "" while the jurisdiction is unknown
   mandateDeclaration: string;
   hindiMandateDeclaration: string;
   computedAt: string;
@@ -183,7 +185,9 @@ export function computeItemizedStatutoryFare(
   const statutoryOrderRef =
     params.jurisdiction === "DL"
       ? "Delhi Transport Dept Gazette Order F.No.19(13)/Tpt/Ops/2021"
-      : "Uttar Pradesh Motor Vehicles (Ambulance Tariff) Schedule 2024";
+      : params.jurisdiction === "UP"
+        ? "Uttar Pradesh Motor Vehicles (Ambulance Tariff) Schedule 2024"
+        : "";
 
   return {
     vehicleType: params.vehicleType,

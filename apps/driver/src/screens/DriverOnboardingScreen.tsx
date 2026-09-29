@@ -81,6 +81,8 @@ export default function DriverOnboardingScreen({
   // A real application already submitted/approved is a status to show, not a wizard pre-loaded with fake
   // data to re-submit over it - kycStatus comes from the real get_driver_profile load (useServerSync).
   const realKycStatus = useDriverProfileStore((s) => s.profile?.kycStatus);
+  const kycRejectReason = useDriverProfileStore((s) => (s.profile?.kycStatus === "rejected" ? s.profile.kycRejectReason : null));
+  const profileLoading = useDriverProfileStore((s) => s.status === "loading");
   const showSubmittedStatus = Boolean(getServerAdapter()) && (realKycStatus === "pending_verification" || realKycStatus === "approved");
 
   const strings = driverOnboardingStrings[language];
@@ -134,7 +136,13 @@ export default function DriverOnboardingScreen({
     } else if (!success && freshError) {
       // The real path's server error code (documents_missing, dl_expired, vehicle_missing, ...) - not
       // translated per-code yet, but never silently swallowed either.
-      Alert.alert(language === "en" ? "Submission not recorded" : "जमा दर्ज नहीं हुआ", freshError);
+      const message =
+        freshError === "documents_invalid"
+          ? language === "en"
+            ? "A required document was not accepted. Upload a replacement for each rejected document, then submit again."
+            : "एक आवश्यक दस्तावेज़ स्वीकार नहीं हुआ। हर अस्वीकृत दस्तावेज़ की जगह नया अपलोड करें, फिर से जमा करें।"
+          : freshError;
+      Alert.alert(language === "en" ? "Submission not recorded" : "जमा दर्ज नहीं हुआ", message);
     }
   };
 
@@ -936,8 +944,20 @@ export default function DriverOnboardingScreen({
           <Text style={{ fontSize: typography.fontSizes.sm, color: colors.slate600, marginTop: spacing.sm, textAlign: "center" }}>
             {approved
               ? (language === "en" ? "You're verified and can go online from the standby screen." : "आप सत्यापित हैं और स्टैंडबाय स्क्रीन से ऑनलाइन जा सकते हैं।")
-              : (language === "en" ? "Your documents are being reviewed. This screen will update once a decision is made." : "आपके दस्तावेज़ों की समीक्षा की जा रही है। निर्णय होते ही यह स्क्रीन अपडेट हो जाएगी।")}
+              : (language === "en" ? "Your documents are being reviewed. Tap \"Check status\" to see if a decision has been made." : "आपके दस्तावेज़ों की समीक्षा की जा रही है। निर्णय देखने के लिए \"स्थिति जांचें\" दबाएं।")}
           </Text>
+          {!approved && (
+            <Pressable
+              accessibilityRole="button"
+              disabled={profileLoading}
+              onPress={() => void useDriverProfileStore.getState().load()}
+              style={{ marginTop: spacing.lg, minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.lg, borderRadius: 8, borderWidth: 1, borderColor: colors.slate600, opacity: profileLoading ? 0.5 : 1 }}
+            >
+              <Text style={{ color: colors.slate900, fontWeight: typography.fontWeights.semibold }}>
+                {language === "en" ? "Check status" : "स्थिति जांचें"}
+              </Text>
+            </Pressable>
+          )}
           {onBackToAuth && (
             <Pressable accessibilityRole="button" onPress={onBackToAuth} style={{ marginTop: spacing.xl, minHeight: 44, justifyContent: "center" }}>
               <Text style={{ color: colors.slate600, fontWeight: typography.fontWeights.semibold, textDecorationLine: "underline" }}>
@@ -1013,6 +1033,19 @@ export default function DriverOnboardingScreen({
           {strings.morthComplianceNotice}
         </Text>
       </View>
+
+      {/* Staff rejected the application (reject_kyc): say why, so the driver knows what to fix before resubmitting. */}
+      {realKycStatus === "rejected" && (
+        <View accessibilityRole="alert" style={{ margin: spacing.md, padding: spacing.md, borderRadius: 8, borderWidth: 1, borderColor: colors.triageRed, backgroundColor: colors.triageRedSurface }}>
+          <Text style={{ fontWeight: typography.fontWeights.bold, color: colors.triageRedText }}>
+            {language === "en" ? "Application not approved" : "आवेदन स्वीकृत नहीं हुआ"}
+          </Text>
+          {kycRejectReason ? <Text style={{ color: colors.slate900, marginTop: spacing.xs }}>{kycRejectReason}</Text> : null}
+          <Text style={{ color: colors.slate600, marginTop: spacing.xs }}>
+            {language === "en" ? "Fix the details or documents below and submit again." : "नीचे विवरण या दस्तावेज़ ठीक करें और फिर से जमा करें।"}
+          </Text>
+        </View>
+      )}
 
       {/* 4-STEP WIZARD PROGRESS TRACKER */}
       <View style={styles.stepperContainer}>

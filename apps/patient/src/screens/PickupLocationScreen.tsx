@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   StatusBar,
-  Linking,
   Animated,
   Keyboard,
   ScrollView,
@@ -14,11 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import {
-  resolveJurisdiction,
-  JurisdictionResolution,
-  GeoPoint,
-} from "@sahayak/domain";
+import type { GeoPoint } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import {
   locationStrings,
@@ -29,12 +24,11 @@ import {
 import { AppIcon } from "../components";
 import { OsmWebMap, type OsmWebMapHandle } from "../components/OsmWebMap";
 import { CAN_MOUNT_MAP, OSM_TILE_URL } from "../components/nativeMap";
-import { formatCoordinates } from "../services/mapGeo.core";
+import { formatCoordinates, isValidPickup } from "../services/mapGeo.core";
 import { resolveAddress as lookupAddress } from "../services/geocodingService";
 export interface PickupLocationScreenProps {
   onConfirmPickup?: (data: {
     point: GeoPoint;
-    resolution: JurisdictionResolution;
     address: string;
   }) => void;
   onBack?: () => void;
@@ -60,11 +54,11 @@ export default function PickupLocationScreen({
   const strings = locationStrings[language];
   const insets = useSafeAreaInsets();
 
-  // Map center coordinates & domain jurisdiction resolution
+  // Map center coordinates. The initial centre is only a camera position: nothing can be confirmed until the patient
+  // sets a pickup (GPS fix, drag, landmark). The service area is decided by the server on booking (R-12), not here.
   const [coordinates, setCoordinates] = useState<GeoPoint>(initialLocation);
-  const [jurisdiction, setJurisdiction] = useState<JurisdictionResolution>(() =>
-    resolveJurisdiction(initialLocation)
-  );
+  const [pickupSet, setPickupSet] = useState(false);
+  const canConfirm = isValidPickup(pickupSet ? coordinates : null);
 
   // Address: real reverse-geocoded text, or the formatted coordinates until/unless geocoding succeeds.
   const [currentAddress, setCurrentAddress] = useState(() => formatCoordinates(initialLocation));
@@ -88,10 +82,9 @@ export default function PickupLocationScreen({
   // placement (already fully functional) is never blocked by this.
   const [locationErrorMessage, setLocationErrorMessage] = useState<string | null>(null);
 
-  // Update jurisdiction whenever coordinates change
   const updateCoordinates = useCallback((newCoords: GeoPoint, label?: string) => {
     setCoordinates(newCoords);
-    setJurisdiction(resolveJurisdiction(newCoords));
+    setPickupSet(true);
     if (label) {
       setCurrentAddress(label);
       setAddressLine2("");
@@ -110,8 +103,9 @@ export default function PickupLocationScreen({
     }
   }, []);
 
-  // GPS "Locate Me" (also runs on mount): real fix -> camera + jurisdiction badge + address. A denied
-  // permission or failed fix shows a non-blocking banner; landmark search and pin drag stay available.
+  // GPS "Locate Me" (also runs on mount): real fix -> camera + address. A denied
+  // permission, a failed fix, or a fix that never arrives in time each show a distinct non-blocking banner;
+  // landmark search and pin drag stay available in all three cases.
   const handleLocateMe = useCallback(async () => {
     setLocationErrorMessage(null);
     try {
@@ -120,13 +114,21 @@ export default function PickupLocationScreen({
         setLocationErrorMessage(strings.locationPermissionDeniedBanner);
         return;
       }
-      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // getCurrentPositionAsync has no built-in client-side timeout - without this race a device with no
+      // fix (indoors, GPS off) would leave the patient staring at a screen that never resolves either way.
+      const GPS_TIMEOUT_MS = 12_000;
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("gps_timeout")), GPS_TIMEOUT_MS)),
+      ]);
       const { latitude, longitude } = position.coords;
       updateCoordinates({ latitude, longitude });
       void resolveAddress({ latitude, longitude });
       mapRef.current?.flyTo({ latitude, longitude }, PICKUP_ZOOM, 600);
-    } catch {
-      setLocationErrorMessage(strings.locationUnavailableBanner);
+    } catch (err) {
+      setLocationErrorMessage(
+        err instanceof Error && err.message === "gps_timeout" ? strings.locationTimeoutBanner : strings.locationUnavailableBanner
+      );
     }
   }, [strings, updateCoordinates, resolveAddress]);
 
@@ -134,11 +136,6 @@ export default function PickupLocationScreen({
     void handleLocateMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Handle emergency 108 phone dialer fallback
-  const handleCall108 = () => {
-    Linking.openURL("tel:108");
-  };
 
   const setPinLifted = (lifted: boolean) => {
     if (pinLifted.current === lifted) return;
@@ -184,11 +181,10 @@ export default function PickupLocationScreen({
 
   // Handle Confirmation
   const handleConfirm = () => {
-    if (!jurisdiction.isSupported) return;
+    if (!canConfirm) return;
     if (onConfirmPickup) {
       onConfirmPickup({
         point: coordinates,
-        resolution: jurisdiction,
         address: addressLine2 ? `${currentAddress}, ${addressLine2}` : currentAddress,
       });
     }
@@ -360,75 +356,11 @@ export default function PickupLocationScreen({
                     {language === "hi" ? item.hindiAddress : item.address}
                   </Text>
                 </View>
-                <View
-                  style={[
-                    styles.landmarkStateTag,
-                    item.expectedState === "DL"
-                      ? styles.stateTagDL
-                      : item.expectedState === "UP"
-                      ? styles.stateTagUP
-                      : styles.stateTagOOB,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.landmarkStateTag,
-                      item.expectedState === "DL"
-                        ? styles.stateTextDL
-                        : item.expectedState === "UP"
-                        ? styles.stateTextUP
-                        : styles.stateTextOOB,
-                    ]}
-                  >
-                    {item.expectedState}
-                  </Text>
-                </View>
               </Pressable>
             ))}
             </ScrollView>
           </View>
         )}
-
-        {/* FLOATING TOP BADGE: DYNAMIC JURISDICTION RESOLUTION */}
-        <View style={styles.topOverlayContainer}>
-          <View
-            style={[
-              styles.jurisdictionBadge,
-              jurisdiction.stateCode === "DL" && styles.badgeDL,
-              jurisdiction.stateCode === "UP" && styles.badgeUP,
-              jurisdiction.stateCode === "OUT_OF_BOUNDS" && styles.badgeOOB,
-            ]}
-            accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`${strings.jurisdictionLabel}: ${jurisdiction.displayName}`}
-          >
-            <View
-              style={[
-                styles.jurisdictionDot,
-                jurisdiction.stateCode === "DL" && styles.dotDL,
-                jurisdiction.stateCode === "UP" && styles.dotUP,
-                jurisdiction.stateCode === "OUT_OF_BOUNDS" && styles.dotOOB,
-              ]}
-            />
-            <View>
-              <Text
-                style={[
-                  styles.jurisdictionTitleText,
-                  jurisdiction.stateCode === "DL" && styles.textDL,
-                  jurisdiction.stateCode === "UP" && styles.textUP,
-                  jurisdiction.stateCode === "OUT_OF_BOUNDS" && styles.textOOB,
-                ]}
-              >
-                {language === "hi"
-                  ? jurisdiction.hindiDisplayName
-                  : jurisdiction.displayName}
-              </Text>
-              <Text style={styles.jurisdictionSubText}>
-                {jurisdiction.statutoryFramework}
-              </Text>
-            </View>
-          </View>
-        </View>
 
         {/* FIXED CENTER-PIN MARKER (GEOMETRICALLY CENTERED) */}
         <View style={styles.centerPinWrapper} pointerEvents="none">
@@ -496,50 +428,6 @@ export default function PickupLocationScreen({
         </View>
       )}
 
-      {/* OUT-OF-ZONE WARNING BANNER WITH 108 EMERGENCY DIALER FALLBACK */}
-      {!jurisdiction.isSupported && (
-        <View
-          style={styles.outOfZoneBanner}
-          accessible={true}
-          accessibilityRole="alert"
-        >
-          <View style={styles.warningHeaderRow}>
-            <AppIcon icon={{ set: "ion", name: "warning" }} size={18} color={colors.slate700} style={styles.warningAlertIcon} />
-            <Text style={styles.warningAlertTitle}>
-              {strings.outOfZoneTitle}
-            </Text>
-          </View>
-
-          <Text style={styles.warningAlertDescription}>
-            {language === "hi"
-              ? jurisdiction.hindiWarningMessage || strings.outOfZoneDescription
-              : jurisdiction.warningMessage || strings.outOfZoneDescription}
-          </Text>
-
-          {/* Direct 108 Helpline Dialer Button */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={strings.call108Button}
-            accessibilityHint="Dials toll-free national ambulance helpline 108"
-            style={({ pressed }) => [
-              styles.call108Button,
-              pressed && styles.call108ButtonPressed,
-            ]}
-            onPress={handleCall108}
-          >
-            <AppIcon icon={{ set: "ion", name: "call" }} size={20} color={colors.slate700} style={styles.call108PhoneIcon} />
-            <View>
-              <Text style={styles.call108ButtonTitle}>
-                {strings.call108Button}
-              </Text>
-              <Text style={styles.call108ButtonSubtitle}>
-                {strings.call108Subtitle}
-              </Text>
-            </View>
-          </Pressable>
-        </View>
-      )}
-
       {/* BOTTOM CONFIRMATION DOCK */}
       <View style={[styles.bottomDock, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.addressSummaryRow}>
@@ -561,22 +449,22 @@ export default function PickupLocationScreen({
           accessibilityRole="button"
           accessibilityLabel={strings.confirmPickupButton}
           accessibilityHint="Confirms the selected coordinates and proceeds to ambulance selection"
-          disabled={!jurisdiction.isSupported}
+          disabled={!canConfirm}
           style={({ pressed }) => [
             styles.confirmButton,
-            !jurisdiction.isSupported && styles.confirmButtonDisabled,
+            !canConfirm && styles.confirmButtonDisabled,
             pressed && styles.confirmButtonPressed,
           ]}
           onPress={handleConfirm}
         >
           <Text style={styles.confirmButtonText}>
-            {jurisdiction.isSupported
+            {canConfirm
               ? strings.confirmPickupButton
               : strings.confirmDisabledText}
           </Text>
         </Pressable>
 
-        {jurisdiction.isSupported && (
+        {canConfirm && (
           <Text style={styles.nextStepHint}>{strings.nextStepNotice}</Text>
         )}
       </View>
@@ -780,35 +668,6 @@ const styles = StyleSheet.create({
     color: colors.slate600,
     marginTop: 2,
   },
-  landmarkStateTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-  },
-  stateTagDL: {
-    backgroundColor: colors.successLight,
-  },
-  stateTextDL: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: colors.success,
-  },
-  stateTagUP: {
-    backgroundColor: colors.infoLight,
-  },
-  stateTextUP: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: colors.info,
-  },
-  stateTagOOB: {
-    backgroundColor: colors.emergencyLight,
-  },
-  stateTextOOB: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.emergencyDark,
-  },
 
   /* MAP CANVAS */
   mapUnavailable: {
@@ -828,74 +687,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate200, // nearest existing token; subtle realistic road map canvas color
     overflow: "hidden",
     position: "relative",
-  },
-
-  /* TOP OVERLAY: DYNAMIC JURISDICTION BADGE */
-  topOverlayContainer: {
-    position: "absolute",
-    top: spacing.md,
-    left: spacing.lg,
-    right: spacing.lg,
-    zIndex: 10,
-    elevation: 10,
-    alignItems: "center",
-  },
-  jurisdictionBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    ...shadows.md,
-  },
-  badgeDL: {
-    backgroundColor: colors.successLight,
-    borderColor: colors.success,
-  },
-  badgeUP: {
-    backgroundColor: colors.infoLight,
-    borderColor: colors.info,
-  },
-  badgeOOB: {
-    backgroundColor: colors.emergencyLight,
-    borderColor: colors.emergencyDark,
-  },
-  jurisdictionDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  dotDL: {
-    backgroundColor: colors.success,
-  },
-  dotUP: {
-    backgroundColor: colors.info,
-  },
-  dotOOB: {
-    backgroundColor: colors.emergencyDark,
-  },
-  jurisdictionTitleText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-  },
-  textDL: {
-    color: colors.success,
-  },
-  textUP: {
-    color: colors.info,
-  },
-  textOOB: {
-    color: colors.emergencyDark,
-  },
-  jurisdictionSubText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate700,
-    marginTop: 1,
   },
 
   /* CENTER-PIN MARKER */
@@ -1042,65 +833,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate700,
-  },
-
-  /* OUT-OF-ZONE WARNING BANNER & 108 DIALER */
-  outOfZoneBanner: {
-    backgroundColor: colors.emergencyLight,
-    borderTopWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: colors.emergencyDark,
-    padding: spacing.md,
-    zIndex: 25,
-  },
-  warningHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  warningAlertIcon: {
-    fontSize: 18,
-    marginRight: 6,
-  },
-  warningAlertTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.emergencyDark,
-  },
-  warningAlertDescription: {
-    fontSize: typography.fontSizes.xs,
-    lineHeight: 18,
-    color: colors.slate800,
-    marginBottom: spacing.md,
-  },
-  call108Button: {
-    backgroundColor: colors.emergency,
-    borderRadius: radii.lg,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.base,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: colors.emergencyDark,
-    ...shadows.emergency,
-  },
-  call108ButtonPressed: {
-    backgroundColor: colors.emergencyDeep,
-  },
-  call108PhoneIcon: {
-    fontSize: 20,
-    marginRight: spacing.md,
-  },
-  call108ButtonTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.white,
-  },
-  call108ButtonSubtitle: {
-    fontSize: 10,
-    color: colors.emergencyLight,
-    fontWeight: typography.fontWeights.medium,
   },
 
   /* BOTTOM DOCK */
