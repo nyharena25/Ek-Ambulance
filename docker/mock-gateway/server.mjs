@@ -4,9 +4,13 @@
 import { createServer } from "node:http";
 import { createGateway } from "./gateway.mjs";
 
+// A typo such as AUTH_MODE=Strict must not silently fall back to the permissive dev minter.
+const mode = process.env.AUTH_MODE || "dev";
+if (mode !== "dev" && mode !== "strict") throw new Error(`AUTH_MODE must be "dev" or "strict", got "${mode}"`);
+
 const gateway = createGateway({
   secret: process.env.HMAC_SECRET,
-  mode: process.env.AUTH_MODE === "strict" ? "strict" : "dev",
+  mode,
   supabaseUrl: process.env.SUPABASE_URL,
   anonKey: process.env.SUPABASE_ANON_KEY,
   serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY,

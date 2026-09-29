@@ -12,8 +12,7 @@ console.log("=================================================\n");
 
 /** Fake client that never opens a real socket - lets the mount/teardown
  *  and publish contract be verified without network access. `failNextN(n)`
- *  makes the next n publish() calls reject, to exercise retry/backoff and
- *  onPublishError. */
+ *  makes the next n publish() calls reject, to exercise onPublishError. */
 function createFakeClient() {
   const calls = { connect: 0, disconnect: 0, publish: 0 };
   const publishedChannels: string[] = [];
@@ -49,7 +48,6 @@ function createFakeClient() {
   };
 }
 
-const FAST_RETRY_DELAYS_MS = [5, 5];
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 console.log("Test 1: Validating mission:{missionId} channel naming...");
@@ -62,7 +60,6 @@ const publishErrors: unknown[] = [];
 const publisher = mountDriverTelemetryPublisher("MSN-TEST-0001", "fake-token", {
   createClient: () => mounted.client,
   onPublishError: (err) => publishErrors.push(err),
-  lifecycleRetryDelaysMs: FAST_RETRY_DELAYS_MS,
 });
 assert.strictEqual(mounted.calls.connect, 1, "connect() called exactly once on mount");
 assert.strictEqual(mounted.calls.disconnect, 0, "disconnect() not called before teardown");
@@ -79,77 +76,28 @@ assert.strictEqual(
 );
 console.log("✓ Telemetry pings publish on the correct channel with the patient-compatible `heading` field.\n");
 
-console.log("Test 4: Validating publishLifecycleEvent() sends { event, missionId, driverId, timestamp } on the same channel...");
-publisher.publishLifecycleEvent("DRIVER_ACCEPTED", "DRV-TEST-0001");
-await settle(0); // lifecycle publishes run on a promise chain now (retry queue), not synchronously
-assert.strictEqual(mounted.calls.publish, 2, "publishLifecycleEvent() also goes through client.publish()");
-assert.strictEqual(mounted.publishedChannels[1], "mission:MSN-TEST-0001", "Lifecycle events publish on the same mission channel as telemetry");
-const lifecyclePayload = mounted.publishedPayloads[1] as {
-  event: string;
-  missionId: string;
-  driverId: string;
-  timestamp: string;
-};
-// timestamp is generated fresh on each call, so it's checked separately
-// from the stable fields rather than via one deepStrictEqual.
-assert.strictEqual(lifecyclePayload.event, "DRIVER_ACCEPTED");
-assert.strictEqual(lifecyclePayload.missionId, "MSN-TEST-0001", "Lifecycle publication carries the exact missionId apps/patient/src/services/missionLifecycleBridge.ts expects");
-assert.strictEqual(lifecyclePayload.driverId, "DRV-TEST-0001", "Lifecycle publication carries the driver's ID");
-assert.ok(!Number.isNaN(Date.parse(lifecyclePayload.timestamp)), "Lifecycle publication carries a valid ISO timestamp");
-console.log("✓ Lifecycle events publish the full MissionLifecyclePublication shape, including driverId and timestamp.\n");
+console.log("Test 4: Validating the publisher carries GPS only - lifecycle events are server-published (6.1 Design A)...");
+assert.ok(!("publishLifecycleEvent" in publisher), "the driver's only Centrifugo publisher has no lifecycle publish");
+const countBefore4 = mounted.calls.publish;
+// What the removed client path used to send, and the server's own v1 envelope: neither may leave the driver.
+publisher.publish({ event: "DRIVER_ACCEPTED", missionId: "MSN-TEST-0001", driverId: "DRV-TEST-0001", timestamp: "2026-01-01T00:00:00.000Z" } as never);
+publisher.publish({ v: 1, type: "lifecycle", event: "MISSION_COMPLETED", seq: 9, latitude: 1, longitude: 2 } as never);
+publisher.publish({ latitude: 1, longitude: 2, event: "DRIVER_ARRIVED" } as never);
+assert.strictEqual(mounted.calls.publish, countBefore4, "no lifecycle-shaped payload reaches client.publish()");
+publisher.publish({ latitude: 28.54, longitude: 77.39, timestamp: "2026-01-01T00:00:02.000Z" });
+assert.strictEqual(mounted.calls.publish, countBefore4 + 1, "a real GPS ping still publishes");
+assert.strictEqual(mounted.publishedChannels.at(-1), "mission:MSN-TEST-0001");
+console.log("✓ Lifecycle payloads are dropped; GPS pings still publish on mission:{id}.\n");
 
-console.log("Test 4b: Validating a lifecycle publish that fails once recovers via retry, without calling onPublishError...");
-const publishCountBefore4b = mounted.calls.publish;
+console.log("Test 4b: Validating a failed GPS publish reports once, with no retry (the next ping supersedes it)...");
+const countBefore4b = mounted.calls.publish;
 mounted.failNextN(1);
-publisher.publishLifecycleEvent("DRIVER_ARRIVED", "DRV-TEST-0001");
-await settle(40); // one FAST_RETRY_DELAYS_MS[0] (5ms) plus margin
-assert.strictEqual(mounted.calls.publish, publishCountBefore4b + 2, "Initial attempt (failed) plus one retry (succeeded)");
-assert.strictEqual(publishErrors.length, 0, "A recovered retry never reaches onPublishError");
-console.log("✓ A single transient failure is retried and recovers silently.\n");
-
-console.log("Test 4c: Validating a lifecycle publish that fails all 3 attempts calls onPublishError exactly once, after exhausting retries...");
-const publishCountBefore4c = mounted.calls.publish;
-mounted.failNextN(3);
-publisher.publishLifecycleEvent("TRANSPORT_STARTED", "DRV-TEST-0001");
-await settle(40); // FAST_RETRY_DELAYS_MS[0] + [1] (5ms + 5ms) plus margin
-assert.strictEqual(mounted.calls.publish, publishCountBefore4c + 3, "Initial attempt plus both retries were made");
-assert.strictEqual(publishErrors.length, 1, "onPublishError fired exactly once, only after every retry was exhausted");
+publisher.publish({ latitude: 28.55, longitude: 77.4, timestamp: "2026-01-01T00:00:03.000Z" });
+await settle(20);
+assert.strictEqual(mounted.calls.publish, countBefore4b + 1, "one attempt, no retry");
+assert.strictEqual(publishErrors.length, 1, "onPublishError fired exactly once");
 assert.ok(publishErrors[0] instanceof Error, "The rejection reason is passed through");
-console.log("✓ Exhausting every retry surfaces onPublishError exactly once, not once per failed attempt.\n");
-
-console.log("Test 4d: Validating same-mission lifecycle events publish strictly in order, even when an earlier one is retrying...");
-const orderMounted = createFakeClient();
-const orderPublisher = mountDriverTelemetryPublisher("MSN-ORDER-0001", "fake-token", {
-  createClient: () => orderMounted.client,
-  lifecycleRetryDelaysMs: FAST_RETRY_DELAYS_MS,
-});
-orderMounted.failNextN(1); // only the first event's first attempt fails
-orderPublisher.publishLifecycleEvent("DRIVER_ACCEPTED", "DRV-ORDER-01"); // A: fails once, then retries and succeeds
-orderPublisher.publishLifecycleEvent("DRIVER_ARRIVED", "DRV-ORDER-01"); // B: sent immediately after, must not jump the queue
-await settle(40);
-const orderedEvents = orderMounted.publishedPayloads.map((p) => (p as { event: string }).event);
-assert.deepStrictEqual(
-  orderedEvents,
-  ["DRIVER_ACCEPTED", "DRIVER_ACCEPTED", "DRIVER_ARRIVED"],
-  "A's failed attempt and its retry both complete before B publishes at all - the FIFO chain, not independent per-event timers"
-);
-orderPublisher.teardown();
-console.log("✓ Lifecycle events for the same mission are serialized, so a retrying event can never be overtaken by a later one.\n");
-
-console.log("Test 4e: Validating teardown() defers disconnect until an in-flight lifecycle retry drains...");
-const drainMounted = createFakeClient();
-const drainPublisher = mountDriverTelemetryPublisher("MSN-DRAIN-0001", "fake-token", {
-  createClient: () => drainMounted.client,
-  lifecycleRetryDelaysMs: FAST_RETRY_DELAYS_MS,
-});
-drainMounted.failNextN(1); // first attempt fails, one retry scheduled
-drainPublisher.publishLifecycleEvent("MISSION_COMPLETED", "DRV-DRAIN-01");
-drainPublisher.teardown(); // called synchronously right after, same as ensurePublisherFor(null) does for COMPLETE_MISSION
-assert.strictEqual(drainMounted.calls.disconnect, 0, "teardown() must not disconnect while a retry is still pending - it would drop the terminal event");
-await settle(40);
-assert.strictEqual(drainMounted.calls.disconnect, 1, "disconnect() fires exactly once, once the retry has drained");
-assert.strictEqual(drainMounted.calls.publish, 2, "The retried MISSION_COMPLETED still went out before disconnect");
-console.log("✓ A pending retry for a terminal wire event (MISSION_COMPLETED/MISSION_CANCELLED) survives teardown() instead of being silently dropped.\n");
+console.log("✓ A failed ping surfaces onPublishError once and is not retried.\n");
 
 console.log("Test 5: Validating teardown disconnects exactly once and is idempotent...");
 publisher.teardown();
@@ -161,8 +109,7 @@ console.log("✓ Teardown disconnects exactly once and is safe to call twice.\n"
 console.log("Test 6: Validating publish() after teardown is a silent no-op, not a crash...");
 const publishCountBeforeTeardownCheck = mounted.calls.publish;
 publisher.publish({ latitude: 0, longitude: 0, heading: 0, speed: 0, timestamp: "2026-01-01T00:00:01.000Z" });
-publisher.publishLifecycleEvent("MISSION_CANCELLED", "DRV-TEST-0001");
-assert.strictEqual(mounted.calls.publish, publishCountBeforeTeardownCheck, "Neither publish() nor publishLifecycleEvent() reach the (disconnected) client after teardown");
+assert.strictEqual(mounted.calls.publish, publishCountBeforeTeardownCheck, "publish() does not reach the (disconnected) client after teardown");
 console.log("✓ A publish attempted after teardown is dropped, not thrown.\n");
 
 console.log("=================================================");

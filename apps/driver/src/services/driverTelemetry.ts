@@ -1,16 +1,11 @@
 import { Centrifuge } from "centrifuge";
-import {
-  missionChannelName,
-  type MissionTelemetryPing,
-  type MissionLifecycleEventType,
-} from "@sahayak/domain";
+import { isMissionTelemetryPing, missionChannelName, type MissionTelemetryPing } from "@sahayak/domain";
 
 /**
  * Driver-side telemetry publisher: streams coordinate updates to the
  * Centrifugo channel mission:{missionId} while enRouteToPatient or
  * transporting, per docs/prompts/driver-app/P05-centrifugo-dispatch-and-gps-channels.md
- * §(b), and publishes the driver-lifecycle wire events the patient app's
- * missionLifecycleBridge.ts expects on the same channel. Publish-only
+ * §(b). GPS only: lifecycle events are server-published. Publish-only
  * counterpart to the patient app's subscribe-only
  * apps/patient/src/services/missionChannel.service.ts - both now share the
  * exact wire types from @sahayak/domain's mission-channel module, closing
@@ -86,65 +81,23 @@ export interface PublisherClientLike {
 
 export interface DriverTelemetryPublisher {
   publish: (ping: MissionTelemetryPing) => void;
-  /** Publishes a MissionLifecyclePublication that
-   *  apps/patient/src/services/missionLifecycleBridge.ts translates into
-   *  patient machine events - same channel, same wire shape, distinguished
-   *  from a telemetry ping by shape (isMissionLifecyclePublication).
-   *  `driverId` and `timestamp` are part of the shared contract
-   *  (@sahayak/domain) but not yet read by the bridge - see its own
-   *  doc comment.
-   *
-   *  Buffered and retried on failure (HANDOVER §17's own "not retried or
-   *  queued" gap, closed here) - see the retry-queue doc comment below. */
-  publishLifecycleEvent: (event: MissionLifecycleEventType, driverId: string) => void;
   teardown: () => void;
 }
 
-/** Three attempts total (one publish + two retries) spanning ~10s, per the
- *  Pre-Flight directive's "3 attempts over 10 seconds". Overridable so
- *  tests don't have to wait 10 real seconds per case. */
-const DEFAULT_LIFECYCLE_RETRY_DELAYS_MS = [3000, 7000] as const;
-
 export interface MountDriverTelemetryPublisherOptions {
-  /** Called whenever a publish (telemetry, or a lifecycle event that has
-   *  exhausted every retry) rejects - the caller's chance to surface the
-   *  existing low-connectivity indicator (driverConnection.store.ts)
-   *  without this module needing to know anything about that store. Never
-   *  called synchronously from within publish()/publishLifecycleEvent()
-   *  themselves - those never throw. Fires even if teardown() has already
-   *  been called (a retry that was already in flight still reports its
-   *  final outcome). */
+  /** Called whenever a GPS publish rejects - the caller's chance to surface the existing low-connectivity indicator
+   *  (driverConnection.store.ts) without this module knowing that store. Never called synchronously from publish(). */
   onPublishError?: (error: unknown) => void;
   createClient?: (endpoint: string, options: Record<string, unknown>) => PublisherClientLike;
-  /** Delay before each retry, in order. Defaults to
-   *  DEFAULT_LIFECYCLE_RETRY_DELAYS_MS; tests inject short delays (e.g.
-   *  [5, 5]) so exhaustion doesn't require waiting 10 real seconds. */
-  lifecycleRetryDelaysMs?: readonly number[];
 }
 
 /**
- * Mounts a publish-only Centrifugo connection for mission:{missionId}.
- * `publish()` (GPS telemetry) is fire-and-forget: a dropped ping during a
- * brief reconnect is acceptable, since the ~3s-throttled next tick
- * supersedes it.
+ * Mounts a publish-only Centrifugo connection for mission:{missionId} that carries GPS pings and nothing else.
+ * Fire-and-forget: a dropped ping during a brief reconnect is acceptable, since the ~3s-throttled next tick supersedes it.
  *
- * `publishLifecycleEvent()` is different: lifecycle events are low
- * frequency and higher-stakes (they drive the patient app's mission
- * state), so each one is buffered in a closure and retried with backoff
- * (`lifecycleRetryDelaysMs`, default 3 attempts spanning ~10s) before
- * `onPublishError` is called. Retries for every mission run on a single
- * FIFO promise chain (`lifecycleChain`) rather than independently, so a
- * retrying DRIVER_ARRIVED can never publish after a same-mission
- * TRANSPORT_STARTED that was sent moments later and succeeded first -
- * the patient machine would otherwise see events out of order.
- *
- * teardown() flips `torn` (blocking new publishLifecycleEvent() calls)
- * but does not disconnect the client until the chain has fully drained -
- * COMPLETE_MISSION/ABORT_MISSION both tear the publisher down in the same
- * synchronous tick that queues their own terminal wire event
- * (driverLifecycle.store.ts's ensurePublisherFor), so an immediate
- * disconnect would silently drop exactly the events retry exists to
- * protect.
+ * Lifecycle events are never published from here (6.1 Design A): the server records the transition in mission_events and
+ * its publish_realtime trigger sends the wire event, so the driver cannot forge or reorder a patient-visible milestone.
+ * The strict publish proxy (docker/mock-gateway) refuses anything that is not a ping; publish() drops it first.
  */
 export function mountDriverTelemetryPublisher(
   missionId: string,
@@ -154,7 +107,6 @@ export function mountDriverTelemetryPublisher(
   const {
     onPublishError,
     createClient = (endpoint, opts) => new Centrifuge(endpoint, opts) as unknown as PublisherClientLike,
-    lifecycleRetryDelaysMs = DEFAULT_LIFECYCLE_RETRY_DELAYS_MS,
   } = options;
 
   const client = createClient(CENTRIFUGO_WS_URL, {
@@ -167,56 +119,20 @@ export function mountDriverTelemetryPublisher(
 
   const channel = missionChannelName(missionId);
   let torn = false;
-  let lifecycleChain: Promise<void> = Promise.resolve();
-  let pendingLifecyclePublishes = 0;
-
-  function publishLifecycleWithRetry(payload: Record<string, unknown>, attempt: number): Promise<void> {
-    return client.publish(channel, payload).then(
-      () => {},
-      (err: unknown) => {
-        const delay = lifecycleRetryDelaysMs[attempt];
-        if (delay === undefined) {
-          // Exhausted every retry - surface even if teardown() already
-          // ran, per the doc comment on onPublishError above.
-          onPublishError?.(err);
-          return;
-        }
-        return new Promise<void>((resolve) => {
-          setTimeout(() => resolve(publishLifecycleWithRetry(payload, attempt + 1)), delay);
-        });
-      }
-    );
-  }
 
   return {
     publish: (ping) => {
-      if (torn) return;
+      // Same shape the publish proxy admits: coordinates, no `event`.
+      if (torn || !isMissionTelemetryPing(ping) || "event" in ping) return;
       client.publish(channel, ping).catch((err: unknown) => {
-        // Best-effort - see the module doc comment above.
+        // Best-effort - see the doc comment above.
         onPublishError?.(err);
       });
-    },
-    publishLifecycleEvent: (event, driverId) => {
-      if (torn) return;
-      const payload = { event, missionId, driverId, timestamp: new Date().toISOString() };
-      pendingLifecyclePublishes += 1;
-      lifecycleChain = lifecycleChain
-        .then(() => publishLifecycleWithRetry(payload, 0))
-        .then(() => {
-          pendingLifecyclePublishes -= 1;
-          if (torn && pendingLifecyclePublishes === 0) {
-            client.disconnect();
-          }
-        });
     },
     teardown: () => {
       if (torn) return;
       torn = true;
-      // If a lifecycle retry is still draining, disconnect is deferred to
-      // the last publishLifecycleEvent()'s chain callback above.
-      if (pendingLifecyclePublishes === 0) {
-        client.disconnect();
-      }
+      client.disconnect();
     },
   };
 }

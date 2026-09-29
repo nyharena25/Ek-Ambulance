@@ -28,8 +28,8 @@ services:
     command: ["centrifugo", "--config=/centrifugo/config.json"]
     environment:
       CENTRIFUGO_TOKEN_HMAC_SECRET_KEY: *hmac_secret
-      # The dev defaults below match docker/centrifugo.json. For a shared or production deployment run with
-      # CENTRIFUGO_CONFIG=centrifugo.secure.json and real values for all three (see HANDOVER, "Data & Sync").
+      # The dev defaults below match docker/centrifugo.json and are for local development only. A shared or production
+      # deployment adds -f docker-compose.prod.yml, which requires real values and the secure config (no defaults).
       CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-dev-api-key}
       CENTRIFUGO_ALLOWED_ORIGINS: ${CENTRIFUGO_ALLOWED_ORIGINS:-*}
     ports:

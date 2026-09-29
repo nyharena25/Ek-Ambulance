@@ -4,8 +4,6 @@ _format_version: "3.0"
 # (`supabase start`, host port 54321 - the local equivalent of https://<ref>.supabase.co), so nothing reaches the
 # hosted project. Select it with:  KONG_CONFIG=kong.local.yml docker compose up -d kong
 # docker/kong.config.test.mjs fails if a *.supabase.co host ever appears here.
-#
-# Adds one route kong.yml does not have yet: Storage object endpoints (see the supabase-storage service below).
 services:
   - name: supabase-auth
     url: http://host.docker.internal:54321/auth/v1
@@ -71,6 +69,6 @@ plugins:
       origins: ["*"]
       methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
       # content-profile / x-supabase-api-version: sent by supabase-js from a BROWSER (the admin console) on RPC POSTs
-      # and auth calls; the mobile apps never trigger a CORS preflight, which is why kong.yml never needed them.
+      # and auth calls; the mobile apps never trigger a CORS preflight.
       headers: [Authorization, Content-Type, apikey, x-client-info, content-profile, x-supabase-api-version]
       max_age: 3600

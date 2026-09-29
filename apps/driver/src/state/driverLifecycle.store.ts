@@ -7,7 +7,6 @@ import {
   type DriverLifecycleState,
 } from "@sahayak/domain";
 import { mountDriverTelemetryPublisher, type DriverTelemetryPublisher } from "../services/driverTelemetry.ts";
-import { publishForTransition } from "./driverLifecycleWire.core.ts";
 import { useDriverConnectionStore } from "./driverConnection.store.ts";
 import { newIdempotencyKey, type ApiError, type ApiResult } from "@sahayak/domain";
 import { buildServerCall, type ServerCall } from "../lib/driverServer.core.ts";
@@ -20,7 +19,7 @@ import type { DocumentSlotKey } from "./driverOnboarding.store.ts";
 /**
  * The server, as the store sees it. Injected by the app layer (app/_layout.tsx) once a verified session exists: this file
  * is loaded by node tests, so it must not import the supabase client (React Native) itself. While it is null the store
- * behaves exactly as before (local machine + the __DEV__ Design-B wire publish).
+ * behaves exactly as before (local machine only).
  */
 export interface ServerAdapter {
   userId: string;
@@ -88,14 +87,7 @@ export interface DriverLifecycleStoreState {
 // already reads/writes `activeMissionId` at the top level.
 let actor: Actor<typeof driverLifecycleMachine>;
 
-// Wire Event Publishing Closure: one Centrifugo publisher, mounted for
-// whichever mission is currently active and torn down when none is. Owned
-// here (not per-screen like useGpsPublisher's telemetry publisher) because
-// every domain event that needs to publish a wire lifecycle event already
-// flows through this store's send() - centralizing here is what closes
-// the "built and unit-tested but never wired into any UI action" gap this
-// phase exists to fix, without needing to duplicate publish calls across
-// (shift)/offer.tsx and mission/[id].tsx.
+// One GPS publisher, mounted for whichever mission is currently active and torn down when none is.
 let publisher: DriverTelemetryPublisher | null = null;
 let publisherMissionId: string | null = null;
 
@@ -107,12 +99,8 @@ function ensurePublisherFor(missionId: string | null) {
   publisher = missionId && accessToken
     ? mountDriverTelemetryPublisher(missionId, accessToken, {
         onPublishError: () => {
-          // Surface the existing low-connectivity indicator
-          // (OfflineConnectivityOverlay, driven by driverConnection.store)
-          // rather than a new one - same mechanism useGpsPublisher.ts
-          // already uses for a failed telemetry publish. The state
-          // transition that triggered this has already been applied; a
-          // dropped wire event never blocks or reverses it.
+          // A failed GPS publish surfaces the existing low-connectivity indicator (OfflineConnectivityOverlay) and
+          // switches pings to the acknowledged upload queue.
           useDriverConnectionStore.getState().setConnectionStatus("fallback");
           useDriverConnectionStore.getState().setFallbackActive(true);
         },
@@ -122,7 +110,7 @@ function ensurePublisherFor(missionId: string | null) {
   previous?.teardown();
 }
 
-/** Live GPS pings ride the same publisher the lifecycle wire events use; a no-op when no mission is active. */
+/** Live GPS pings; a no-op when no mission is active. */
 export function publishDriverTelemetry(ping: Parameters<DriverTelemetryPublisher["publish"]>[0]): void {
   publisher?.publish(ping);
 }
@@ -156,36 +144,14 @@ export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) =
     currentState: actor.getSnapshot().value as DriverLifecycleState,
     ...contextFields(actor.getSnapshot().context),
     send: (event) => {
-      const before = actor.getSnapshot();
       actor.send(event);
       const after = actor.getSnapshot();
 
-      // Publish against the mission this transition pertains to - the ID
-      // active BEFORE the transition, since COMPLETE_MISSION/ABORT_MISSION
-      // clear activeMissionId as part of the very same transition. The
-      // publisher for that mission must still be connected to carry the
-      // terminal wire event before ensurePublisherFor (below) tears it
-      // down for the now-null missionId.
-      // Design A (6.1): with a server adapter the SERVER publishes lifecycle events after its transaction commits, and the
-      // driver publishes GPS only. The direct publish below is the local-development shortcut and would double-publish
-      // (or be denied by the strict publish proxy) against a real backend.
-      if (!serverAdapter) {
-        publishForTransition(
-          publisher,
-          event.type,
-          before.value as DriverLifecycleState,
-          after.value as DriverLifecycleState,
-          before.context.activeMissionId,
-          before.context.driverId
-        );
-      }
+      // Lifecycle events are server-published only (6.1 Design A): the server records the transition in mission_events and
+      // its publish_realtime trigger sends the wire event. The driver publishes GPS pings, nothing else.
 
-      // Reconcile which mission (if any) the publisher should be
-      // connected to, after any publish above has gone out. Mounts
-      // proactively as soon as an offer sets activeMissionId
-      // (SERVER_OFFER_RECEIVED, well before ACCEPT_DISPATCH), giving the
-      // connection time to establish before the first lifecycle publish
-      // is needed.
+      // Reconcile which mission (if any) the GPS publisher should be connected to. Mounts as soon as an offer sets
+      // activeMissionId (SERVER_OFFER_RECEIVED), giving the connection time to establish before the first ping.
       ensurePublisherFor(after.context.activeMissionId);
     },
     submit: async (event) => {

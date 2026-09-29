@@ -1,0 +1,27 @@
+# Production override for docker-compose.yml. Local development is unchanged; a production (or any shared) deployment runs:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Every secret below has no default: compose refuses to start when one is missing, instead of falling back to the dev
+# values committed in docker-compose.yml / docker/centrifugo.json. docker/kong.config.test.mjs checks this file.
+services:
+  centrifugo:
+    environment:
+      CENTRIFUGO_TOKEN_HMAC_SECRET_KEY: ${CENTRIFUGO_HMAC_SECRET:?CENTRIFUGO_HMAC_SECRET is required}
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:?CENTRIFUGO_API_KEY is required}
+      # Space-separated. React Native on Android sends the socket's own origin (wss://host -> https://host[:port]), so list
+      # that host. iOS not verified here (SocketRocket is not in node_modules).
+      CENTRIFUGO_ALLOWED_ORIGINS: ${CENTRIFUGO_ALLOWED_ORIGINS:?CENTRIFUGO_ALLOWED_ORIGINS is required}
+    volumes:
+      # Same target as the base file, so this replaces the dev config instead of adding a second mount.
+      - ./docker/centrifugo.secure.json:/centrifugo/config.json:ro
+
+  token-mint:
+    environment:
+      HMAC_SECRET: ${CENTRIFUGO_HMAC_SECRET:?CENTRIFUGO_HMAC_SECRET is required}
+      AUTH_MODE: strict
+      SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?SUPABASE_ANON_KEY is required}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}
+
+  kong:
+    volumes:
+      - ./docker/kong.yml:/kong/kong.yml:ro

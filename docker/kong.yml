@@ -1,7 +1,7 @@
 _format_version: "3.0"
 
-# Local gateway. Auth/REST go to the remote Supabase project; /realtime/token goes to the
-# dev token-mint container. Rate limits are per client IP, in-memory (policy: local).
+# Hosted gateway. Auth/REST/Storage go to the hosted Supabase project; /realtime/token and /triage/extract go to the
+# token-mint container (AUTH_MODE=strict under docker-compose.prod.yml). Rate limits are per client IP, in-memory (policy: local).
 services:
   - name: supabase-auth
     url: https://nzwbwuhbtqhhjwnopwmm.supabase.co/auth/v1
@@ -22,6 +22,22 @@ services:
     plugins:
       - name: rate-limiting
         config: { minute: 300, policy: local, limit_by: ip }
+
+  # Storage object endpoints only - what the apps call: KYC upload (POST /object/{bucket}/{path}), signed-link
+  # creation (POST /object/sign/{bucket}/{path}) and the signed download (GET /object/sign/...). A document
+  # replacement is a new upload at a new path (driverServer.uploadKycDocument), so no PUT/DELETE. Bucket
+  # administration, S3 and resumable uploads are not routed. Headers pass through untouched: Storage authorizes
+  # with the caller's own JWT against the storage.objects policies (the KYC bucket is private).
+  - name: supabase-storage
+    url: https://nzwbwuhbtqhhjwnopwmm.supabase.co/storage/v1/object
+    routes:
+      - name: storage-object
+        paths: ["/storage/v1/object"]
+        strip_path: true
+        methods: ["GET", "POST", "OPTIONS"]
+    plugins:
+      - name: rate-limiting
+        config: { minute: 120, policy: local, limit_by: ip }
 
   - name: realtime-token
     url: http://token-mint:8080/realtime/token
@@ -52,5 +68,7 @@ plugins:
     config:
       origins: ["*"]
       methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-      headers: [Authorization, Content-Type, apikey, x-client-info]
+      # content-profile / x-supabase-api-version: sent by supabase-js from a BROWSER (the admin console) on RPC POSTs
+      # and auth calls; the mobile apps never trigger a CORS preflight.
+      headers: [Authorization, Content-Type, apikey, x-client-info, content-profile, x-supabase-api-version]
       max_age: 3600
