@@ -10,7 +10,7 @@ import { useMissionChannel, type DriverTelemetry } from "./useMissionChannel";
 
 export interface UseMissionSyncOptions {
   missionId: string | null;
-  /** Supabase access token. Null means no real session: the dev mock channel runs and nothing is read from the server. */
+  /** Supabase access token. Null means no real session: the channel reports an error and nothing is read from the server. */
   authToken: string | null;
   onTelemetryReceived?: (telemetry: DriverTelemetry) => void;
 }

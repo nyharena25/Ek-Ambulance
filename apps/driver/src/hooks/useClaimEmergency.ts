@@ -38,7 +38,14 @@ export function useClaimEmergency() {
     setClaimingId(e.missionId);
     // The machine takes an accept only from `offered`: a board claim is an offer the driver made themselves.
     lifecycle.send({ type: "SERVER_OFFER_RECEIVED", payload: { offerId: e.missionId, missionId: e.missionId } });
-    const driverId = getServerAdapter()?.userId ?? (lifecycle.driverId || "DRV-DEMO-0001");
+    const driverId = getServerAdapter()?.userId ?? lifecycle.driverId;
+    if (!driverId) {
+      useDriverLifecycleStore.getState().send({ type: "SERVER_OFFER_TIMEOUT", payload: { offerId: e.missionId } });
+      setClaimingId(null);
+      Alert.alert("Not recorded", driverErrorMessage("not_found"));
+      void useDriverBoardStore.getState().refresh();
+      return;
+    }
     const result = await lifecycle.submit({
       type: "ACCEPT_DISPATCH",
       payload: { missionId: e.missionId, driverId, offerId: e.missionId, acceptedAt: new Date().toISOString(), source: "board" },

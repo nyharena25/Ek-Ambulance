@@ -111,7 +111,7 @@ export const authStrings: Record<SupportedLanguage, AuthTranslation> = {
     invalidOtpError: "Invalid code. Please check the 6-digit SMS OTP and try again.",
     rateLimitError:
       "Too many requests. Please wait for the cooldown timer before requesting another code.",
-    networkError: "Network connection unavailable. Operating in local demo mode.",
+    networkError: "Network connection unavailable. Please try again.",
     genericError: "Authentication failed. Please try again.",
   },
   hi: {
@@ -174,7 +174,7 @@ export const authStrings: Record<SupportedLanguage, AuthTranslation> = {
     invalidOtpError: "अमान्य कोड। कृपया 6 अंकों का SMS कोड जांचें और पुनः प्रयास करें।",
     rateLimitError:
       "बहुत अधिक अनुरोध। नया कोड प्राप्त करने के लिए कृपया प्रतीक्षा करें।",
-    networkError: "नेटवर्क कनेक्शन उपलब्ध नहीं है। लोकल डेमो मोड में चल रहा है।",
+    networkError: "नेटवर्क कनेक्शन उपलब्ध नहीं है। कृपया पुनः प्रयास करें।",
     genericError: "सत्यापन असफल रहा। कृपया पुनः प्रयास करें।",
   },
 };

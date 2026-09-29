@@ -143,10 +143,9 @@ console.log(`✓ Fare locked: ₹${quotedFare.estimatedTotalInr} (${quotedFare.t
 // Step 5: Transition through `matching` into `booking/[id]`
 // ---------------------------------------------------------------------
 console.log("Step 5: Transitioning through matching into booking/[id]...");
-// Mirrors booking/matching.tsx's onSimulateMatch: sent directly, not
-// through the Centrifugo bridge - matching.tsx has no live mission
-// channel subscription yet (there's no missionId to subscribe to until
-// this exact event assigns one).
+// Sent directly, not through the Centrifugo bridge: matching.tsx has no live
+// mission channel subscription yet (there's no missionId to subscribe to
+// until this exact event assigns one).
 const missionId = "MSN-GOLDEN-PATH-0001";
 actor.send({ type: "SERVER_MISSION_ASSIGNED", payload: { missionId } });
 assert.strictEqual(actor.getSnapshot().value, "tracking", "SERVER_MISSION_ASSIGNED -> tracking");

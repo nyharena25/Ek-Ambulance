@@ -36,10 +36,6 @@ export interface TransportingScreenProps {
   onCallCrew?: () => void;
   onCall108?: () => void;
   onBack?: () => void;
-  /** Test-flow hook: fires SERVER_MISSION_COMPLETED via the lifecycle
-   *  machine, mocking hospital arrival ahead of Centrifugo. Mirrors
-   *  ActiveMatchingScreen.onSimulateMatch. */
-  onSimulateHospitalArrival?: () => void;
   /** Where the transport leg started; the map centres here before the route fits. */
   pickup?: GeoPoint;
   /** OSRM route pickup -> hospital, fetched once by booking/[id].tsx. */
@@ -75,7 +71,6 @@ export default function TransportingScreen({
   onCallCrew,
   onCall108,
   onBack,
-  onSimulateHospitalArrival,
   pickup = DEFAULT_PICKUP,
   route,
   driverMarkerRef,
@@ -477,20 +472,6 @@ export default function TransportingScreen({
             </Text>
           </Pressable>
 
-          {/* SIMULATION HOOK FOR DEMO TESTING */}
-          {onSimulateHospitalArrival && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Simulate Hospital Arrival"
-              style={styles.simulateButton}
-              onPress={onSimulateHospitalArrival}
-            >
-              <Text style={styles.simulateButtonText}>
-                <AppIcon icon={{ set: "ion", name: "flash" }} size={14} />{" "}
-                Simulate Hospital Arrival (Test Flow)
-              </Text>
-            </Pressable>
-          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1025,20 +1006,6 @@ const styles = StyleSheet.create({
   },
 
   // Emergency 108 Action
-  simulateButton: {
-    backgroundColor: colors.slate100,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    borderRadius: radii.md,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-    marginTop: spacing.sm,
-  },
-  simulateButtonText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate700,
-  },
   emergency108Btn: {
     backgroundColor: colors.white,
     borderWidth: 1.5,

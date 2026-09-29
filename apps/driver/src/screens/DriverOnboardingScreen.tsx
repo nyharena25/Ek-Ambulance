@@ -10,7 +10,9 @@ import {
   StatusBar,
   Modal,
   ActivityIndicator,
+  Alert,
 } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { AIS125VehicleType } from "@sahayak/domain";
@@ -24,6 +26,8 @@ import {
   DocumentSlotKey,
   EMTLevel,
 } from "../state/driverOnboarding.store";
+import { getServerAdapter } from "../state/driverLifecycle.store";
+import { useDriverProfileStore } from "../state/driverProfile.store";
 
 import { AppIcon } from "../components";
 export interface DriverOnboardingScreenProps {
@@ -54,10 +58,11 @@ export default function DriverOnboardingScreen({
     updateField,
     setAIS125VehicleType,
     removeDocument,
-    simulateQuickUpload,
+    uploadRealDocument,
     validateCurrentStep,
     clearStepErrors,
     submitApplication,
+    initForRealSession,
   } = useDriverOnboardingStore();
 
   // If initialLanguage passed and differs from store, set it once
@@ -67,10 +72,21 @@ export default function DriverOnboardingScreen({
     }
   }, [initialLanguage]);
 
+  // Real session: start the wizard empty (never the __DEV__ pre-filled DL/plate/5-already-uploaded seed).
+  // A no-op once the driver has real input, so this can't fire again and wipe an in-progress edit.
+  React.useEffect(() => {
+    if (getServerAdapter()) initForRealSession();
+  }, []);
+
+  // A real application already submitted/approved is a status to show, not a wizard pre-loaded with fake
+  // data to re-submit over it - kycStatus comes from the real get_driver_profile load (useServerSync).
+  const realKycStatus = useDriverProfileStore((s) => s.profile?.kycStatus);
+  const showSubmittedStatus = Boolean(getServerAdapter()) && (realKycStatus === "pending_verification" || realKycStatus === "approved");
+
   const strings = driverOnboardingStrings[language];
   const activeErrors = stepErrors[currentStep] || [];
 
-  // Modal state for simulated document picker
+  // Modal state for the document-source action sheet (Camera/Gallery/PDF all route to the real picker)
   const [activeUploadSlot, setActiveUploadSlot] = useState<{
     key: DocumentSlotKey;
     label: string;
@@ -106,19 +122,35 @@ export default function DriverOnboardingScreen({
     if (!isValid) return;
 
     const success = await submitApplication();
-    if (success && onFinishOnboarding && submissionResult) {
+    // Read fresh from the store, not the render-time destructure above: submitApplication just mutated it,
+    // and this closure's own submissionResult/submissionError locals are the pre-await (stale) values - using
+    // them here silently skips onFinishOnboarding on a real success and skips the Alert on a real failure.
+    const { submissionResult: freshResult, submissionError: freshError } = useDriverOnboardingStore.getState();
+    if (success && onFinishOnboarding && freshResult) {
       onFinishOnboarding({
-        trackingId: submissionResult.trackingId,
-        vehicleType: submissionResult.vehicleType,
+        trackingId: freshResult.trackingId,
+        vehicleType: freshResult.vehicleType,
       });
+    } else if (!success && freshError) {
+      // The real path's server error code (documents_missing, dl_expired, vehicle_missing, ...) - not
+      // translated per-code yet, but never silently swallowed either.
+      Alert.alert(language === "en" ? "Submission not recorded" : "जमा दर्ज नहीं हुआ", freshError);
     }
   };
 
-  const handlePickDocument = async (sourceType: string) => {
+  const handlePickDocument = async (_sourceType: string) => {
     if (!activeUploadSlot) return;
-    const { key, label } = activeUploadSlot;
+    const { key } = activeUploadSlot;
     setActiveUploadSlot(null);
-    await simulateQuickUpload(key, `${label}_${sourceType}`);
+    // Real OS document picker (Files, which on most devices also surfaces Photos/cloud storage), then the
+    // real upload path. uploadRealDocument no-ops without a real server session.
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf", "image/jpeg", "image/png"],
+      copyToCacheDirectory: true,
+    });
+    const asset = result.canceled ? null : result.assets?.[0];
+    if (!asset) return;
+    await uploadRealDocument(key, { uri: asset.uri, name: asset.name, mimeType: asset.mimeType ?? null });
   };
 
   // Render Step 1: Commercial Driver's License
@@ -885,6 +917,39 @@ export default function DriverOnboardingScreen({
     </View>
   );
 
+  if (showSubmittedStatus) {
+    const approved = realKycStatus === "approved";
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+        <View style={[styles.stepContentContainer, { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
+          <AppIcon
+            icon={{ set: "ion", name: approved ? "checkmark-circle" : "time" }}
+            size={48}
+            color={approved ? colors.success : colors.slate600}
+          />
+          <Text style={{ fontSize: typography.fontSizes.lg, fontWeight: typography.fontWeights.bold, color: colors.slate900, marginTop: spacing.md, textAlign: "center" }}>
+            {approved
+              ? (language === "en" ? "KYC Approved" : "KYC स्वीकृत")
+              : (language === "en" ? "Application Under Review" : "आवेदन समीक्षाधीन है")}
+          </Text>
+          <Text style={{ fontSize: typography.fontSizes.sm, color: colors.slate600, marginTop: spacing.sm, textAlign: "center" }}>
+            {approved
+              ? (language === "en" ? "You're verified and can go online from the standby screen." : "आप सत्यापित हैं और स्टैंडबाय स्क्रीन से ऑनलाइन जा सकते हैं।")
+              : (language === "en" ? "Your documents are being reviewed. This screen will update once a decision is made." : "आपके दस्तावेज़ों की समीक्षा की जा रही है। निर्णय होते ही यह स्क्रीन अपडेट हो जाएगी।")}
+          </Text>
+          {onBackToAuth && (
+            <Pressable accessibilityRole="button" onPress={onBackToAuth} style={{ marginTop: spacing.xl, minHeight: 44, justifyContent: "center" }}>
+              <Text style={{ color: colors.slate600, fontWeight: typography.fontWeights.semibold, textDecorationLine: "underline" }}>
+                {language === "en" ? "Back" : "वापस"}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
@@ -1086,7 +1151,7 @@ export default function DriverOnboardingScreen({
         )}
       </View>
 
-      {/* SIMULATED DOCUMENT UPLOAD ACTION SHEET MODAL */}
+      {/* DOCUMENT UPLOAD ACTION SHEET MODAL */}
       <Modal
         visible={activeUploadSlot !== null}
         transparent

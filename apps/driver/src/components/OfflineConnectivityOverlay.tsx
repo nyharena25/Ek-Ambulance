@@ -20,14 +20,16 @@ import { syncQueuedPings } from "../services/telemetryUpload";
 
 import { AppIcon } from "./AppIcon";
 export interface OfflineConnectivityOverlayProps {
-  missionId?: string;
+  /** Null when no mission is active - the SMS fallback (a real message to the real 108 desk) must never
+   *  reference a fabricated mission id, so it's disabled rather than defaulted in that case. */
+  missionId?: string | null;
   language?: SupportedLanguage;
   onSmsSent?: () => void;
   onSyncComplete?: (syncedCount: number) => void;
 }
 
 export default function OfflineConnectivityOverlay({
-  missionId = "MSN-2026-8819",
+  missionId,
   language: propLanguage,
   onSmsSent,
   onSyncComplete,
@@ -57,8 +59,12 @@ export default function OfflineConnectivityOverlay({
     return null;
   }
 
-  // Handle Carrier SMS Emergency Ping for Rural UP dead zones
+  // Handle Carrier SMS Emergency Ping for Rural UP dead zones. Refuses without a real active mission - this
+  // sends an actual SMS to the real 108 desk, which must never carry a fabricated mission id. The button
+  // itself is disabled in that case (below), so reaching here with no missionId shouldn't happen; guarded
+  // anyway since onPress handlers can still fire.
   const handleSendSmsPing = async () => {
+    if (!missionId) return;
     try {
       const payload = telemetryQueueService.formatSmsFallbackPayload(missionId);
       setSmsFeedback(strings.smsPromptConfirm);
@@ -83,12 +89,16 @@ export default function OfflineConnectivityOverlay({
     }
   };
 
-  // Handle Manual Sync Attempt
+  // Handle Manual Sync Attempt. Queued pings belong to whichever mission was active while they were
+  // buffered - with no active mission there is nothing real to attribute them to, so this is a no-op
+  // rather than sending them under a fabricated id.
   const handleManualSync = async () => {
+    if (!missionId) return;
+    const activeMissionId = missionId;
     setIsSyncingManually(true);
     try {
       const { syncedCount, remainingCount } = await telemetryQueueService.flushQueue((pings) =>
-        syncQueuedPings(missionId, pings)
+        syncQueuedPings(activeMissionId, pings)
       );
 
       setIsSyncingManually(false);
@@ -213,7 +223,7 @@ export default function OfflineConnectivityOverlay({
                       : strings.statusDisconnected}
                   </Text>
                 </View>
-                <Text style={styles.missionIdTag}>Mission: {missionId}</Text>
+                <Text style={styles.missionIdTag}>{missionId ? `Mission: ${missionId}` : "No active mission"}</Text>
               </View>
 
               {/* Rural UP Dead Zone Advisory */}
@@ -274,8 +284,10 @@ export default function OfflineConnectivityOverlay({
                   style={({ pressed }) => [
                     styles.sendSmsButton,
                     pressed && styles.sendSmsButtonPressed,
+                    !missionId && styles.forceSyncButtonDisabled,
                   ]}
                   onPress={handleSendSmsPing}
+                  disabled={!missionId}
                   accessibilityRole="button"
                   accessibilityLabel={strings.btnSendSmsPing}
                 >
@@ -290,10 +302,10 @@ export default function OfflineConnectivityOverlay({
                 style={({ pressed }) => [
                   styles.forceSyncButton,
                   pressed && styles.forceSyncButtonPressed,
-                  isSyncingManually && styles.forceSyncButtonDisabled,
+                  (isSyncingManually || !missionId) && styles.forceSyncButtonDisabled,
                 ]}
                 onPress={handleManualSync}
-                disabled={isSyncingManually}
+                disabled={isSyncingManually || !missionId}
                 accessibilityRole="button"
                 accessibilityLabel={strings.btnForceSync}
               >

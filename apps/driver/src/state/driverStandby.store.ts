@@ -14,6 +14,9 @@ const DEMO_AIS125_CERT_PATH = "storage/certs/demo-driver-kyc.pdf";
 // The machine's GO_ONLINE guard wants a non-empty certificate path; against a real backend the check that matters is the
 // server's (KYC approved, is_verified), so this marker only satisfies the local guard.
 const SERVER_VERIFIED_MARKER = "server-verified";
+// Same idea for ambulanceId: nothing reads it and it is never forwarded to setPresence or the wire publisher
+// (GO_ONLINE is excluded there), so a real session must not carry the demo literal into its local context either.
+const SERVER_AMBULANCE_MARKER = "server-managed";
 
 export type JurisdictionCode = "UP_NOIDA" | "DL_SOUTH";
 
@@ -66,6 +69,13 @@ export interface DriverStandbyStoreState {
   registeredAis125Type: AIS125VehicleType;
   redisPresence: RedisPresenceTelemetry;
   isOfflineModalOpen: boolean;
+  /** True only once a real GPS fix has come in via setGps (useDriverLocation). Until then, `gps` is a city
+   *  preset placeholder - with a real server session, going online is refused rather than sending it as if
+   *  it were the driver's real position. Always true in __DEV__/no-session (the preset stands in on purpose). */
+  hasRealFix: boolean;
+  /** The server's actual refusal reason for the last go-online attempt (e.g. "not_verified"), or a local
+   *  "no_gps_fix" when refused before ever reaching the server. Cleared on the next attempt. */
+  presenceErrorCode: string | null;
 
   // Actions
   toggleOnlineState: () => Promise<void>;
@@ -109,7 +119,7 @@ function sendGoOnline(ais125Type: AIS125VehicleType, location: GpsCoordinates) {
     type: "GO_ONLINE",
     payload: {
       driverId: server?.userId ?? DEMO_DRIVER_ID,
-      ambulanceId: DEMO_AMBULANCE_ID,
+      ambulanceId: server ? SERVER_AMBULANCE_MARKER : DEMO_AMBULANCE_ID,
       careLevel: careLevelFromVehicleType(ais125Type),
       ais125CertPath: server ? SERVER_VERIFIED_MARKER : DEMO_AIS125_CERT_PATH,
       location,
@@ -159,6 +169,8 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
     syncIntervalSec: 3,
   },
   isOfflineModalOpen: false,
+  hasRealFix: IS_DEV,
+  presenceErrorCode: null,
 
   toggleOnlineState: async () => {
     const { isOnline } = get();
@@ -166,16 +178,26 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       // Prompt confirmation modal before de-indexing from Redis
       set({ isOfflineModalOpen: true });
     } else {
-      set({ isTogglingPresence: true });
-      const { registeredAis125Type, gps } = get();
+      set({ isTogglingPresence: true, presenceErrorCode: null });
+      const { registeredAis125Type, gps, hasRealFix } = get();
       const server = getServerAdapter();
       if (server) {
+        // A real session must never send the NOIDA_COORDS placeholder as if it were the driver's actual
+        // position - refused client-side before it ever reaches set_driver_presence.
+        if (!hasRealFix) {
+          set({ isTogglingPresence: false, presenceErrorCode: "no_gps_fix" });
+          return;
+        }
         // The server decides: an unverified driver, or one whose request cannot be recorded, does NOT become dispatchable.
         const result = await server.setPresence(true, gps);
         if (!result.ok) {
-          set({ isTogglingPresence: false });
+          set({ isTogglingPresence: false, presenceErrorCode: result.error.code });
           return;
         }
+      } else if (!IS_DEV) {
+        // A release build with no session must refuse going online, not silently simulate success.
+        set({ isTogglingPresence: false, presenceErrorCode: "no_session" });
+        return;
       } else {
         // Local development: the former simulated GEOADD delay.
         await new Promise((res) => setTimeout(res, 600));
@@ -212,17 +234,17 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
     });
   },
 
-  setGps: (gps) => set({ gps }),
+  setGps: (gps) => set({ gps, hasRealFix: true }),
   openOfflineModal: () => set({ isOfflineModalOpen: true }),
   closeOfflineModal: () => set({ isOfflineModalOpen: false }),
 
   setJurisdiction: (jur) => {
     // The service area is part of the profile, which is frozen from the offer to the end of the mission.
     if (isProfileLocked(useDriverLifecycleStore.getState().currentState)) return;
-    set({
-      currentJurisdiction: jur,
-      gps: jur === "UP_NOIDA" ? NOIDA_COORDS : SOUTH_DELHI_COORDS,
-    });
+    // A real GPS fix must never be overwritten by a city preset just because the driver tapped a
+    // jurisdiction chip - useDriverLocation is the only thing that may move `gps` once it's real.
+    const preset = getServerAdapter() ? {} : { gps: jur === "UP_NOIDA" ? NOIDA_COORDS : SOUTH_DELHI_COORDS };
+    set({ currentJurisdiction: jur, ...preset });
   },
 
   setAis125Type: (type) => {
@@ -258,7 +280,11 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
 
   setLanguage: (lang) => set({ language: lang }),
 
+  // Dev-only: without a real session there's no live fix to recenter on, so this jumps back to the
+  // jurisdiction's preset. With a real session, `gps` already holds the last real fix - recentering the
+  // camera on it is the map component's job, not a reason to overwrite real data with a preset.
   recenterGps: () => {
+    if (getServerAdapter()) return;
     const { currentJurisdiction } = get();
     set({
       gps: currentJurisdiction === "UP_NOIDA" ? NOIDA_COORDS : SOUTH_DELHI_COORDS,

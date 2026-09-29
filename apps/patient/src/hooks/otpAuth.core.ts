@@ -57,7 +57,7 @@ export function isNetworkFailure(error: { status?: number; name?: string; messag
   );
 }
 
-const NETWORK_MESSAGE = "Network connection unavailable. Operating in local demo mode.";
+const NETWORK_MESSAGE = "Network connection unavailable. Please try again.";
 
 export function mapAuthError(error: AuthError, isVerifyStep: boolean): AuthApiError {
   if (isNetworkFailure(error)) {

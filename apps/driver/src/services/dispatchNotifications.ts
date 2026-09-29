@@ -118,3 +118,29 @@ export function dismissNotification(id: string): void {
 export function dismissAllNotifications(): void {
   native()?.dismissAllNotificationsAsync().catch(() => {});
 }
+
+export interface DevicePushToken {
+  token: string;
+  platform: "android" | "ios" | "web";
+}
+
+/** The Expo push token for this device, for real registration in `driver_push_tokens` (G-21). Needs a real
+ *  EAS project id in app.config.ts's `extra.eas.projectId` - `getExpoPushTokenAsync` throws without one, and
+ *  the placeholder slug this repo ships today ("ek-ambulance-driver") is not one; that throw is caught here
+ *  and reported as `null`, never a fabricated token. Also null in Expo Go (no native module) and on web. */
+export async function getDevicePushToken(): Promise<DevicePushToken | null> {
+  if (Platform.OS === "web") return null;
+  const Notifications = native();
+  if (!Notifications) {
+    expoGoNotice("push token registration");
+    return null;
+  }
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const { data: token } = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    return token ? { token, platform: Platform.OS === "ios" ? "ios" : "android" } : null;
+  } catch (e) {
+    console.warn("[dispatchNotifications] getExpoPushTokenAsync failed (no real EAS project configured?):", e);
+    return null;
+  }
+}

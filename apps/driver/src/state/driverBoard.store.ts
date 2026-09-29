@@ -2,16 +2,13 @@ import { create } from "zustand";
 import { estimateClockOffsetMs, sortOldestFirst, type BoardBand, type BoardEmergency } from "@sahayak/domain";
 import { getServerAdapter } from "./driverLifecycle.store.ts";
 import { useDriverStandbyStore } from "./driverStandby.store.ts";
-import { mockBoardSnapshot, seedMockEmergencies, type MockEmergency } from "../services/mockBoardFeed.ts";
 
 /**
- * The driver's Booking board. With a verified session it is the server's per-driver answer (`list_nearby_emergencies`);
- * without one, in a development build only, it is the mock feed. A release build with no session shows nothing rather than
- * a fabricated emergency (G-25). Sections are the server's `band`, never recomputed here: the server decides what this
- * driver may see.
+ * The driver's Booking board: the server's per-driver answer (`list_nearby_emergencies`). With no verified session
+ * there is no board to show rather than a fabricated emergency (G-25). Sections are the server's `band`, never
+ * recomputed here: the server decides what this driver may see.
  */
 
-const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
 export const BOARD_POLL_MS = 5_000;
 
 export type BoardTab = Exclude<BoardBand, "fallback">;
@@ -33,9 +30,6 @@ export interface DriverBoardState {
 }
 
 export const itemsInBand = (items: readonly BoardEmergency[], band: BoardBand): BoardEmergency[] => items.filter((i) => i.band === band);
-
-let mockEmergencies: MockEmergency[] | null = null;
-const mockTaken = new Set<string>();
 
 export const useDriverBoardStore = create<DriverBoardState>((set, get) => ({
   items: [],
@@ -65,21 +59,13 @@ export const useDriverBoardStore = create<DriverBoardState>((set, get) => ({
       });
       return;
     }
-    if (!IS_DEV) {
-      set({ items: [], status: "ready", errorCode: null });
-      return;
-    }
-    const now = Date.now();
-    mockEmergencies ??= seedMockEmergencies(standby.gps, now);
-    const snapshot = mockBoardSnapshot(standby.gps, mockEmergencies, mockTaken, standby.registeredAis125Type, now);
-    set({ items: sortOldestFirst(snapshot.items), clockOffsetMs: 0, status: "ready", errorCode: null });
+    set({ items: [], status: "ready", errorCode: null });
   },
 
   setTab: (tab) => set({ tab }),
   setPage: (tab, page) => set({ pages: { ...get().pages, [tab]: page } }),
 
   markTaken: (missionId) => {
-    mockTaken.add(missionId);
     set({ items: get().items.filter((i) => i.missionId !== missionId) });
   },
 }));

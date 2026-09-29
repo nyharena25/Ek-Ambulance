@@ -34,6 +34,19 @@ services:
       - name: rate-limiting
         config: { minute: 120, policy: local, limit_by: ip }
 
+  # Server-side OpenRouter relay (Phase B item 8): the key lives only behind this route now, never in the
+  # client bundle. Lower limit than realtime-token - each call is a real, billed AI request, not a token mint.
+  - name: triage-extract
+    url: http://token-mint:8080/triage/extract
+    routes:
+      - name: triage-extract
+        paths: ["/triage/extract"]
+        strip_path: true
+        methods: ["POST", "OPTIONS"]
+    plugins:
+      - name: rate-limiting
+        config: { minute: 20, policy: local, limit_by: ip }
+
 plugins:
   - name: cors
     config:

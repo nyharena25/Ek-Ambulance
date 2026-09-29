@@ -30,6 +30,9 @@ export interface TriageScreenProps {
   onBack?: () => void;
   initialLanguage?: SupportedLanguage;
   initialComplaint?: PrimaryComplaintType;
+  /** Forwarded to DescribeEmergencyPanel's real /triage/extract call; absent (no real session) degrades to
+   *  manual triage only. */
+  authToken?: string | null;
 }
 
 export default function TriageScreen({
@@ -37,6 +40,7 @@ export default function TriageScreen({
   onBack,
   initialLanguage = "en",
   initialComplaint = "chest_pain",
+  authToken,
 }: TriageScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = triageStrings[language];
@@ -224,7 +228,7 @@ export default function TriageScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <DescribeEmergencyPanel language={language} onExtracted={handleExtracted} />
+        <DescribeEmergencyPanel language={language} onExtracted={handleExtracted} authToken={authToken} />
 
         {/* SECTION 1: PRIMARY COMPLAINTS */}
         <View style={styles.sectionHeader}>

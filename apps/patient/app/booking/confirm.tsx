@@ -29,7 +29,7 @@ import { authStorage } from "../../src/lib/supabaseClient";
 import { savePersistedMission } from "../../src/services/missionSession.core";
 
 import { AppIcon } from "../../src/components";
-import { DISPATCH_HUB } from "../../src/services/mapGeo.core";
+import { DEFAULT_PICKUP, DISPATCH_HUB, formatCoordinates } from "../../src/services/mapGeo.core";
 export default function BookingConfirmScreen() {
   const router = useRouter();
   const send = usePatientLifecycleStore((s) => s.send);
@@ -40,7 +40,8 @@ export default function BookingConfirmScreen() {
   const session = usePatientAuthStore((s) => s.session);
   const sessionUserId = session?.user.id;
   const accessToken = realAccessToken(session);
-  // D-1: dispatch needs a verified phone. The anonymous / mock-session id below only exists so the __DEV__ flow keeps working.
+  // D-1: dispatch needs a verified phone. The anonymous fallback id below is cosmetic/local only - createMission
+  // authenticates via the real JWT when a session exists, so this id is never what identifies the patient server-side.
   const patientId = sessionUserId ?? "PAT-ANONYMOUS-0001";
   const triageResult = usePatientLifecycleStore((s) => s.context.triageResult);
   const lifecycleState = usePatientLifecycleStore((s) => s.currentState);
@@ -65,13 +66,20 @@ export default function BookingConfirmScreen() {
 
   const vehicleType = (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
   const jurisdiction = (params.jurisdiction as Jurisdiction) || "DL";
-  const pickupAddress =
-    params.address || "AIIMS New Delhi, Main Emergency Ward";
 
-  const pickupLat = params.lat ? Number(params.lat) : 28.5672;
-  const pickupLon = params.lon ? Number(params.lon) : 77.21;
+  // A missing or non-finite lat/lon means this screen was reached without a real pickup location (e.g. a
+  // stale deep link past PickupLocationScreen's real geolocation flow). It must never be silently replaced
+  // by a hardcoded address before a real ambulance is dispatched - __DEV__ keeps a stand-in only so the
+  // screen still previews when opened directly outside the normal navigation flow.
+  const hasRealPickup =
+    params.lat !== undefined && params.lon !== undefined && Number.isFinite(Number(params.lat)) && Number.isFinite(Number(params.lon));
+  const pickupLat = hasRealPickup ? Number(params.lat) : __DEV__ ? DEFAULT_PICKUP.latitude : NaN;
+  const pickupLon = hasRealPickup ? Number(params.lon) : __DEV__ ? DEFAULT_PICKUP.longitude : NaN;
+  const pickupAddress = params.address || (hasRealPickup ? formatCoordinates({ latitude: pickupLat, longitude: pickupLon }) : "");
+
   const [routedDistanceKm, setRoutedDistanceKm] = useState(DEFAULT_DISPATCH_DISTANCE_KM);
   useEffect(() => {
+    if (!hasRealPickup && !__DEV__) return;
     let cancelled = false;
     void getDrivingRoute(DISPATCH_HUB[jurisdiction] ?? DISPATCH_HUB.DL, {
       latitude: pickupLat,
@@ -82,15 +90,22 @@ export default function BookingConfirmScreen() {
     return () => {
       cancelled = true;
     };
-  }, [jurisdiction, pickupLat, pickupLon]);
+  }, [jurisdiction, pickupLat, pickupLon, hasRealPickup]);
+
+  // Surface the missing-location error the moment the screen is reached, not only after a tap - the fare
+  // sheet below is never shown without a real pickup point (release builds).
+  useEffect(() => {
+    if (!hasRealPickup && !__DEV__) setSubmitError(strings.pickupLocationMissing);
+  }, [hasRealPickup]);
 
   const handleConfirmAndRequest = async (fareDetails: ItemizedStatutoryFare) => {
     if (submitting) return;
+    if (!hasRealPickup && !__DEV__) {
+      setSubmitError(strings.pickupLocationMissing);
+      return;
+    }
     setSubmitError(null);
-    const pickup = {
-      latitude: params.lat ? Number(params.lat) : 28.5672,
-      longitude: params.lon ? Number(params.lon) : 77.21,
-    };
+    const pickup = { latitude: pickupLat, longitude: pickupLon };
     const requestPayload = {
       patientId,
       pickup,
@@ -129,9 +144,6 @@ export default function BookingConfirmScreen() {
       send({ type: "SERVER_MISSION_CREATED", payload: { missionId: result.data.missionId } });
       // Only the creation event (seq 1) has been seen: an instant no-driver cancel (seq 2) must be replayed, not skipped.
       await savePersistedMission(authStorage, { missionId: result.data.missionId, lastSeq: 1 });
-    } else if (__DEV__) {
-      // Local development without a verified session: the old mock flow, never compiled into a release build's path.
-      send({ type: "REQUEST", payload: requestPayload });
     } else {
       setSubmitError(strings.signInRequired);
       return;
@@ -228,15 +240,18 @@ export default function BookingConfirmScreen() {
         </View>
       )}
 
-      {/* EXPANDABLE STATUTORY FARE BOTTOM SHEET */}
-      <StatutoryFareBottomSheet
-        vehicleType={vehicleType}
-        jurisdiction={jurisdiction}
-        distanceKm={routedDistanceKm}
-        initialExpanded={true}
-        initialLanguage={language}
-        onConfirmAndRequest={handleConfirmAndRequest}
-      />
+      {/* EXPANDABLE STATUTORY FARE BOTTOM SHEET: withheld without a real pickup point - a fare quote and
+          "Confirm & Request" action must never be offered against a location the app made up. */}
+      {(hasRealPickup || __DEV__) && (
+        <StatutoryFareBottomSheet
+          vehicleType={vehicleType}
+          jurisdiction={jurisdiction}
+          distanceKm={routedDistanceKm}
+          initialExpanded={true}
+          initialLanguage={language}
+          onConfirmAndRequest={handleConfirmAndRequest}
+        />
+      )}
     </SafeAreaView>
   );
 }

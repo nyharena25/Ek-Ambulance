@@ -5,7 +5,6 @@ import { colors, radii, spacing, touchTargets, typography } from "@sahayak/ui";
 import { AppIcon } from "../components";
 import { driverProfileStrings } from "../i18n/driverProfileStrings";
 import { RANKED_TRAUMA_CENTRES } from "../i18n/driverOnSceneStrings";
-import { DEV_OTP } from "../config/devDriverProfiles";
 import { useDriverProfileStore } from "../state/driverProfile.store";
 import { getServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
@@ -116,23 +115,18 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
   const sendPhoneCode = async () => {
     if (!isValidIndianMobile(phone.number)) return setPhone({ ...phone, error: t.invalidPhone });
     setPhone({ ...phone, busy: true, error: null });
-    // Local development has no GoTrue behind it: the fixed development code stands in for the SMS.
-    const result = getServerAdapter() ? await requestPhoneChange(toE164IndianPhone(phone.number)) : ({ ok: true } as const);
+    if (!getServerAdapter()) return setPhone((p) => ({ ...p, busy: false, error: t.invalidPhone }));
+    const result = await requestPhoneChange(toE164IndianPhone(phone.number));
     setPhone((p) => (result.ok ? { ...p, busy: false, step: "code" } : { ...p, busy: false, error: result.error.detail ?? driverErrorMessage(result.error.code) }));
   };
 
   const confirmPhone = async () => {
     setPhone({ ...phone, busy: true, error: null });
     const e164 = toE164IndianPhone(phone.number);
-    if (getServerAdapter()) {
-      const result = await confirmPhoneChange(e164, phone.code);
-      if (!result.ok) return setPhone((p) => ({ ...p, busy: false, error: result.error.detail ?? driverErrorMessage(result.error.code) }));
-      await load(); // profiles.phone follows the auth change on the server
-    } else if (phone.code === DEV_OTP) {
-      useDriverProfileStore.setState({ profile: { ...profile, phone: e164 } });
-    } else {
-      return setPhone((p) => ({ ...p, busy: false, error: t.invalidPhone }));
-    }
+    if (!getServerAdapter()) return setPhone((p) => ({ ...p, busy: false, error: t.invalidPhone }));
+    const result = await confirmPhoneChange(e164, phone.code);
+    if (!result.ok) return setPhone((p) => ({ ...p, busy: false, error: result.error.detail ?? driverErrorMessage(result.error.code) }));
+    await load(); // profiles.phone follows the auth change on the server
     setPhone({ step: "idle", number: "", code: "", busy: false, error: null });
     setNotice({ kind: "ok", text: t.phoneChanged });
   };
@@ -175,7 +169,6 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
                 {phone.step === "code" && (
                   <Field label={t.codeLabel} value={phone.code} editable={!locked} keyboardType="number-pad" maxLength={6} onChangeText={(v) => setPhone({ ...phone, code: v.replace(/\D/g, "") })} />
                 )}
-                {phone.step === "code" && !getServerAdapter() && __DEV__ && <Text style={styles.hint}>{t.devPhoneNote}</Text>}
                 {phone.error && <Text style={styles.error}>{phone.error}</Text>}
                 <View style={styles.rowGap}>
                   <Pressable style={[styles.primaryBtn, styles.flex, (locked || phone.busy) && styles.off]} disabled={locked || phone.busy} onPress={phone.step === "number" ? sendPhoneCode : confirmPhone} accessibilityRole="button">

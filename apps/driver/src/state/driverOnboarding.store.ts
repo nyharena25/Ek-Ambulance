@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import type { AIS125VehicleType } from "@sahayak/domain";
 import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
+import { getServerAdapter } from "./driverLifecycle.store.ts";
+import { mapFormDataToApplicationFields } from "../lib/kycSubmission.core.ts";
+
+// `IS_DEV` is true under the node test runner (where `__DEV__` does not exist) and in a dev build; false in a
+// release build. A release build must never seed a real driver's onboarding wizard with fake DL/plate/document
+// data just because the real session hasn't hydrated yet - see `initialFormData`/`initialDocuments` below.
+const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
 
 export type EMTLevel = "EMT_P" | "EMT_A" | "EMT_B" | "FMR";
 
@@ -61,6 +68,10 @@ export interface DriverOnboardingStoreState {
   stepErrors: Record<number, string[]>;
   isSubmitting: boolean;
   submissionResult: SubmissionResult | null;
+  /** The real submit_kyc/upsert_driver_application/saveProfile error code on a failed real submission (a
+   *  server session exists), or "no_session" if there is no session and this isn't a dev build. Null in the
+   *  IS_DEV/no-session local path, which always succeeds locally. */
+  submissionError: string | null;
 
   // Actions
   setStep: (step: number) => void;
@@ -76,14 +87,59 @@ export interface DriverOnboardingStoreState {
   startDocumentUpload: (slot: DocumentSlotKey, fileName: string, fileSize: string) => void;
   finishDocumentUpload: (slot: DocumentSlotKey, uri: string) => void;
   removeDocument: (slot: DocumentSlotKey) => void;
-  simulateQuickUpload: (slot: DocumentSlotKey, docTypeLabel: string) => Promise<void>;
+  /** Real upload path: takes an already-picked file (the picker itself lives in the screen, an RN-native
+   *  module this node-tested store must not import) and uploads it via the server adapter. No-ops with no
+   *  server session. */
+  uploadRealDocument: (slot: DocumentSlotKey, asset: { uri: string; name: string; mimeType: string | null | undefined }) => Promise<void>;
 
   // Validation & Submission
   validateCurrentStep: () => boolean;
   clearStepErrors: (step: number) => void;
   submitApplication: () => Promise<boolean>;
   resetOnboarding: () => void;
+  /** Starts the wizard empty for a real session - called once by the screen on mount when a server session
+   *  exists, instead of the __DEV__ pre-filled seed. A no-op if the form already has real user input, so a
+   *  remount (e.g. language toggle) never wipes what the driver already typed. */
+  initForRealSession: () => void;
 }
+
+const CARE_LEVEL_LABELS: Record<AIS125VehicleType, string> = {
+  TYPE_D_ALS: "ALS (Advanced Life Support)",
+  TYPE_C_BLS: "BLS (Basic Life Support)",
+  TYPE_B_PTA: "PTA (Patient Transport)",
+  TYPE_A_MFR: "MFR (Medical First Responder)",
+};
+
+// Real-session start state (HANDOVER's named gap): the wizard must never open pre-loaded with someone else's
+// DL number, plate, or 5 documents marked "already uploaded" for a real application. A blank tier is a
+// deliberate "not chosen yet" - TYPE_A_MFR is simply the lowest, not an assumption about this driver.
+export const EMPTY_FORM_DATA: DriverOnboardingFormData = {
+  commercialDlNumber: "",
+  dlExpiry: "",
+  dlState: "",
+  psvBadgeNumber: "",
+  emtLevel: "FMR",
+  emtNumber: "",
+  emtCouncil: "",
+  emtExpiry: "",
+  isAclsCertified: false,
+  isBlsCertified: false,
+  vehicleRegistrationNumber: "",
+  makeModel: "",
+  manufactureYear: "",
+  vinChassisNumber: "",
+  ais125VehicleType: "TYPE_A_MFR",
+};
+
+export const EMPTY_DOCUMENTS: Record<DocumentSlotKey, DocumentUploadState> = {
+  arai_certificate: { status: "idle" },
+  fitness_permit: { status: "idle" },
+  commercial_dl: { status: "idle" },
+  emt_certificate: { status: "idle" },
+  vehicle_rc: { status: "idle" },
+  commercial_insurance: { status: "idle" },
+  puc_certificate: { status: "idle" },
+};
 
 const initialFormData: DriverOnboardingFormData = {
   commercialDlNumber: "DL-0420180098712",
@@ -150,11 +206,12 @@ const initialDocuments: Record<DocumentSlotKey, DocumentUploadState> = {
 export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set, get) => ({
   currentStep: 1,
   language: "en",
-  formData: initialFormData,
-  documents: initialDocuments,
+  formData: IS_DEV ? initialFormData : EMPTY_FORM_DATA,
+  documents: IS_DEV ? initialDocuments : EMPTY_DOCUMENTS,
   stepErrors: {},
   isSubmitting: false,
   submissionResult: null,
+  submissionError: null,
 
   setStep: (step) => set({ currentStep: Math.min(Math.max(step, 1), 4) }),
 
@@ -221,17 +278,19 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
       },
     })),
 
-  simulateQuickUpload: async (slot, docTypeLabel) => {
+  uploadRealDocument: async (slot, asset) => {
+    const adapter = getServerAdapter();
+    if (!adapter) return;
     const { startDocumentUpload, finishDocumentUpload } = get();
-    const cleanLabel = docTypeLabel.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase();
-    const fileName = `${cleanLabel}_SCAN_${Date.now().toString().slice(-4)}.pdf`;
-    const fileSize = "2.1 MB";
-
-    startDocumentUpload(slot, fileName, fileSize);
-
-    // Simulate network upload progression
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    finishDocumentUpload(slot, `file:///vault/documents/${fileName}`);
+    const sizeLabel = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    startDocumentUpload(slot, asset.name, "");
+    const result = await adapter.uploadDocument(slot, asset);
+    if (result.ok) {
+      finishDocumentUpload(slot, result.data.storagePath);
+      set((state) => ({ documents: { ...state.documents, [slot]: { ...state.documents[slot], fileSize: sizeLabel(result.data.sizeBytes) } } }));
+    } else {
+      set((state) => ({ documents: { ...state.documents, [slot]: { status: "error", fileName: asset.name } } }));
+    }
   },
 
   clearStepErrors: (step) =>
@@ -301,42 +360,86 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
 
   submitApplication: async () => {
     const { formData } = get();
-    set({ isSubmitting: true });
+    set({ isSubmitting: true, submissionError: null });
 
-    // Simulate API round-trip to Government Transport & MoRTH verification portal
+    const adapter = getServerAdapter();
+    if (adapter) {
+      // Real path (5.4): upsert_driver_application -> vehicle via the existing profile RPC -> submit_kyc.
+      // Each step is server-validated on its own; a failure at any step leaves kyc_status exactly where the
+      // server left it (draft/rejected), never a client-invented "approved" or "pending".
+      const mapped = mapFormDataToApplicationFields(formData);
+      if (!mapped.ok) {
+        set({ isSubmitting: false, submissionError: `invalid_${mapped.field}` });
+        return false;
+      }
+      const appResult = await adapter.submitApplication(mapped.fields);
+      if (!appResult.ok) {
+        set({ isSubmitting: false, submissionError: appResult.error.code });
+        return false;
+      }
+      const vehicleResult = await adapter.saveProfile({
+        vehicle: {
+          registrationNumber: formData.vehicleRegistrationNumber.trim(),
+          makeModel: formData.makeModel.trim(),
+        },
+      });
+      if (!vehicleResult.ok) {
+        set({ isSubmitting: false, submissionError: vehicleResult.error.code });
+        return false;
+      }
+      const kycResult = await adapter.submitKyc();
+      if (!kycResult.ok) {
+        set({ isSubmitting: false, submissionError: kycResult.error.code });
+        return false;
+      }
+      set({
+        isSubmitting: false,
+        submissionResult: {
+          trackingId: kycResult.data.kycReference ?? "",
+          submittedAt: kycResult.data.submittedAt ?? new Date().toISOString(),
+          vehicleType: formData.ais125VehicleType,
+          careLevelCode: CARE_LEVEL_LABELS[formData.ais125VehicleType],
+          status: "PENDING_STA_VERIFICATION",
+        },
+      });
+      return true;
+    }
+
+    if (!IS_DEV) {
+      // A release build with no session must refuse rather than fabricate a submission the real backend never saw.
+      set({ isSubmitting: false, submissionError: "no_session" });
+      return false;
+    }
+
+    // IS_DEV/no-session local path, unchanged.
     await new Promise((resolve) => setTimeout(resolve, 1200));
-
     const trackingId = `EK-AMB-DL-${Date.now().toString().slice(-6)}`;
-    const careLevelMap: Record<AIS125VehicleType, string> = {
-      TYPE_D_ALS: "ALS (Advanced Life Support)",
-      TYPE_C_BLS: "BLS (Basic Life Support)",
-      TYPE_B_PTA: "PTA (Patient Transport)",
-      TYPE_A_MFR: "MFR (Medical First Responder)",
-    };
-
-    const submissionResult: SubmissionResult = {
-      trackingId,
-      submittedAt: new Date().toISOString(),
-      vehicleType: formData.ais125VehicleType,
-      careLevelCode: careLevelMap[formData.ais125VehicleType] || "ALS",
-      status: "PENDING_STA_VERIFICATION",
-    };
-
     set({
       isSubmitting: false,
-      submissionResult,
+      submissionResult: {
+        trackingId,
+        submittedAt: new Date().toISOString(),
+        vehicleType: formData.ais125VehicleType,
+        careLevelCode: CARE_LEVEL_LABELS[formData.ais125VehicleType],
+        status: "PENDING_STA_VERIFICATION",
+      },
     });
-
     return true;
   },
 
   resetOnboarding: () =>
     set({
       currentStep: 1,
-      formData: initialFormData,
-      documents: initialDocuments,
+      formData: IS_DEV ? initialFormData : EMPTY_FORM_DATA,
+      documents: IS_DEV ? initialDocuments : EMPTY_DOCUMENTS,
       stepErrors: {},
       isSubmitting: false,
       submissionResult: null,
+      submissionError: null,
     }),
+
+  initForRealSession: () => {
+    if (JSON.stringify(get().formData) !== JSON.stringify(initialFormData)) return;
+    set({ currentStep: 1, formData: EMPTY_FORM_DATA, documents: EMPTY_DOCUMENTS, stepErrors: {}, submissionError: null });
+  },
 }));

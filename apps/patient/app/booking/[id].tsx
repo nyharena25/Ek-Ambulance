@@ -18,11 +18,12 @@ import {
 } from "@sahayak/domain";
 import { returnHome } from "../../src/navigation/returnHome";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
-import { usePatientAuthStore } from "../../src/state/patientAuth.store";
+import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAuth.store";
 import { useMissionSync } from "../../src/hooks/useMissionSync";
 import type { DriverMarkerHandle } from "../../src/components";
 import { useDrivingRoute } from "../../src/hooks/useDrivingRoute";
 import { DEFAULT_PICKUP, DISPATCH_HUB, findHospital, formatCoordinates, parseCoordinate } from "../../src/services/mapGeo.core";
+import { confirmReceipt, requestErasure } from "../../src/lib/missionApi";
 
 
 /**
@@ -74,15 +75,35 @@ export default function BookingMissionTrackingRoute() {
   const driverMarkerRef = useRef<DriverMarkerHandle>(null);
   const lastDriverRef = useRef<GeoPoint | null>(null);
 
+  // confirm_receipt / request_erasure both require a real, server-verified session (isUuid'd by
+  // realAccessToken, same guard driverServer.ts uses driver-side) - without one, realAccessToken returns
+  // null and neither RPC is even attempted.
+  const patientSession = usePatientAuthStore((s) => s.session);
+  // Best-effort, non-blocking: leaving the completion screen without disputing confirms receipt
+  // (dispute=false); the RPC is idempotent (coalesces receipt_confirmed_at, ORs dispute_flag), so this can
+  // never conflict with a dispute the patient records separately.
+  const handleCompletionReturnHome = () => {
+    if (missionId && realAccessToken(patientSession)) void confirmReceipt(missionId, false);
+    handleReturnHome();
+  };
+  const handleDisputeFare = async (): Promise<boolean> => {
+    if (!missionId || !realAccessToken(patientSession)) return false;
+    const result = await confirmReceipt(missionId, true);
+    return result.ok;
+  };
+  const handleRequestErasure = async (): Promise<string | null> => {
+    if (!missionId || !realAccessToken(patientSession)) return null;
+    const result = await requestErasure(missionId);
+    return result.ok ? result.data.dueAt : null;
+  };
+
   const sessionAccessToken = usePatientAuthStore((s) => s.session?.access_token ?? null);
 
-  const { throttledTelemetry, mockControls, connection } = useMissionSync({
+  const { throttledTelemetry, connection } = useMissionSync({
     missionId: missionId || null,
-    // Task 4.1: the real, verified session JWT now authorizes the
-    // Centrifugo subscription directly - null only for a patient who
-    // reached this screen via the anonymous "quick emergency access" path
-    // with no session, in which case __DEV__ still falls back to the mock
-    // emitter so the flow stays testable without forcing a login.
+    // The real, verified session JWT authorizes the Centrifugo subscription directly - null only for a
+    // patient who reached this screen via the anonymous "quick emergency access" path with no session, in
+    // which case the channel reports an error rather than connecting (real production behavior).
     authToken: sessionAccessToken,
     onTelemetryReceived: (telemetry) => {
       lastDriverRef.current = telemetry;
@@ -106,7 +127,10 @@ export default function BookingMissionTrackingRoute() {
     ? currentState
     : (params.state as PatientLifecycleState) || "tracking";
 
-  const pickup = parseCoordinate(params.lat, params.lon, DEFAULT_PICKUP);
+  // context.pickup is the server-synced real location (once the store is warm); params.lat/lon and
+  // DEFAULT_PICKUP are the cold-store fallback for a direct deep link only, same pattern as vehicleType/
+  // jurisdiction above - real data always wins over both.
+  const pickup = context.pickup ?? parseCoordinate(params.lat, params.lon, DEFAULT_PICKUP);
   const pickupAddress = params.address || formatCoordinates(pickup);
   // The hospital is whatever the driver actually selected (TRANSPORT_STARTED.destination); a route param is only a
   // dev/deep-link hint, and with neither there is no hospital to show (P10: nothing sets it today).
@@ -146,7 +170,9 @@ export default function BookingMissionTrackingRoute() {
           })
         }
         initialLanguage="en"
-        onReturnHome={handleReturnHome}
+        onReturnHome={handleCompletionReturnHome}
+        onDisputeFare={handleDisputeFare}
+        onRequestErasure={handleRequestErasure}
       />
     );
   }
@@ -176,7 +202,6 @@ export default function BookingMissionTrackingRoute() {
         onBack={handleBack}
         {...mapProps}
         liveSpeedKmh={throttledTelemetry?.speed ?? null}
-        onSimulateHospitalArrival={mockControls?.triggerMissionCompleted}
       />
     );
   }
@@ -195,8 +220,6 @@ export default function BookingMissionTrackingRoute() {
       maskedCall={context.maskedCall ?? undefined}
       etaMinutes={context.etaMinutes ?? undefined}
       connection={connection}
-      onSimulateDriverArrival={mockControls?.triggerDriverArrived}
-      onSimulateTransportStart={mockControls?.triggerTransportStarted}
     />
   );
 }

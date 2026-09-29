@@ -10,28 +10,20 @@ import { getServerAdapter, useDriverLifecycleStore } from "../src/state/driverLi
 import { useServerSync } from "../src/hooks/useServerSync";
 import { driverErrorMessage } from "../src/lib/driverServer.core";
 import { useDriverConnectionStore } from "../src/state/driverConnection.store";
-import { useDriverStandbyStore } from "../src/state/driverStandby.store";
-import { generateMockDispatchOffer } from "../src/services/mockDispatchWave";
 import { assertEnvOrWarn } from "../src/config/env.ts";
 import { useDriverLocation } from "../src/hooks/useDriverLocation";
 import {
   dismissAllNotifications,
   dismissNotification,
-  notifyIncomingOffer,
   setupDispatchNotifications,
   subscribeToOfferActions,
 } from "../src/services/dispatchNotifications";
-import { resolveOfferAction, type OfferNotificationData } from "../src/services/dispatchNotifications.core";
+import { resolveOfferAction } from "../src/services/dispatchNotifications.core";
 
 assertEnvOrWarn();
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __mockDispatchOffer: ((delayMs?: number) => void) | undefined;
-}
-
 export default function RootLayout() {
-  const { activeMissionId, send, submit, driverId } = useDriverLifecycleStore();
+  const { activeMissionId, submit, driverId } = useDriverLifecycleStore();
   useDriverLocation();
   useServerSync();
 
@@ -40,7 +32,9 @@ export default function RootLayout() {
   useEffect(() => {
     setupDispatchNotifications().catch(() => {});
     const unsubscribe = subscribeToOfferActions((response) => {
-      const result = resolveOfferAction(response.actionIdentifier, response.data, getServerAdapter()?.userId ?? (driverId || "DRV-DEMO-0001"));
+      const actingDriverId = getServerAdapter()?.userId ?? driverId;
+      if (!actingDriverId) return;
+      const result = resolveOfferAction(response.actionIdentifier, response.data, actingDriverId);
       if (!result) return;
       void submit(result.event).then((outcome) => {
         if (!outcome.ok) {
@@ -67,40 +61,6 @@ export default function RootLayout() {
     span.end();
   }, []);
 
-  // Dev-console-callable mock dispatch wave (Phase 2 Objective 4) - lets a
-  // developer trigger `__mockDispatchOffer()` from the Metro/Expo debugger
-  // console without needing to be on the standby screen's own trigger button.
-  useEffect(() => {
-    if (!__DEV__) return;
-    // Pass a delay, then background the app, to exercise the dispatch notification.
-    globalThis.__mockDispatchOffer = (delayMs = 0) => {
-      setTimeout(() => {
-        const offer = generateMockDispatchOffer(useDriverStandbyStore.getState().gps);
-        send({
-          type: "SERVER_OFFER_RECEIVED",
-          payload: { offerId: offer.offerId, missionId: offer.missionId },
-        });
-        const params = {
-          missionId: offer.missionId,
-          offerId: offer.offerId,
-          acuity: offer.acuity,
-          requiredVehicleType: offer.requiredVehicleType,
-          address: offer.pickup.address,
-          landmark: offer.pickup.landmark,
-          pickupLat: String(offer.pickup.latitude),
-          pickupLng: String(offer.pickup.longitude),
-          distanceKm: String(offer.distanceKm),
-          etaMinutes: String(offer.etaMinutes),
-        } satisfies OfferNotificationData & Record<string, string>;
-        router.push({ pathname: "/(shift)/offer", params });
-        void notifyIncomingOffer(params);
-      }, delayMs);
-    };
-    return () => {
-      globalThis.__mockDispatchOffer = undefined;
-    };
-  }, [send]);
-
   // The offline banner sits in flow at the top and already clears the status bar, so screens below it must not add the inset again.
   const insets = useSafeAreaInsets();
   const bannerShown = useDriverConnectionStore((s) => s.isFallbackActive || s.showRestoredBanner);
@@ -108,7 +68,7 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="light" />
-      <OfflineConnectivityOverlay missionId={activeMissionId || "MSN-2026-8819"} />
+      <OfflineConnectivityOverlay missionId={activeMissionId} />
       <View style={{ flex: 1 }}>
         <SafeAreaInsetsContext.Provider value={bannerShown ? { ...insets, top: 0 } : insets}>
           <Stack screenOptions={{ headerShown: false }}>

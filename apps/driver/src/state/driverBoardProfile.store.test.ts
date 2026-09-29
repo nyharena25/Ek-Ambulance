@@ -14,32 +14,15 @@ standby().setJurisdiction("UP_NOIDA");
 assert.strictEqual(lifecycle().currentState, "standby");
 useDriverStandbyStore.setState({ isOnline: true });
 
-console.log("Test 1: the dev board is oldest first and holds both sections; an offline driver sees none...");
+console.log("Test 1: with no server session the board is always empty, online or offline...");
 await useDriverBoardStore.getState().refresh();
-{
-  const { items } = useDriverBoardStore.getState();
-  assert.ok(items.length >= 4, "the mock feed has emergencies in range");
-  assert.ok(itemsInBand(items, "green").length > 0 && itemsInBand(items, "red").length > 0, "both sections are populated");
-  const created = items.map((i) => Date.parse(i.createdAt));
-  assert.deepStrictEqual(created, [...created].sort((a, b) => a - b), "oldest on top");
-  assert.ok(items.every((i) => i.band !== "red" || Date.now() - Date.parse(i.createdAt) >= 45_000), "red only after one designed time");
-}
+assert.strictEqual(useDriverBoardStore.getState().items.length, 0, "no session: nothing to show even online");
 useDriverStandbyStore.setState({ isOnline: false });
 await useDriverBoardStore.getState().refresh();
 assert.strictEqual(useDriverBoardStore.getState().items.length, 0, "offline: not in the pool, nothing to show");
 useDriverStandbyStore.setState({ isOnline: true });
 
-console.log("Test 2: a claimed emergency leaves the board...");
-await useDriverBoardStore.getState().refresh();
-{
-  const first = useDriverBoardStore.getState().items[0]!.missionId;
-  useDriverBoardStore.getState().markTaken(first);
-  assert.ok(!useDriverBoardStore.getState().items.some((i) => i.missionId === first));
-  await useDriverBoardStore.getState().refresh();
-  assert.ok(!useDriverBoardStore.getState().items.some((i) => i.missionId === first), "and stays gone on the next refresh");
-}
-
-console.log("Test 3: with a server, the board is the server's answer; a failed read keeps what is on screen...");
+console.log("Test 2: with a server, the board is the server's answer, sorted with both sections populated; a failed read keeps what is on screen; a claimed emergency leaves it...");
 {
   let next: ApiResult<BoardSnapshot> = {
     ok: true,
@@ -56,15 +39,24 @@ console.log("Test 3: with a server, the board is the server's answer; a failed r
   await useDriverBoardStore.getState().refresh();
   const s = useDriverBoardStore.getState();
   assert.deepStrictEqual(s.items.map((i) => i.missionId), ["a", "b"], "sorted oldest first, whatever order the server sent");
+  assert.ok(itemsInBand(s.items, "green").length > 0 && itemsInBand(s.items, "red").length > 0, "both sections are populated");
   assert.ok(Math.abs(s.clockOffsetMs - 5_000) < 1_000, "clock offset is server minus local");
   next = { ok: false, error: { code: "network", status: 0, retryable: true } };
   await useDriverBoardStore.getState().refresh();
   assert.strictEqual(useDriverBoardStore.getState().items.length, 2, "a network blip does not empty the list");
   assert.strictEqual(useDriverBoardStore.getState().status, "error");
+
+  // A claimed emergency leaves the board immediately, and a subsequent real refresh (the server no longer
+  // offers a mission this driver already claimed) keeps it gone.
+  useDriverBoardStore.getState().markTaken("a");
+  assert.ok(!useDriverBoardStore.getState().items.some((i) => i.missionId === "a"), "optimistic removal on claim");
+  next = { ok: true, data: { serverNow: new Date().toISOString(), items: [{ missionId: "b", createdAt: "2026-09-24T08:30:00.000Z", dueAt: "2026-09-24T08:30:45.000Z", distanceKm: 6, band: "red", pickup: { latitude: 28.5, longitude: 77.3 } }] } };
+  await useDriverBoardStore.getState().refresh();
+  assert.ok(!useDriverBoardStore.getState().items.some((i) => i.missionId === "a"), "and stays gone on the next real refresh");
   setServerAdapter(null);
 }
 
-console.log("Test 4: polling is ref-counted: one interval however many screens ask...");
+console.log("Test 3: polling is ref-counted: one interval however many screens ask...");
 {
   const stopA = startBoardPolling(60_000);
   const stopB = startBoardPolling(60_000);
@@ -75,7 +67,7 @@ console.log("Test 4: polling is ref-counted: one interval however many screens a
   stopC();
 }
 
-console.log("Test 5: the profile freezes from the offer to the end of the mission...");
+console.log("Test 4: the profile freezes from the offer to the end of the mission...");
 await useDriverProfileStore.getState().load();
 {
   const profile = useDriverProfileStore.getState().profile;
@@ -111,7 +103,7 @@ await useDriverProfileStore.getState().load();
   assert.strictEqual(useDriverProfileStore.getState().profile?.vehicle.crewCount, 5);
 }
 
-console.log("Test 6: with a server the save goes through it, and the server's refusal is surfaced, not swallowed...");
+console.log("Test 5: with a server the save goes through it, and the server's refusal is surfaced, not swallowed...");
 {
   const saved = { ...useDriverProfileStore.getState().profile!, fullName: "From Server" };
   let reply: ApiResult<typeof saved> = { ok: true, data: saved };

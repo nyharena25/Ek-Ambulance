@@ -50,7 +50,7 @@ export function translateLifecycleMessage(
   }
 }
 
-/** Back-compat entry point for callers that only have the event name (the dev mock channel, older tests). */
+/** Back-compat entry point for callers that only have the event name (older tests, and the mock channel test fixture). */
 export function translateLifecycleEvent(
   event: MissionLifecycleEventType,
   missionId: string,

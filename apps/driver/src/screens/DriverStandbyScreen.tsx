@@ -21,7 +21,6 @@ import { isProfileLocked } from "../state/driverAvailability.core";
 
 import { AppIcon, DriverMap, StandbyBookingSection } from "../components";
 export interface DriverStandbyScreenProps {
-  onSimulateOffer?: () => void;
   onNavigateToOnboarding?: () => void;
   onOpenBooking?: () => void;
   onOpenProfile?: () => void;
@@ -29,7 +28,6 @@ export interface DriverStandbyScreenProps {
 
 
 export default function DriverStandbyScreen({
-  onSimulateOffer,
   onNavigateToOnboarding,
   onOpenBooking,
   onOpenProfile,
@@ -37,6 +35,7 @@ export default function DriverStandbyScreen({
   const {
     isOnline,
     isTogglingPresence,
+    presenceErrorCode,
     language,
     currentJurisdiction,
     gps,
@@ -275,6 +274,15 @@ export default function DriverStandbyScreen({
           {/* Subtitle & Radar Info */}
           {!isOnline && (
             <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]}>{strings.offlineBannerStatus}</Text>
+          )}
+
+          {/* Go-online refusal, real (not_verified, kyc pending, ...) or local (no GPS fix yet) - never silent. */}
+          {presenceErrorCode && (
+            <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]} accessibilityRole="alert">
+              {presenceErrorCode === "no_gps_fix"
+                ? (language === "hi" ? "स्थान की पुष्टि होने की प्रतीक्षा करें, फिर पुनः प्रयास करें।" : "Waiting for a GPS fix - try again in a moment.")
+                : (language === "hi" ? `ऑनलाइन नहीं हो सके: ${presenceErrorCode}` : `Could not go online: ${presenceErrorCode}`)}
+            </Text>
           )}
 
           {/* PROMINENT ACTION TOGGLE BUTTON */}
@@ -595,19 +603,6 @@ export default function DriverStandbyScreen({
         </View>
         )}
 
-        {/* DISPATCH OFFER SIMULATION TRIGGER (TESTING) */}
-        {onSimulateOffer && (
-          <Pressable
-            style={styles.testOfferBtn}
-            onPress={onSimulateOffer}
-            accessibilityRole="button"
-          >
-            <Text style={styles.testOfferBtnText}>
-              {strings.testDispatchBtn}
-            </Text>
-            <Text style={styles.testOfferBtnSub}>{strings.testDispatchSub}</Text>
-          </Pressable>
-        )}
       </ScrollView>
 
       {/* CONFIRM GO OFFLINE MODAL */}
@@ -1518,30 +1513,6 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   recentMissionDetails: {
-    fontSize: 11,
-    color: colors.slate700,
-  },
-
-  // Test Offer Simulation Button
-  testOfferBtn: {
-    backgroundColor: colors.emergencyLight, // nearest existing token
-    borderWidth: 1.5,
-    borderColor: colors.emergencyBorder,
-    borderStyle: "dashed",
-    borderRadius: radii.lg,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.base,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 52,
-    gap: 2,
-  },
-  testOfferBtnText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.emergencyDark,
-  },
-  testOfferBtnSub: {
     fontSize: 11,
     color: colors.slate700,
   },

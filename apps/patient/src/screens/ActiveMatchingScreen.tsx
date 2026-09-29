@@ -35,7 +35,6 @@ export interface ActiveMatchingScreenProps {
   onCancel?: (reason: string) => void;
   onBack?: () => void;
   onCall108?: () => void;
-  onSimulateMatch?: () => void;
 }
 
 /**
@@ -60,7 +59,6 @@ export default function ActiveMatchingScreen({
   onCancel,
   onBack,
   onCall108,
-  onSimulateMatch,
 }: ActiveMatchingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const [isCancelModalVisible, setIsCancelModalVisible] = useState<boolean>(false);
@@ -501,20 +499,6 @@ export default function ActiveMatchingScreen({
             </Text>
           </Pressable>
 
-          {/* SIMULATION HOOK FOR DEMO TESTING */}
-          {onSimulateMatch && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Simulate Driver Acceptance"
-              style={styles.simulateButton}
-              onPress={onSimulateMatch}
-            >
-              <Text style={styles.simulateButtonText}>
-                <AppIcon icon={{ set: "ion", name: "flash" }} size={14} />{" "}
-                Simulate Driver Acceptance (Test Flow)
-              </Text>
-            </Pressable>
-          )}
         </View>
       </ScrollView>
 
@@ -998,19 +982,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
-  },
-  simulateButton: {
-    backgroundColor: colors.slate100,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    borderRadius: radii.md,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-  },
-  simulateButtonText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate700,
   },
 
   // ---------------------------------------------------------------------------

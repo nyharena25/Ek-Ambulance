@@ -18,8 +18,6 @@ import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { driverAuthStrings } from "../i18n/driverAuthStrings";
 import { useOtpAuth, VerifyOtpResponse } from "../hooks/useOtpAuth";
 import { AppIcon } from "../components";
-import { DEV_OTP } from "../config/devDriverProfiles";
-import { isDevDriverPhone } from "../hooks/devAuth.core";
 
 export interface DriverOtpVerifyScreenProps {
   phone: string;
@@ -253,20 +251,6 @@ export default function DriverOtpVerifyScreen({
               })}
             </View>
 
-            {__DEV__ && isDevDriverPhone(phone) && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Auto-fill Dev OTP ${DEV_OTP}`}
-                style={styles.devAutofill}
-                onPress={() => {
-                  clearError();
-                  setOtpDigits(DEV_OTP.split(""));
-                }}
-              >
-                <Text style={styles.devAutofillText}>Auto-fill Dev OTP ({DEV_OTP})</Text>
-              </Pressable>
-            )}
-
             <View style={styles.resendRow}>
               {isTimerActive ? (
                 <View style={styles.timerBadge}>
@@ -453,20 +437,5 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
     letterSpacing: -0.2,
-  },
-  devAutofill: {
-    minHeight: 44,
-    alignSelf: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.base,
-    marginTop: spacing.md,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.slate700,
-  },
-  devAutofillText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.slate700,
   },
 });

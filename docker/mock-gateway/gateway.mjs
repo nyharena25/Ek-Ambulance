@@ -27,12 +27,15 @@ export function parseScope(scope, { strict }) {
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
 export function createGateway({
   secret,
   mode = "dev",
   supabaseUrl,
   anonKey,
   serviceKey,
+  openRouterApiKey,
   fetchImpl = fetch,
   now = () => Date.now(),
   ttlSeconds = 300,
@@ -132,5 +135,37 @@ export function createGateway({
     }
   }
 
-  return { mode, mintToken, authorizePublish };
+  // /triage/extract proxy (Phase B item 8): the OpenRouter key was previously bundled into the patient app
+  // binary (EXPO_PUBLIC_OPENROUTER_API_KEY), extractable by anyone who downloads the APK. It now lives only
+  // here. Verifies the caller's JWT via GoTrue in EVERY mode, including `dev` - unlike mintToken, a paid-key
+  // relay must never be open just because the realtime gateway is still in its permissive local-dev mode.
+  // The request/response bodies are OpenRouter's own shape, forwarded verbatim; only the model/messages
+  // content are the caller's, never the key.
+  async function extractTriage(authHeader, body) {
+    if (typeof authHeader !== "string" || !authHeader.startsWith("Bearer ") || authHeader.length < 8) {
+      return { status: 401, body: { error: "missing_bearer" } };
+    }
+    if (!supabaseUrl || !anonKey) return { status: 503, body: { error: "triage_gateway_unconfigured" } };
+    if (!openRouterApiKey) return { status: 503, body: { error: "triage_unavailable" } };
+    let user;
+    try {
+      user = await verifyUser(authHeader.slice(7));
+    } catch {
+      return { status: 502, body: { error: "upstream_unavailable" } };
+    }
+    if (!user) return { status: 401, body: { error: "invalid_token" } };
+    try {
+      const res = await fetchImpl(OPENROUTER_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openRouterApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {}),
+      });
+      const upstreamBody = await res.json().catch(() => ({}));
+      return { status: res.status, body: upstreamBody };
+    } catch {
+      return { status: 502, body: { error: "upstream_unavailable" } };
+    }
+  }
+
+  return { mode, mintToken, authorizePublish, extractTriage };
 }

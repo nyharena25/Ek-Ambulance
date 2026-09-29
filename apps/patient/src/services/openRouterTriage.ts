@@ -14,7 +14,7 @@ export interface TriageExtraction {
 }
 
 export type TriageFailureReason =
-  | "no_key"
+  | "no_auth"
   | "empty_input"
   | "timeout"
   | "auth"
@@ -26,7 +26,11 @@ export type TriageExtractionResult =
   | { ok: true; data: TriageExtraction }
   | { ok: false; reason: TriageFailureReason };
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Routed through the gateway's /triage/extract proxy, never OpenRouter directly (Phase B item 8): the key
+// used to be EXPO_PUBLIC_OPENROUTER_API_KEY, bundled into the app binary and extractable by anyone who
+// downloaded the APK. It now lives only in the gateway's server-side environment (docker-compose.yml's
+// token-mint service); the client sends its own Supabase session token instead of any API key.
+const GATEWAY_URL = process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000";
 const DEFAULT_MODEL = "anthropic/claude-3.5-sonnet";
 const TIMEOUT_MS = 8000;
 const MAX_INPUT_CHARS = 1000;
@@ -116,27 +120,29 @@ export const TIER_SEVERITY: Record<UrgencyTier, number> = {
   CAT_3_DELAYED: 1,
 };
 
-/** Never throws or rejects; every failure maps to a reason so the UI can fall back to manual triage. */
+/** Never throws or rejects; every failure maps to a reason so the UI can fall back to manual triage.
+ *  `authToken` is the caller's own real Supabase session token (not an API key) - the gateway verifies it
+ *  and holds the OpenRouter key server-side; `no_auth` (no real session) degrades to manual triage exactly
+ *  like the old "no key configured" case did. */
 export async function extractTriageIndicators(
   description: string,
-  opts: { apiKey?: string; model?: string; fetchImpl?: typeof fetch; timeoutMs?: number } = {}
+  opts: { authToken?: string | null; gatewayUrl?: string; model?: string; fetchImpl?: typeof fetch; timeoutMs?: number } = {}
 ): Promise<TriageExtractionResult> {
-  // Literal property reads so Expo inlines them into the bundle.
-  const apiKey = opts.apiKey ?? process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
   const model = opts.model ?? process.env.EXPO_PUBLIC_OPENROUTER_MODEL ?? DEFAULT_MODEL;
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = opts;
+  const gatewayUrl = opts.gatewayUrl ?? GATEWAY_URL;
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, authToken } = opts;
   const text = description.trim().slice(0, MAX_INPUT_CHARS);
 
-  if (!apiKey) return { ok: false, reason: "no_key" };
+  if (!authToken) return { ok: false, reason: "no_auth" };
   if (!text) return { ok: false, reason: "empty_input" };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(OPENROUTER_URL, {
+    const res = await fetchImpl(`${gatewayUrl}/triage/extract`, {
       method: "POST",
       signal: controller.signal,
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
         temperature: 0,

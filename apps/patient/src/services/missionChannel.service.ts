@@ -45,8 +45,8 @@ export interface MissionChannelCallbacks {
    *  failed (e.g. a 403 on this mission but the client stays up). */
   onSubscriptionStateChange: (isSubscribed: boolean) => void;
   onTelemetry: (telemetry: DriverTelemetry) => void;
-  /** Legacy shape (event name + channel mission id). Used by the dev mock channel, and by the real channel when
-   *  `onLifecycleMessage` is not provided. */
+  /** Legacy shape (event name + channel mission id). Used by the mock channel test fixture, and by the real
+   *  channel when `onLifecycleMessage` is not provided. */
   onLifecycleEvent: (event: MissionLifecycleEventType, missionId: string) => void;
   /** Preferred: the parsed v1 message (seq, eventId, data) for sequence-aware application. */
   onLifecycleMessage?: (message: ParsedLifecycleMessage) => void;
@@ -194,23 +194,11 @@ export function mountMissionChannel(
   };
 }
 
-
 /**
- * Dev-only mock mission channel: simulates the full lifecycle progression
- * (and a slow drift of GPS telemetry) without a live Centrifugo/Dispatch
- * backend. Fires through the exact same MissionChannelCallbacks interface
- * as the real mount, so the bridge in booking/[id].tsx has one code path
- * regardless of which source is live.
- *
- * Triggerable two ways, both explicitly named in the Phase 4 directive:
- *  - "from a debug drawer": the returned `controls` object, wired to the
- *    onSimulate* buttons already on MissionTrackingScreen/TransportingScreen.
- *  - "from the terminal": exposed at globalThis.__mockMissionChannel so a
- *    developer can call e.g. __mockMissionChannel.triggerDriverArrived()
- *    directly from the Metro/React Native debugger console.
- *
- * __DEV__-guarded at the call site (useMissionChannel.ts), not here - this
- * function has no opinion on when it's appropriate to run, only how to run.
+ * Test-only fixture: drives the exact MissionChannelCallbacks interface `mountMissionChannel` uses, without a live
+ * Centrifugo/Dispatch backend, so integration tests (apps/patient/src/integration/goldenPath.test.ts) can exercise
+ * the real XState machine and the real wire-to-domain bridge (missionLifecycleBridge.ts) end-to-end. Not wired to
+ * any UI - no screen imports this.
  */
 export interface MockMissionChannelControls {
   triggerDriverAccepted: () => void;
@@ -230,8 +218,6 @@ export function createMockMissionChannel(
   let longitude = 77.21;
   let heading = 68;
 
-  // Converts the ad-hoc setInterval telemetry that previously lived inline
-  // in MissionTrackingScreen/TransportingScreen into one shared mock source.
   const telemetryTimer = setInterval(() => {
     latitude += 0.0002;
     longitude += 0.0003;
@@ -246,8 +232,6 @@ export function createMockMissionChannel(
     });
   }, 3500);
 
-  // Mock "connects" on a short delay so onStatusChange callers see a real
-  // connecting -> connected transition rather than always-already-connected.
   const connectTimer = setTimeout(() => {
     callbacks.onStatusChange("connected");
     callbacks.onSubscriptionStateChange(true);
@@ -264,15 +248,12 @@ export function createMockMissionChannel(
     triggerCancelled: () => trigger("MISSION_CANCELLED"),
   };
 
-  (globalThis as Record<string, unknown>).__mockMissionChannel = controls;
-
   let torn = false;
   const teardown = () => {
     if (torn) return;
     torn = true;
     clearInterval(telemetryTimer);
     clearTimeout(connectTimer);
-    delete (globalThis as Record<string, unknown>).__mockMissionChannel;
     callbacks.onSubscriptionStateChange(false);
     callbacks.onStatusChange("disconnected");
   };

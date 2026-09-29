@@ -45,10 +45,10 @@ export default function DispatchOfferRoute() {
     };
   }, [hasPickup, p.pickupLat, p.pickupLng, driverGps.latitude, driverGps.longitude]);
 
-  // No invented ids: with a server offer the ids are real; the local mock generator supplies its own.
+  // No invented ids: with a real server offer the ids are always real.
   const missionId = p.missionId ?? "";
   const offerId = p.offerId ?? "";
-  const actingDriverId = getServerAdapter()?.userId ?? (driverId || "DRV-DEMO-0001");
+  const actingDriverId = getServerAdapter()?.userId ?? driverId ?? undefined;
   const acuity: UrgencyTier = VALID_TIERS.includes(p.acuity as UrgencyTier) ? (p.acuity as UrgencyTier) : "CAT_1_IMMEDIATE";
   const requiredVehicleType: AIS125VehicleType = VALID_VEHICLE_TYPES.includes(p.requiredVehicleType as AIS125VehicleType)
     ? (p.requiredVehicleType as AIS125VehicleType)
@@ -85,6 +85,7 @@ export default function DispatchOfferRoute() {
       patientSummary={patientSummary}
       onAccept={async (acceptedId) => {
         if (busy) return;
+        if (!actingDriverId) return refuse("not_found");
         setBusy(true);
         // Server first (7.5 rule 1): the machine only moves if the server says this driver won the offer.
         const result = await submit({
@@ -96,6 +97,11 @@ export default function DispatchOfferRoute() {
         router.replace({ pathname: "/mission/[id]", params: { id: acceptedId, pickupLat: p.pickupLat, pickupLng: p.pickupLng } });
       }}
       onDecline={(reason) => {
+        if (!actingDriverId) {
+          send({ type: "SERVER_OFFER_TIMEOUT", payload: { offerId } });
+          router.back();
+          return;
+        }
         void submit({
           type: "DECLINE_DISPATCH",
           payload: { missionId, driverId: actingDriverId, offerId, reason: reason as never, declinedAt: new Date().toISOString() },

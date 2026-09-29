@@ -89,10 +89,6 @@ export interface DriverStandbyTranslation {
   recentMissionDetails: string;
   recentMissionFare: (fare: number) => string;
 
-  // Dispatch Test Trigger
-  testDispatchBtn: string;
-  testDispatchSub: string;
-
   // Offline Confirmation Modal
   offlineModalTitle: string;
   offlineModalSubtitle: string;
@@ -212,10 +208,6 @@ export const driverStandbyStrings: Record<SupportedLanguage, DriverStandbyTransl
     recentMissionDetails: "Jaypee Hospital Noida Sector 128 → Max Super Speciality Saket (19.4 km)",
     recentMissionFare: (fare) => `₹ ${fare} (Receipt Verified)`,
 
-    // Dispatch Test
-    testDispatchBtn: "Simulate Incoming Dispatch Offer",
-    testDispatchSub: "Trigger 15-second dispatch wave countdown & triage card",
-
     // Offline Modal
     offlineModalTitle: "Confirm Going Offline?",
     offlineModalSubtitle: "Your ambulance will be immediately de-indexed from Redis GEOADD (ambulances:geo). You will no longer receive emergency dispatch alerts.",
@@ -333,10 +325,6 @@ export const driverStandbyStrings: Record<SupportedLanguage, DriverStandbyTransl
     recentMissionCareBadge: "ALS गहन चिकित्सा",
     recentMissionDetails: "जेपी अस्पताल नोएडा सेक्टर 128 → मैक्स सुपर स्पेशियलिटी साकेत (19.4 किमी)",
     recentMissionFare: (fare) => `₹ ${fare} (रसीद सत्यापित)`,
-
-    // Dispatch Test
-    testDispatchBtn: "इनकमिंग डिस्पैच कॉल का परीक्षण करें",
-    testDispatchSub: "15-सेकंड की डिस्पैच वेव एवं मरीज विवरण का लाइव परीक्षण करें",
 
     // Offline Modal
     offlineModalTitle: "क्या आप सचमुच ऑफलाइन जाना चाहते हैं?",

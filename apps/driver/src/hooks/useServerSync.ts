@@ -3,7 +3,21 @@ import { Alert } from "react-native";
 import { router } from "expo-router";
 import { driverStateForStatus, type DriverLifecycleState } from "@sahayak/domain";
 import { supabase } from "../lib/supabaseClient";
-import { callServer, fetchAssignedMission, fetchBoard, fetchDriverProfile, getServerSession, saveDriverProfile, setPresence, type ServerSession } from "../lib/driverServer";
+import {
+  callServer,
+  fetchAssignedMission,
+  fetchBoard,
+  fetchDriverProfile,
+  getServerSession,
+  registerPushToken,
+  saveDriverProfile,
+  setPresence,
+  submitDriverApplication,
+  submitKyc,
+  uploadKycDocument,
+  type ServerSession,
+} from "../lib/driverServer";
+import { getDevicePushToken } from "../services/dispatchNotifications";
 import { getServerAdapter, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 import { useDriverProfileStore } from "../state/driverProfile.store";
@@ -35,10 +49,30 @@ export function useServerSync(): void {
       if (!alive) return;
       setSession(s);
       setServerAdapter(
-        s ? { userId: s.userId, accessToken: s.accessToken, call: callServer, setPresence, fetchBoard, fetchProfile: fetchDriverProfile, saveProfile: saveDriverProfile } : null
+        s
+          ? {
+              userId: s.userId,
+              accessToken: s.accessToken,
+              call: callServer,
+              setPresence,
+              fetchBoard,
+              fetchProfile: fetchDriverProfile,
+              saveProfile: saveDriverProfile,
+              submitApplication: submitDriverApplication,
+              submitKyc,
+              uploadDocument: (slot, asset) => uploadKycDocument(s.userId, slot, asset),
+            }
+          : null
       );
       // The header and the offer screen show the driver's own name, plate and tier, so read the profile as soon as the server can answer.
-      if (s) void useDriverProfileStore.getState().load();
+      if (s) {
+        void useDriverProfileStore.getState().load();
+        // Best-effort (G-21): getDevicePushToken() returns null without a real EAS project id, which this
+        // repo does not have configured yet - registration then simply does not happen, never a fake token.
+        void getDevicePushToken().then((device) => {
+          if (device) void registerPushToken(s.userId, device.token, device.platform);
+        });
+      }
     };
     void adopt();
     const { data } = supabase.auth.onAuthStateChange(() => void adopt());

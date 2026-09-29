@@ -44,8 +44,8 @@ assert.strictEqual(
 console.log("✓ engine authority\n");
 
 console.log("Test 3: every failure degrades to a reason, never a throw...");
-const run = (fetchImpl: typeof fetch, apiKey = "k", text = "chest pain") =>
-  extractTriageIndicators(text, { apiKey, fetchImpl, timeoutMs: 20 });
+const run = (fetchImpl: typeof fetch, authToken: string | null = "session-jwt", text = "chest pain") =>
+  extractTriageIndicators(text, { authToken, fetchImpl, timeoutMs: 20 });
 assert.deepStrictEqual(await run(resp(200, wrap(JSON.stringify(good)))), { ok: true, data: good });
 assert.deepStrictEqual(await run(resp(401)), { ok: false, reason: "auth" });
 assert.deepStrictEqual(await run(resp(403)), { ok: false, reason: "auth" });
@@ -57,18 +57,19 @@ assert.deepStrictEqual(await run((async () => { throw new TypeError("Network req
 const hang = ((_u: unknown, init?: { signal?: AbortSignal }) =>
   new Promise((_r, reject) => init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))))) as unknown as typeof fetch;
 assert.deepStrictEqual(await run(hang), { ok: false, reason: "timeout" });
-assert.deepStrictEqual(await run(resp(200), ""), { ok: false, reason: "no_key" });
-assert.deepStrictEqual(await run(resp(200), "k", "   "), { ok: false, reason: "empty_input" });
+assert.deepStrictEqual(await run(resp(200), null), { ok: false, reason: "no_auth" }, "no real session - degrades to manual triage, never an invented key");
+assert.deepStrictEqual(await run(resp(200), "session-jwt", "   "), { ok: false, reason: "empty_input" });
 console.log("✓ degradation\n");
 
-console.log("Test 4: request is OpenRouter JSON-schema shaped and sends the key as a Bearer token...");
+console.log("Test 4: request is OpenRouter JSON-schema shaped, goes to the gateway (never OpenRouter directly), and sends the caller's session token, not an API key...");
 let seen: { url?: unknown; init?: { headers?: Record<string, string>; body?: string } } = {};
 await extractTriageIndicators("saans nahi aa rahi", {
-  apiKey: "sk-test",
+  authToken: "session-jwt",
+  gatewayUrl: "https://gateway.example.in",
   fetchImpl: (async (url: unknown, init: never) => { seen = { url, init }; return { ok: true, status: 200, json: async () => wrap(JSON.stringify(good)) }; }) as unknown as typeof fetch,
 });
-assert.strictEqual(seen.url, "https://openrouter.ai/api/v1/chat/completions");
-assert.strictEqual(seen.init?.headers?.Authorization, "Bearer sk-test");
+assert.strictEqual(seen.url, "https://gateway.example.in/triage/extract", "never the OpenRouter URL directly from the client");
+assert.strictEqual(seen.init?.headers?.Authorization, "Bearer session-jwt", "the caller's own session token, not an OpenRouter key");
 const sent = JSON.parse(seen.init?.body ?? "{}");
 assert.strictEqual(sent.response_format.type, "json_schema");
 assert.strictEqual(sent.response_format.json_schema.strict, true);

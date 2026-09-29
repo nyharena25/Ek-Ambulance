@@ -3,7 +3,6 @@ import type { MissionTelemetryPing } from "@sahayak/domain";
 import {
   mountDriverTelemetryPublisher,
   missionChannelName,
-  mockTelemetryEmitter,
   type PublisherClientLike,
 } from "./driverTelemetry.ts";
 
@@ -165,27 +164,6 @@ publisher.publish({ latitude: 0, longitude: 0, heading: 0, speed: 0, timestamp: 
 publisher.publishLifecycleEvent("MISSION_CANCELLED", "DRV-TEST-0001");
 assert.strictEqual(mounted.calls.publish, publishCountBeforeTeardownCheck, "Neither publish() nor publishLifecycleEvent() reach the (disconnected) client after teardown");
 console.log("✓ A publish attempted after teardown is dropped, not thrown.\n");
-
-console.log("Test 7: Validating the mock telemetry emitter interpolates along a route and stops cleanly...");
-const routePolyline = [
-  { latitude: 28.5355, longitude: 77.391 },
-  { latitude: 28.5375, longitude: 77.393 },
-  { latitude: 28.5395, longitude: 77.395 },
-];
-const pings: MissionTelemetryPing[] = [];
-const emitter = mockTelemetryEmitter(routePolyline, (ping) => pings.push(ping), 10);
-emitter.start();
-await new Promise((resolve) => setTimeout(resolve, 55));
-emitter.stop();
-const countAfterStop = pings.length;
-await new Promise((resolve) => setTimeout(resolve, 30));
-assert.strictEqual(pings.length, countAfterStop, "stop() halts emission - no further pings arrive afterward");
-assert.ok(pings.length >= 3, `Emitter produced multiple interpolated pings (got ${pings.length})`);
-assert.ok(
-  pings.every((p) => typeof p.latitude === "number" && typeof p.heading === "number"),
-  "Every emitted ping carries latitude/longitude/heading/speed"
-);
-console.log(`✓ Mock emitter produced ${pings.length} interpolated pings along the route and stopped cleanly.\n`);
 
 console.log("=================================================");
 console.log("ALL DRIVER TELEMETRY SERVICE TESTS PASSED (100% GREEN)");

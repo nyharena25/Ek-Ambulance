@@ -19,8 +19,9 @@ const GATEWAY_URL =
 
 /**
  * No real anon/publishable key exists yet - Kong's GoTrue proxy issues its
- * own, and none has been provisioned. Placeholder, same pattern as Step 5's
- * `patientId: "PAT-DEMO-0001"`: named, documented, not silently blank.
+ * own, and none has been provisioned. Placeholder, same pattern as
+ * booking/confirm.tsx's anonymous `patientId` fallback: named, documented,
+ * not silently blank.
  */
 const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "unconfigured-anon-key";

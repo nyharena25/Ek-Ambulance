@@ -123,17 +123,6 @@ export default function BookingMatchingRoute() {
     return () => sub.remove();
   });
 
-  // Development only, and only without a verified session: there is no server to assign a driver. A release build never
-  // renders the "Simulate Driver Acceptance" control (G-01), so a real patient can never be shown fake help.
-  const handleSimulateMatch = () => {
-    const devMissionId = "MSN-DEV-0001";
-    send({ type: "SERVER_MISSION_ASSIGNED", payload: { missionId: devMissionId } });
-    router.replace({
-      pathname: "/booking/[id]",
-      params: { id: devMissionId, vehicleType, address: pickupAddress, lat: String(latitude), lon: String(longitude) },
-    });
-  };
-
   return (
     <ActiveMatchingScreen
       vehicleType={vehicleType}
@@ -143,7 +132,6 @@ export default function BookingMatchingRoute() {
       startedAtMs={startedAtMs}
       onCancel={(key) => void handleCancel(key)}
       onBack={confirmCancel}
-      onSimulateMatch={__DEV__ && !accessToken ? handleSimulateMatch : undefined}
     />
   );
 }

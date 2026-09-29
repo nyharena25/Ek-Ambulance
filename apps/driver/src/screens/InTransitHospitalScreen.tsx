@@ -19,9 +19,13 @@ import { CompleteMissionPayload, ConfirmArrivalHospitalPayload, GeoPoint } from 
 import { driverTransportStrings } from "../i18n/driverTransportStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
+import { getServerAdapter } from "../state/driverLifecycle.store";
 
 import { distanceKm as distanceKmBetween } from "../hooks/hospitalSelection.core";
 import { AppIcon, DriverMap, NavigateInGoogleMapsButton } from "../components";
+import { IS_DEV } from "../config/env";
+// __DEV__ only: a release build reaching this screen without a real hospital selection falls back to the
+// driver's own current position (distance 0) rather than a fixed, confidently-wrong location.
 const DEMO_HOSPITAL: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 
 export interface InTransitHospitalScreenProps {
@@ -61,7 +65,7 @@ export default function InTransitHospitalScreen({
   const gps = useDriverStandbyStore((st) => st.gps);
   const currentSpeed = Math.round(gps.speedKmh);
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
-  const hospitalTarget = hospitalCoordinates ?? DEMO_HOSPITAL;
+  const hospitalTarget = hospitalCoordinates ?? (IS_DEV ? DEMO_HOSPITAL : driverPos);
   const distanceKm = distanceKmBetween(driverPos, hospitalTarget);
   const [isCompletedAtHospital, setIsCompletedAtHospital] = useState(false);
   const [isSignOffModalOpen, setIsSignOffModalOpen] = useState(false);
@@ -115,8 +119,8 @@ export default function InTransitHospitalScreen({
 
             const arrivalPayload: ConfirmArrivalHospitalPayload = {
               missionId,
-              driverId: "DRV-DL-8821",
-              location: hospitalCoordinates || DEMO_HOSPITAL,
+              driverId: getServerAdapter()?.userId ?? "DRV-DL-8821",
+              location: hospitalTarget,
               arrivedAt: new Date().toISOString(),
             };
 
@@ -164,7 +168,7 @@ export default function InTransitHospitalScreen({
     // The fare is computed by the server from the measured transport leg (D-2); the driver never sends one.
     const payload: CompleteMissionPayload = {
       missionId,
-      driverId: "DRV-DL-8821",
+      driverId: getServerAdapter()?.userId ?? "DRV-DL-8821",
       completedAt: new Date().toISOString(),
       handoff: {
         physicianName: physicianName.trim(),
@@ -210,7 +214,7 @@ export default function InTransitHospitalScreen({
       </View>
 
       <NavigateInGoogleMapsButton
-        destination={hospitalCoordinates || DEMO_HOSPITAL}
+        destination={hospitalTarget}
         target="hospital"
         language={language}
       />

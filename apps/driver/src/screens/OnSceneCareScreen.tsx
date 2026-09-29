@@ -17,8 +17,10 @@ import { ConfirmPatientOnboardPayload, type GeoPoint } from "@sahayak/domain";
 import { driverOnSceneStrings, TraumaCentreItem } from "../i18n/driverOnSceneStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { EMERGENCY_TYPES, hospitalsFor, type EmergencyType } from "../hooks/hospitalSelection.core";
+import { useDriverStandbyStore } from "../state/driverStandby.store";
 
 import { AppIcon, openGoogleMapsNavigation } from "../components";
+import { IS_DEV } from "../config/env";
 
 const EMERGENCY_LABELS: Record<EmergencyType, { en: string; hi: string }> = {
   trauma: { en: "Trauma", hi: "ट्रॉमा" },
@@ -28,7 +30,8 @@ const EMERGENCY_LABELS: Record<EmergencyType, { en: string; hi: string }> = {
   general: { en: "Other", hi: "अन्य" },
 };
 
-// Used only when the route was reached without pickup params (stale link / reload).
+// __DEV__ only: a release build reaching this screen without real pickup params (stale link / reload) falls
+// back to the driver's own current position rather than a fixed, confidently-wrong location.
 const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 export interface OnSceneCareScreenProps {
   missionId?: string;
@@ -41,13 +44,15 @@ export interface OnSceneCareScreenProps {
 
 export default function OnSceneCareScreen({
   missionId = "MSN-2026-8819",
-  pickupCoordinates = DEMO_PICKUP,
+  pickupCoordinates: pickupCoordinatesProp,
   initialLanguage = "en",
   onConfirmPatientOnboard,
   onProceedToTransportNavigation,
   onBack,
 }: OnSceneCareScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
+  const driverGps = useDriverStandbyStore((s) => s.gps);
+  const pickupCoordinates = pickupCoordinatesProp ?? (IS_DEV ? DEMO_PICKUP : { latitude: driverGps.latitude, longitude: driverGps.longitude });
 
   // Vitals State
   // D-UX-05: nothing is pre-set. A blank reading is "not entered" (null) and is never coerced to 0 or shown as a plausible

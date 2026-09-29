@@ -98,6 +98,17 @@ assert.strictEqual(result?.careLevelCode, "BLS (Basic Life Support)", "Type C ma
 assert.strictEqual(result?.status, "PENDING_STA_VERIFICATION");
 console.log("✓ Submission carries the selected AIS-125 tier through to the result.\n");
 
+console.log("Test 8: initForRealSession clears the __DEV__ seed once, and never overwrites real input...");
+resetStore();
+assert.strictEqual(useDriverOnboardingStore.getState().formData.commercialDlNumber, "DL-0420180098712", "starts from the dev seed");
+useDriverOnboardingStore.getState().initForRealSession();
+assert.strictEqual(useDriverOnboardingStore.getState().formData.commercialDlNumber, "", "real session starts blank, never a fake DL number");
+assert.strictEqual(useDriverOnboardingStore.getState().documents.arai_certificate.status, "idle", "no document is falsely pre-marked uploaded");
+useDriverOnboardingStore.getState().updateField("commercialDlNumber", "REAL-DL-123");
+useDriverOnboardingStore.getState().initForRealSession();
+assert.strictEqual(useDriverOnboardingStore.getState().formData.commercialDlNumber, "REAL-DL-123", "a second call must not wipe real input already typed");
+console.log("✓ Real-session init is empty-once, never destructive to real input.\n");
+
 console.log("=================================================");
 console.log("ALL DRIVER KYC ONBOARDING STORE TESTS PASSED (100% GREEN)");
 console.log("=================================================");

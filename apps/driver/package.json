@@ -11,7 +11,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types src/config/env.test.ts && node --experimental-strip-types src/lib/driverServer.test.ts &&node --experimental-strip-types src/services/telemetryQueue.service.test.ts && node --experimental-strip-types src/services/driverTelemetry.test.ts && node --experimental-strip-types src/hooks/otpAuth.core.test.ts && node --experimental-strip-types src/hooks/devAuth.test.ts && node --experimental-strip-types src/hooks/dispatchOffer.core.test.ts && node --experimental-strip-types src/hooks/hospitalHandoff.core.test.ts && node --experimental-strip-types src/hooks/hospitalSelection.test.ts && node --experimental-strip-types src/state/driverOnboarding.store.test.ts && node --experimental-strip-types src/state/driverStandby.store.test.ts && node --experimental-strip-types src/state/driverLifecycleWire.core.test.ts && node --experimental-strip-types src/services/locationPing.test.ts && node --experimental-strip-types src/services/dispatchNotifications.core.test.ts && node --experimental-strip-types src/state/driverLocationState.test.ts && node --experimental-strip-types src/services/backgroundLocation.core.test.ts && node --experimental-strip-types src/state/driverAvailability.core.test.ts && node --experimental-strip-types src/services/mockBoardFeed.test.ts && node --experimental-strip-types src/lib/driverProfile.core.test.ts && node --experimental-strip-types src/state/driverBoardProfile.store.test.ts"
+    "test": "node --experimental-strip-types src/config/env.test.ts && node --experimental-strip-types src/lib/driverServer.test.ts &&node --experimental-strip-types src/services/telemetryQueue.service.test.ts && node --experimental-strip-types src/services/driverTelemetry.test.ts && node --experimental-strip-types src/hooks/otpAuth.core.test.ts && node --experimental-strip-types src/hooks/dispatchOffer.core.test.ts && node --experimental-strip-types src/hooks/hospitalHandoff.core.test.ts && node --experimental-strip-types src/hooks/hospitalSelection.test.ts && node --experimental-strip-types src/state/driverOnboarding.store.test.ts && node --experimental-strip-types src/state/driverStandby.store.test.ts && node --experimental-strip-types src/state/driverLifecycleWire.core.test.ts && node --experimental-strip-types src/services/locationPing.test.ts && node --experimental-strip-types src/services/dispatchNotifications.core.test.ts && node --experimental-strip-types src/state/driverLocationState.test.ts && node --experimental-strip-types src/services/backgroundLocation.core.test.ts && node --experimental-strip-types src/state/driverAvailability.core.test.ts && node --experimental-strip-types src/lib/driverProfile.core.test.ts && node --experimental-strip-types src/state/driverBoardProfile.store.test.ts && node --experimental-strip-types src/lib/kycSubmission.core.test.ts"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
@@ -25,6 +25,7 @@
     "expo": "^57.0.24",
     "expo-constants": "~57.0.19",
     "expo-dev-client": "~57.0.19",
+    "expo-document-picker": "~57.0.2",
     "expo-font": "~57.0.4",
     "expo-linking": "~57.0.10",
     "expo-location": "~57.0.19",
@@ -37,11 +38,11 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-webview": "13.16.1",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "~4.26.2",
     "react-native-web": "^0.21.2",
+    "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1",
     "xstate": "^5.19.0",
     "zustand": "^5.0.0"

@@ -25,6 +25,7 @@ import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 import { distanceKm as distanceKmBetween } from "../hooks/hospitalSelection.core";
 import { AppIcon, DriverMap, NavigateInGoogleMapsButton } from "../components";
+import { IS_DEV } from "../config/env";
 
 export interface DriverNavigationScreenProps {
   missionId?: string;
@@ -36,14 +37,15 @@ export interface DriverNavigationScreenProps {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-// Used only when the route was reached without pickup params (stale link / reload).
+// __DEV__ only: a release build reaching this screen without real pickup params (stale link / reload) falls
+// back to the driver's own current position (distance 0) rather than a fixed, confidently-wrong location.
 const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 const SLIDER_THUMB_SIZE = 58;
 const SLIDER_TRACK_PADDING = 4;
 
 export default function DriverNavigationScreen({
   missionId = "MSN-2026-8819",
-  pickupCoordinates = DEMO_PICKUP,
+  pickupCoordinates,
   initialLanguage = "en",
   onConfirmArrival,
   onProceedToPatientHandoff,
@@ -63,7 +65,8 @@ export default function DriverNavigationScreen({
   const gps = useDriverStandbyStore((s) => s.gps);
   const currentSpeed = Math.round(gps.speedKmh);
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
-  const distanceKm = distanceKmBetween(driverPos, pickupCoordinates);
+  const effectivePickup = pickupCoordinates ?? (IS_DEV ? DEMO_PICKUP : driverPos);
+  const distanceKm = distanceKmBetween(driverPos, effectivePickup);
 
   const strings = driverNavigationStrings[language];
 
@@ -197,7 +200,7 @@ export default function DriverNavigationScreen({
         </View>
       </View>
 
-      <NavigateInGoogleMapsButton destination={pickupCoordinates} target="pickup" language={language} />
+      <NavigateInGoogleMapsButton destination={effectivePickup} target="pickup" language={language} />
 
       {/* ACTIVE INCIDENT DELAY BANNER (IF BROADCASTED) */}
       {activeDelayNotice && (

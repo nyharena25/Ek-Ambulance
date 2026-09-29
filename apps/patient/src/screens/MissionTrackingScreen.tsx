@@ -7,7 +7,6 @@ import {
   Pressable,
   ScrollView,
   Linking,
-  Modal,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,10 +27,6 @@ export interface MissionTrackingScreenProps {
   onCallDriver?: () => void;
   onCall108?: () => void;
   onBack?: () => void;
-  /** Test-flow hook: fires SERVER_TRANSPORT_STARTED via the lifecycle
-   *  machine, mocking the driver confirming patient pickup ahead of
-   *  Centrifugo. Mirrors ActiveMatchingScreen.onSimulateMatch. */
-  onSimulateTransportStart?: () => void;
   /** Mission pickup (lat/lon route params); the map centres on it. */
   pickup?: GeoPoint;
   /** OSRM route hub -> pickup, fetched once by booking/[id].tsx. */
@@ -48,9 +43,6 @@ export interface MissionTrackingScreenProps {
    *  (tracking never changes state.value for this), just a different
    *  step in the progression pill below. */
   driverHasArrived?: boolean;
-  /** Test-flow hook: fires SERVER_DRIVER_ARRIVED via the lifecycle machine.
-   *  Mirrors onSimulateTransportStart / ActiveMatchingScreen.onSimulateMatch. */
-  onSimulateDriverArrival?: () => void;
   /** Server-supplied (DRIVER_ACCEPTED.data). Every field is optional and a missing one is hidden, never invented. */
   assignedDriver?: { displayName?: string; vehicleRegistration?: string; ais125Type?: string; makeModel?: string; color?: string; crewCount?: number };
   /** Virtual relay number provisioned for this mission. No number => no call button (no fixed placeholder number). */
@@ -85,14 +77,12 @@ export default function MissionTrackingScreen({
   onCallDriver,
   onCall108,
   onBack,
-  onSimulateTransportStart,
   pickup = DEFAULT_PICKUP,
   route,
   driverMarkerRef,
   driverStart = pickup,
   liveSpeedKmh,
   driverHasArrived = false,
-  onSimulateDriverArrival,
   assignedDriver,
   maskedCall,
   etaMinutes,
@@ -100,8 +90,6 @@ export default function MissionTrackingScreen({
 }: MissionTrackingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const [isGuideExpanded, setIsGuideExpanded] = useState<boolean>(true);
-  const [isChatModalVisible, setIsChatModalVisible] = useState<boolean>(false);
-  const [chatToastMessage, setChatToastMessage] = useState<string | null>(null);
 
   const strings = trackingStrings[language];
 
@@ -148,17 +136,6 @@ export default function MissionTrackingScreen({
       .catch(() => {
         Alert.alert("108 Fallback", "Dialing 108...");
       });
-  };
-
-  // ---------------------------------------------------------------------------
-  // EMERGENCY QUICK PRESETS CHAT
-  // ---------------------------------------------------------------------------
-  const handleSendQuickMessage = (text: string) => {
-    setIsChatModalVisible(false);
-    setChatToastMessage(text);
-    setTimeout(() => {
-      setChatToastMessage(null);
-    }, 4000);
   };
 
   return (
@@ -279,19 +256,6 @@ export default function MissionTrackingScreen({
             LOWER HALF: EMERGENCY INFORMATION SHEET
            =================================================================== */}
         <View style={styles.sheetContainer}>
-          {/* TOAST CONFIRMATION BANNER */}
-          {chatToastMessage && (
-            <View style={styles.toastBanner}>
-              <AppIcon icon={{ set: "ion", name: "checkmark" }} size={18} style={styles.toastIcon} />
-              <View style={styles.toastTextGroup}>
-                <Text style={styles.toastTitle}>
-                  {strings.messageSentConfirmation}
-                </Text>
-                <Text style={styles.toastContent}>{chatToastMessage}</Text>
-              </View>
-            </View>
-          )}
-
           {/* 1. CURRENT MISSION STATE PROGRESSION PILL */}
           <View style={styles.stateTrackerCard}>
             <View style={styles.stateStepperRow}>
@@ -447,7 +411,9 @@ export default function MissionTrackingScreen({
             </View>
           </View>
 
-          {/* 4. COMMUNICATION ACTIONS (MASKED PHONE & EMERGENCY CHAT) */}
+          {/* 4. COMMUNICATION ACTIONS (MASKED PHONE) - the emergency chat trigger that used to sit here sent
+              nothing to anyone (no RPC, no realtime publish); removed per D-10 rather than left as a UI
+              affordance implying a message reaches the crew. */}
           <View style={styles.actionButtonsRow}>
             {/* One-Touch Masked Phone Call Button: only when the server provisioned a relay number */}
             {(maskedCall || onCallDriver) && (
@@ -471,27 +437,6 @@ export default function MissionTrackingScreen({
               </View>
             </Pressable>
             )}
-
-            {/* Emergency Chat Trigger */}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={strings.emergencyChatButton}
-              accessibilityHint="Opens rapid emergency preset messages modal"
-              style={styles.chatTriggerBtn}
-              onPress={() => setIsChatModalVisible(true)}
-            >
-              <View style={styles.btnIconWrapperChat}>
-                <AppIcon icon={{ set: "ion", name: "chatbubble-ellipses" }} size={18} color={colors.slate700} style={styles.btnIconChat} />
-              </View>
-              <View style={styles.btnTextGroup}>
-                <Text style={styles.btnMainTitleChat}>
-                  {strings.emergencyChatButton}
-                </Text>
-                <Text style={styles.btnSubtitleChat}>
-                  {strings.emergencyChatSubtitle}
-                </Text>
-              </View>
-            </Pressable>
           </View>
 
           {/* 5. EXPANDABLE PREPARATION GUIDE (FIRST-AID STEPS) */}
@@ -588,125 +533,9 @@ export default function MissionTrackingScreen({
             </Text>
           </Pressable>
 
-          {/* SIMULATION HOOKS FOR DEMO TESTING */}
-          {onSimulateDriverArrival && !driverHasArrived && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Simulate Driver Arrival"
-              style={styles.simulateButton}
-              onPress={onSimulateDriverArrival}
-            >
-              <Text style={styles.simulateButtonText}>
-                <AppIcon icon={{ set: "ion", name: "flash" }} size={14} />{" "}
-                Simulate Driver Arrival (Test Flow)
-              </Text>
-            </Pressable>
-          )}
-          {onSimulateTransportStart && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Simulate Patient Onboard"
-              style={styles.simulateButton}
-              onPress={onSimulateTransportStart}
-            >
-              <Text style={styles.simulateButtonText}>
-                <AppIcon icon={{ set: "ion", name: "flash" }} size={14} />{" "}
-                Simulate Patient Onboard (Test Flow)
-              </Text>
-            </Pressable>
-          )}
         </View>
       </ScrollView>
 
-      {/* ===================================================================
-          EMERGENCY QUICK PRESETS CHAT MODAL
-         =================================================================== */}
-      <Modal
-        visible={isChatModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setIsChatModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.chatModalCard}>
-            <View style={styles.modalDragBar} />
-
-            <View style={styles.chatModalHeaderRow}>
-              <View style={styles.chatModalIconBadge}>
-                <AppIcon icon={{ set: "ion", name: "chatbubble-ellipses" }} size={22} color={colors.slate700} style={styles.chatModalHeaderIcon} />
-              </View>
-              <View style={styles.chatModalTitleGroup}>
-                <Text style={styles.chatModalTitle}>
-                  {strings.chatModalTitle}
-                </Text>
-                <Text style={styles.chatModalDescription}>
-                  {strings.chatModalDescription}
-                </Text>
-              </View>
-            </View>
-
-            {/* Quick Message Options */}
-            <View style={styles.presetsList}>
-              <Pressable
-                accessibilityRole="button"
-                style={styles.presetButton}
-                onPress={() => handleSendQuickMessage(strings.quickPresetGate)}
-              >
-                <Text style={styles.presetButtonText}>
-                  {strings.quickPresetGate}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                style={styles.presetButton}
-                onPress={() =>
-                  handleSendQuickMessage(strings.quickPresetElevator)
-                }
-              >
-                <Text style={styles.presetButtonText}>
-                  {strings.quickPresetElevator}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                style={styles.presetButton}
-                onPress={() =>
-                  handleSendQuickMessage(strings.quickPresetOxygen)
-                }
-              >
-                <Text style={styles.presetButtonText}>
-                  {strings.quickPresetOxygen}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                style={styles.presetButton}
-                onPress={() =>
-                  handleSendQuickMessage(strings.quickPresetUnconscious)
-                }
-              >
-                <Text style={styles.presetButtonText}>
-                  {strings.quickPresetUnconscious}
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Close Action */}
-            <Pressable
-              accessibilityRole="button"
-              style={styles.closeModalBtn}
-              onPress={() => setIsChatModalVisible(false)}
-            >
-              <Text style={styles.closeModalBtnText}>
-                {strings.closeChatModal}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -1359,20 +1188,6 @@ const styles = StyleSheet.create({
   },
 
   // Emergency 108 Action
-  simulateButton: {
-    backgroundColor: colors.slate100,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    borderRadius: radii.md,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-    marginTop: spacing.sm,
-  },
-  simulateButtonText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate700,
-  },
   emergency108Btn: {
     backgroundColor: colors.white,
     borderWidth: 1.5,

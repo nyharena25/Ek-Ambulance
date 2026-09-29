@@ -10,6 +10,7 @@ const gateway = createGateway({
   supabaseUrl: process.env.SUPABASE_URL,
   anonKey: process.env.SUPABASE_ANON_KEY,
   serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  openRouterApiKey: process.env.OPENROUTER_API_KEY,
 });
 
 const send = (res, status, body) => {
@@ -47,6 +48,17 @@ createServer((req, res) => {
   if (req.method === "POST" && req.url === "/centrifugo/publish" && gateway.mode === "strict") {
     return readJson(req, res, async (body) => {
       const out = await gateway.authorizePublish(body);
+      send(res, out.status, out.body);
+    });
+  }
+
+  // Server-side OpenRouter proxy (Phase B item 8): the caller sends the exact request body the client
+  // always built (model, messages, response_format), authenticated by their own Supabase JWT instead of an
+  // API key. The key itself never reaches the client.
+  if (req.method === "POST" && req.url === "/triage/extract") {
+    const auth = req.headers.authorization;
+    return readJson(req, res, async (body) => {
+      const out = await gateway.extractTriage(auth, body);
       send(res, out.status, out.body);
     });
   }

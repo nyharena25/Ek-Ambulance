@@ -16,6 +16,10 @@ export const ENV = {
   centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL,
 } as const;
 
+/** `__DEV__` doesn't exist under the plain node test runner, so this is the one shared check every
+ *  dev-only fallback (mock data, demo IDs) should import rather than re-declaring `typeof __DEV__ ...`. */
+export const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
+
 const REQUIRED_ENV_KEYS = ["supabaseUrl", "supabaseAnonKey", "gatewayUrl", "centrifugoWsUrl"] as const;
 
 /**
@@ -29,8 +33,12 @@ export function missingEnvKeys(): string[] {
 /**
  * Fails loudly in dev rather than letting the app boot unauthenticated or
  * disconnected, per the Pre-Flight directive. Never throws in production -
- * a missing var there should degrade via each module's own existing
- * fallback (e.g. GATEWAY_URL's `|| "https://api..."`), not crash the app.
+ * a missing var there degrades via each module's own existing fallback
+ * (e.g. missionChannel.service.ts / driverRealtime.ts's
+ * `GATEWAY_URL = ... || "http://localhost:8000"`), not a crash. That
+ * fallback is real code reachable in a release build, not dev-only: a
+ * release build with a missing EXPO_PUBLIC_GATEWAY_URL silently tries
+ * localhost on the user's own phone instead of erroring loudly.
  */
 export function assertEnvOrWarn(): void {
   const missing = missingEnvKeys();

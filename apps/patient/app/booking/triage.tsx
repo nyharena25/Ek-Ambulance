@@ -2,10 +2,12 @@ import { useRouter } from "expo-router";
 import { TriageScreen } from "../../src/screens";
 import { TriageResult } from "@sahayak/domain";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
+import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAuth.store";
 
 export default function BookingTriageRoute() {
   const router = useRouter();
   const send = usePatientLifecycleStore((s) => s.send);
+  const authToken = realAccessToken(usePatientAuthStore((s) => s.session));
 
   const handleConfirmTriage = (result: TriageResult) => {
     // Full TriageResult goes into machine context here - the fix for the
@@ -46,6 +48,7 @@ export default function BookingTriageRoute() {
     <TriageScreen
       onConfirmTriage={handleConfirmTriage}
       onBack={handleBack}
+      authToken={authToken}
     />
   );
 }

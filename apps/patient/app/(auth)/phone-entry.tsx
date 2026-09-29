@@ -16,7 +16,7 @@ export default function PhoneEntryScreen() {
     // goes straight into the booking flow rather than landing on the
     // dashboard first.
     // Consent was ticked by the patient (the boxes start unticked); the server records it with its own timestamp.
-    // Failures are ignored here: a dev mock session cannot reach the RPC, and consent must never block an emergency flow.
+    // Failures are ignored here: consent must never block an emergency flow.
     void recordConsent("geolocation", CONSENT_NOTICE_VERSION, true);
     void recordConsent("medical_data", CONSENT_NOTICE_VERSION, true);
     // Triage first (G-08): going straight to pickup left the machine in `idle`, and REQUEST is only accepted from `triaged`.

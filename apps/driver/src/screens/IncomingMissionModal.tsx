@@ -16,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   driverMissionOfferStrings,
-  nextUrgencyTier,
   TriageBadgeDetails,
 } from "../i18n/driverMissionOfferStrings";
 import { driverOnboardingStrings } from "../i18n/driverOnboardingStrings";
@@ -77,7 +76,7 @@ export default function IncomingMissionModal({
   onTimeout,
 }: IncomingMissionModalProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
-  const [acuity, setAcuity] = useState<UrgencyTier>(initialAcuity);
+  const acuity = initialAcuity;
   const [secondsLeft, setSecondsLeft] = useState(OFFER_WINDOW_SECONDS);
   const [isSirenMuted, setIsSirenMuted] = useState(false);
   const [isAccepted, setIsAccepted] = useState(false);
@@ -377,15 +376,6 @@ export default function IncomingMissionModal({
               <Text style={styles.crewText}>{triageInfo.crewRequirement}</Text>
             </View>
 
-            {/* In-Modal Acuity Switcher (For Demo/Verification) */}
-            <Pressable
-              style={styles.acuityToggleBtn}
-              onPress={() => setAcuity(nextUrgencyTier(acuity))}
-            >
-              <Text style={styles.acuityToggleBtnText}>
-                <AppIcon icon={{ set: "ion", name: "refresh" }} size={10} />{" "}{strings.switchAcuityBtn(acuity)}
-              </Text>
-            </Pressable>
           </View>
 
           {/* PICKUP LOCATION ADDRESS & DRIVING DISTANCE / ETA */}
@@ -880,22 +870,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
-  acuityToggleBtn: {
-    alignSelf: "flex-start",
-    marginTop: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: colors.white,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-  },
-  acuityToggleBtnText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
-  },
-
   // Section Cards
   sectionCard: {
     backgroundColor: colors.white,

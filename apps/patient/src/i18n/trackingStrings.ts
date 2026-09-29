@@ -66,16 +66,6 @@ export interface TrackingTranslation {
   // Communications
   callDriverButton: string;
   callDriverSubtitle: string;
-  emergencyChatButton: string;
-  emergencyChatSubtitle: string;
-  chatModalTitle: string;
-  chatModalDescription: string;
-  quickPresetGate: string;
-  quickPresetElevator: string;
-  quickPresetOxygen: string;
-  quickPresetUnconscious: string;
-  messageSentConfirmation: string;
-  closeChatModal: string;
 
   // Expandable Preparation Guide
   guideHeaderTitle: string;
@@ -140,16 +130,6 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
 
     callDriverButton: "Call Driver (Masked)",
     callDriverSubtitle: "Private telecom relay • No PII shared",
-    emergencyChatButton: "Emergency Chat",
-    emergencyChatSubtitle: "Quick medical notes & gate guidance",
-    chatModalTitle: "Emergency Quick Messages",
-    chatModalDescription: "Send critical building or clinical updates directly to the ambulance crew:",
-    quickPresetGate: "Patient is waiting at the main entrance gate",
-    quickPresetElevator: "Building elevator has been held on ground floor",
-    quickPresetOxygen: "Patient requires immediate oxygen administration",
-    quickPresetUnconscious: "Patient has lost consciousness, please expedite",
-    messageSentConfirmation: "Message dispatched directly to driver terminal",
-    closeChatModal: "Close",
 
     guideHeaderTitle: "Pre-Arrival Preparation Guide",
     guideHeaderSubtitle: "Critical first-aid actions while ambulance is en route",
@@ -385,16 +365,6 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
 
     callDriverButton: "चालक को कॉल करें (मास्क्ड)",
     callDriverSubtitle: "सुरक्षित टेलीकॉम रिले • निजी नंबर गुप्त",
-    emergencyChatButton: "आपातकालीन संदेश",
-    emergencyChatSubtitle: "त्वरित चिकित्सीय सूचना व गेट निर्देश",
-    chatModalTitle: "त्वरित आपातकालीन संदेश",
-    chatModalDescription: "एंबुलेंस दल को महत्वपूर्ण भवन या चिकित्सीय निर्देश तुरंत भेजें:",
-    quickPresetGate: "मरीज मुख्य प्रवेश द्वार पर प्रतीक्षारत है",
-    quickPresetElevator: "लिफ्ट को ग्राउंड फ्लोर पर रोक कर रखा गया है",
-    quickPresetOxygen: "मरीज को तुरंत ऑक्सीजन सहायता की आवश्यकता है",
-    quickPresetUnconscious: "मरीज अचेत हो गया है, कृपया शीघ्रता करें",
-    messageSentConfirmation: "संदेश सीधे चालक के टर्मिनल पर प्रेषित किया गया",
-    closeChatModal: "बंद करें",
 
     guideHeaderTitle: "आगमन पूर्व तैयारी निर्देश",
     guideHeaderSubtitle: "एंबुलेंस आने तक अत्यंत महत्वपूर्ण प्राथमिक उपचार कदम",

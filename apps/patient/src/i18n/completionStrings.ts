@@ -70,7 +70,10 @@ export interface CompletionTranslation {
   deletionCancelButton: string;
   deletionQueuedBadge: (ref: string) => string;
   deletionQueuedToast: string;
+  deletionErrorToast: string;
   dpoNotice: (email: string) => string;
+  disputeFareRecordedToast: string;
+  disputeFareErrorToast: string;
 
   // Navigation
   returnHomeButton: string;
@@ -187,8 +190,11 @@ export const completionStrings: Record<
     deletionQueuedBadge: (ref: string) => `Erasure Request Queued (${ref})`,
     deletionQueuedToast:
       "Premature erasure request successfully registered under DPDP 2025 Rules",
+    deletionErrorToast: "Could not register the erasure request. Please try again.",
     dpoNotice: (email: string) =>
       `Grievance Redressal / Data Protection Officer: ${email}`,
+    disputeFareRecordedToast: "Dispute recorded. Our team will review this fare.",
+    disputeFareErrorToast: "Could not record the dispute. Please try again or call 108.",
 
     returnHomeButton: "Done • Return to Home",
   },
@@ -299,8 +305,11 @@ export const completionStrings: Record<
     deletionQueuedBadge: (ref: string) => `डेटा विलोपन अनुरोध दर्ज (${ref})`,
     deletionQueuedToast:
       "DPDP 2025 नियमों के तहत समय-पूर्व डेटा विलोपन अनुरोध सफलतापूर्वक पंजीकृत",
+    deletionErrorToast: "विलोपन अनुरोध दर्ज नहीं हो सका। कृपया पुनः प्रयास करें।",
     dpoNotice: (email: string) =>
       `शिकायत निवारण / डेटा संरक्षण अधिकारी (DPO): ${email}`,
+    disputeFareRecordedToast: "आपत्ति दर्ज की गई। हमारी टीम इस किराए की समीक्षा करेगी।",
+    disputeFareErrorToast: "आपत्ति दर्ज नहीं हो सकी। कृपया पुनः प्रयास करें या 108 पर कॉल करें।",
 
     returnHomeButton: "पूर्ण • होम स्क्रीन पर जाएं",
   },

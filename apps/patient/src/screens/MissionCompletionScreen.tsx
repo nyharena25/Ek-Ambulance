@@ -11,10 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
-import {
-  ItemizedStatutoryFare,
-  computeItemizedStatutoryFare,
-} from "@sahayak/domain";
+import { ItemizedStatutoryFare } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { completionStrings } from "../i18n/completionStrings";
 
@@ -27,20 +24,20 @@ export interface MissionCompletionScreenProps {
   completedAt?: string;
   /** Present only once the server has generated a real EMR handoff PDF (bucket `emr-handoffs`); none exists yet. */
   onDownloadEmr?: () => void;
-  /** Statutory receipt breakdown, computed once at booking time (never
-   *  recomputed here) - the same shared domain contract StatutoryFareBottomSheet
-   *  emits via onConfirmAndRequest. */
-  fareDetails?: ItemizedStatutoryFare;
+  /** Statutory receipt breakdown, computed once at booking time (never recomputed here) - the same shared
+   *  domain contract StatutoryFareBottomSheet emits via onConfirmAndRequest. Required: a receipt screen must
+   *  never silently substitute an invented fare when the real one is missing. */
+  fareDetails: ItemizedStatutoryFare;
   initialLanguage?: SupportedLanguage;
+  /** Calls the real confirm_receipt RPC (dispute=false) before returning home; a no-op prop leaves confirmation
+   *  unsent rather than inventing a local "confirmed" state. */
   onReturnHome?: () => void;
-  onDisputeFare?: () => void;
+  /** Calls the real confirm_receipt RPC (dispute=true). Resolves true only on the server's ok. */
+  onDisputeFare?: () => Promise<boolean>;
+  /** Calls the real request_erasure RPC. Resolves the server's dueAt on success, null on failure - the screen
+   *  must not mark a deletion as queued unless the server actually queued one. */
+  onRequestErasure?: () => Promise<string | null>;
 }
-
-const DEFAULT_FARE_DETAILS: ItemizedStatutoryFare = computeItemizedStatutoryFare({
-  vehicleType: "TYPE_D_ALS",
-  jurisdiction: "DL",
-  distanceKm: 8.4,
-});
 
 /**
  * MissionCompletionScreen for Ek-Ambulance
@@ -62,13 +59,15 @@ export default function MissionCompletionScreen({
   hospitalName,
   completedAt,
   onDownloadEmr,
-  fareDetails = DEFAULT_FARE_DETAILS,
+  fareDetails,
   initialLanguage = "en",
   onReturnHome,
   onDisputeFare,
+  onRequestErasure,
 }: MissionCompletionScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const [isDeletionRequested, setIsDeletionRequested] = useState<boolean>(false);
+  const [erasureDueAt, setErasureDueAt] = useState<string | null>(null);
   const [isDeletionModalVisible, setIsDeletionModalVisible] =
     useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -99,6 +98,19 @@ export default function MissionCompletionScreen({
     : null;
 
   // ---------------------------------------------------------------------------
+  // DISPUTE FARE HANDLER: calls confirm_receipt(dispute=true) through the parent; the button stays enabled
+  // and the screen state does not change on failure, so a dropped request can simply be retried.
+  // ---------------------------------------------------------------------------
+  const [isDisputing, setIsDisputing] = useState(false);
+  const handleDisputeFare = async () => {
+    if (!onDisputeFare || isDisputing) return;
+    setIsDisputing(true);
+    const ok = await onDisputeFare();
+    setIsDisputing(false);
+    showToast(ok ? strings.disputeFareRecordedToast : strings.disputeFareErrorToast);
+  };
+
+  // ---------------------------------------------------------------------------
   // PREMATURE DELETION TOGGLE HANDLER (DPDP 2025 RULES)
   // ---------------------------------------------------------------------------
   const handleToggleDeletion = (value: boolean) => {
@@ -110,10 +122,22 @@ export default function MissionCompletionScreen({
     }
   };
 
-  const handleConfirmDeletion = () => {
+  // Only marks the request as queued once the server has actually queued one (request_erasure ok) - a failed
+  // call must not show the patient a confirmation nothing backs.
+  const handleConfirmDeletion = async () => {
     setIsDeletionModalVisible(false);
-    setIsDeletionRequested(true);
-    showToast(strings.deletionQueuedToast);
+    if (!onRequestErasure) {
+      showToast(strings.deletionErrorToast);
+      return;
+    }
+    const dueAt = await onRequestErasure();
+    if (dueAt) {
+      setIsDeletionRequested(true);
+      setErasureDueAt(dueAt);
+      showToast(strings.deletionQueuedToast);
+    } else {
+      showToast(strings.deletionErrorToast);
+    }
   };
 
   return (
@@ -258,7 +282,7 @@ export default function MissionCompletionScreen({
                 {strings.vehicleLabel}
               </Text>
               <Text style={styles.contextItemValue}>
-                {fareDetails.vehicleType.replace(/_/g, " ")} (DL 1E AM 4092)
+                {fareDetails.vehicleType.replace(/_/g, " ")}
               </Text>
             </View>
 
@@ -354,10 +378,6 @@ export default function MissionCompletionScreen({
                 <Text style={styles.paymentStatusHeading}>
                   {strings.paymentStatusValue}
                 </Text>
-                <Text style={styles.paymentRefText}>
-                  {strings.transactionRefLabel("TXN-DL-2026-982104")} • Direct
-                  Bank Settlement
-                </Text>
               </View>
             </View>
           </View>
@@ -368,7 +388,8 @@ export default function MissionCompletionScreen({
               accessibilityRole="button"
               accessibilityLabel={strings.disputeFareButton}
               style={styles.disputeButton}
-              onPress={onDisputeFare}
+              onPress={() => void handleDisputeFare()}
+              disabled={isDisputing}
             >
               <Text style={styles.disputeButtonText}>
                 <AppIcon icon={{ set: "ion", name: "warning" }} size={11} />{" "}{strings.disputeFareButton}
@@ -478,7 +499,11 @@ export default function MissionCompletionScreen({
               <View style={styles.deletionStatusBanner}>
                 <AppIcon icon={{ set: "ion", name: "trash" }} size={14} color={colors.slate700} style={styles.deletionStatusIcon} />
                 <Text style={styles.deletionStatusText}>
-                  {strings.deletionQueuedBadge("DPDP-DEL-2026-8921")}
+                  {strings.deletionQueuedBadge(
+                    erasureDueAt
+                      ? new Date(erasureDueAt).toLocaleDateString(language === "hi" ? "hi-IN" : "en-IN", { dateStyle: "medium" })
+                      : ""
+                  )}
                 </Text>
               </View>
             )}

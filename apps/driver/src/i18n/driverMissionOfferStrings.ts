@@ -68,37 +68,6 @@ export interface DriverMissionOfferTranslation {
   declineReasonOther: string;
   btnConfirmDecline: string;
   btnCancelDecline: string;
-
-  // Demo Switcher
-  switchAcuityBtn: (current: UrgencyTier) => string;
-}
-
-const ACUITY_SHORT_LABEL_EN: Record<UrgencyTier, string> = {
-  CAT_1_IMMEDIATE: "RED (ALS)",
-  CAT_2_URGENT: "YELLOW (BLS)",
-  CAT_3_DELAYED: "GREEN (PTA)",
-};
-
-const ACUITY_SHORT_LABEL_HI: Record<UrgencyTier, string> = {
-  CAT_1_IMMEDIATE: "लाल (ALS)",
-  CAT_2_URGENT: "पीला (BLS)",
-  CAT_3_DELAYED: "हरा (PTA)",
-};
-
-/**
- * Cycles a driver's demo/verification acuity toggle through the domain's
- * three official urgency tiers. Exhaustive switch: a 4th tier added to
- * UrgencyTier becomes a compile error here rather than a silent no-op.
- */
-export function nextUrgencyTier(tier: UrgencyTier): UrgencyTier {
-  switch (tier) {
-    case "CAT_1_IMMEDIATE":
-      return "CAT_2_URGENT";
-    case "CAT_2_URGENT":
-      return "CAT_3_DELAYED";
-    case "CAT_3_DELAYED":
-      return "CAT_1_IMMEDIATE";
-  }
 }
 
 export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionOfferTranslation> = {
@@ -187,9 +156,6 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     declineReasonOther: "Personal break / Shift handover in progress",
     btnConfirmDecline: "Confirm Decline & Return to Standby",
     btnCancelDecline: "Keep Reviewing Offer",
-
-    // Demo Switcher
-    switchAcuityBtn: (current) => `Test Acuity: Switch to ${ACUITY_SHORT_LABEL_EN[nextUrgencyTier(current)]}`,
   },
 
   hi: {
@@ -277,8 +243,5 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     declineReasonOther: "व्यक्तिगत अवकाश / शिफ्ट समाप्ति प्रक्रिया में",
     btnConfirmDecline: "अस्वीकार करें एवं स्टैंडबाय पर लौटें",
     btnCancelDecline: "ऑफर की समीक्षा जारी रखें",
-
-    // Demo Switcher
-    switchAcuityBtn: (current) => `परीक्षण: ${ACUITY_SHORT_LABEL_HI[nextUrgencyTier(current)]} में बदलें`,
   },
 };

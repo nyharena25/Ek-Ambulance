@@ -2,11 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { isNewerPing, type ParsedLifecycleMessage } from "@sahayak/domain";
 import {
   mountMissionChannel,
-  createMockMissionChannel,
   type CentrifugoConnectionStatus,
   type DriverTelemetry,
   type MissionLifecycleEventType,
-  type MockMissionChannelControls,
 } from "../services/missionChannel.service";
 
 export type { CentrifugoConnectionStatus, DriverTelemetry, MissionLifecycleEventType };
@@ -21,11 +19,10 @@ const TELEMETRY_DISPLAY_FLUSH_MS = 2000;
 
 export interface UseMissionChannelOptions {
   missionId: string | null;
-  /** Supabase access_token used to authorize the /realtime/token call. Null
-   *  means no real session exists yet (auth, Task 4.1, is still a stub) -
-   *  in __DEV__ this falls back to the mock emitter automatically. */
+  /** Supabase access_token used to authorize the /realtime/token call. Null means no real session exists yet;
+   *  the channel then reports a "no authenticated session" error rather than connecting. */
   authToken: string | null;
-  /** Fires synchronously on every raw ping (real or mock) - use this, not
+  /** Fires synchronously on every raw ping - use this, not
    *  `throttledTelemetry`, to drive an Animated.Value/.ValueXY ref directly
    *  for zero-re-render map rendering. */
   onTelemetryReceived?: (telemetry: DriverTelemetry) => void;
@@ -50,24 +47,15 @@ export interface UseMissionChannelReturn {
    *  than that does not force a re-render on every single ping. */
   throttledTelemetry: DriverTelemetry | null;
   error: Error | null;
-  /** Non-null only when running the dev mock emitter (no real authToken,
-   *  __DEV__ true). Wire to debug-drawer buttons - MissionTrackingScreen's
-   *  onSimulateTransportStart and TransportingScreen's
-   *  onSimulateHospitalArrival already exist for exactly this. */
-  mockControls: MockMissionChannelControls | null;
   /** `live` only while subscribed and pings are fresh; `paused` after a drop or a silent feed; never assumed. */
   connection: TrackingConnection;
-  /** True when the feed is the dev mock emitter rather than a real subscription. */
-  isMock: boolean;
 }
 
 /**
  * Connects to Centrifugo's mission:{missionId} channel per
  * docs/prompts/patient-app/P04-centrifugo-mission-channel.md. Real
- * connection when authToken is present; falls back to the dev-only mock
- * emitter (src/services/missionChannel.service.ts) when __DEV__ and no
- * token exists yet, so the full lifecycle is testable without a live
- * backend or real auth (Task 4.1 is still a stub - see HANDOVER D2).
+ * connection when authToken is present; without one, reports an error
+ * rather than connecting (real production behavior, not a fallback).
  *
  * Cleans up on unmount and whenever missionId/authToken change: the mount
  * effect's own return value is the teardown, called by React exactly once
@@ -83,7 +71,6 @@ export function useMissionChannel({
   onResubscribed,
 }: UseMissionChannelOptions): UseMissionChannelReturn {
   const [lastPingAt, setLastPingAt] = useState<number | null>(null);
-  const [isMock, setIsMock] = useState(false);
   const [, setTick] = useState(0);
   const lastPingIsoRef = useRef<string | null>(null);
   const onMessageRef = useRef(onLifecycleMessage);
@@ -94,7 +81,6 @@ export function useMissionChannel({
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [throttledTelemetry, setThrottledTelemetry] = useState<DriverTelemetry | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [mockControls, setMockControls] = useState<MockMissionChannelControls | null>(null);
 
   // Latest-callback refs so the mount effect below doesn't need these
   // (typically inline arrows that change every render) in its deps array -
@@ -132,7 +118,7 @@ export function useMissionChannel({
         onTelemetryRef.current?.(telemetry);
       },
       onLifecycleEvent: (event: MissionLifecycleEventType, id: string) => {
-        // The dev mock (and the legacy path) has no seq: surface it as a parsed message so one consumer serves both.
+        // The legacy shape has no seq: surface it as a parsed message so one consumer serves both.
         if (onMessageRef.current) onMessageRef.current({ event, missionId: id, data: {} });
         else onLifecycleRef.current?.(event, id);
       },
@@ -144,21 +130,9 @@ export function useMissionChannel({
       onError: setError,
     };
 
-    if (__DEV__ && !authToken) {
-      const { controls, teardown } = createMockMissionChannel(missionId, callbacks);
-      setMockControls(controls);
-      setIsMock(true);
-      return () => {
-        clearInterval(flushTimer);
-        setMockControls(null);
-        setIsMock(false);
-        teardown();
-      };
-    }
-
     if (!authToken) {
-      // No real session and not in dev mock mode (production build, Task
-      // 4.1 auth still a stub - see HANDOVER D2): make this legible rather
+      // No real session (production build, Task 4.1 auth still a stub -
+      // see HANDOVER D2): make this legible rather
       // than a silent, indistinguishable-from-network-failure permanent
       // "disconnected" - the whole point of surfacing connection health is
       // for the low-connectivity overlay to explain *why*.
@@ -184,5 +158,5 @@ export function useMissionChannel({
         ? "connecting"
         : "paused";
 
-  return { status, isSubscribed, throttledTelemetry, error, mockControls, connection, isMock };
+  return { status, isSubscribed, throttledTelemetry, error, connection };
 }

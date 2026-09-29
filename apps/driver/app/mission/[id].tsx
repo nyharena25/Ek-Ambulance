@@ -48,14 +48,15 @@ export default function MissionExecutionRoute() {
   // that already completed (currentState back to standby) - nothing here
   // for the route to render. Redirect rather than rendering a screen whose
   // events the machine won't accept.
-  if (!MISSION_ACTIVE_STATES.includes(currentState)) {
+  const actingDriverId = getServerAdapter()?.userId ?? driverId;
+  if (!MISSION_ACTIVE_STATES.includes(currentState) || !actingDriverId) {
     return <Redirect href="/(shift)/standby" />;
   }
 
   return (
     <MissionExecutionScreens
       missionId={id ?? ""}
-      driverId={getServerAdapter()?.userId ?? (driverId || "DRV-DEMO-0001")}
+      driverId={actingDriverId}
       initialLifecycleState={currentState}
       pickupCoordinates={pickupCoordinates}
       submit={submit}

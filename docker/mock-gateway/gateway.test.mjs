@@ -184,4 +184,37 @@ for (const s of ["connect", `mission:${M}`, `driver:${D}:offers`, "mission:MSN-1
 }
 console.log("✓ parity\n");
 
+// ---------------------------------------------------------------------------
+console.log("Test 7: /triage/extract verifies the caller via GoTrue in EVERY mode (including dev) and never leaks the OpenRouter key to the response...");
+{
+  const sb = fakeSupabase({ users: { "patient-token": P } });
+  const openRouterCalls = [];
+  const withOpenRouter = (base) => async (url, init) => {
+    if (url === "https://openrouter.ai/api/v1/chat/completions") {
+      openRouterCalls.push({ url, headers: init?.headers ?? {}, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "{}" } }] }) };
+    }
+    return base(url, init);
+  };
+  // dev mode: mintToken is permissive in dev, but a paid-key relay must never be - extractTriage verifies via
+  // GoTrue regardless of AUTH_MODE.
+  const gDev = createGateway({ secret: SECRET, mode: "dev", supabaseUrl: "http://sb", anonKey: "anon-key", openRouterApiKey: "or-key", fetchImpl: withOpenRouter(sb.fetchImpl), now: () => NOW });
+  assert.strictEqual((await gDev.extractTriage(undefined, {})).status, 401, "no bearer");
+  assert.strictEqual((await gDev.extractTriage("Bearer bad-token", {})).status, 401, "GoTrue rejects it, even in dev mode");
+  const okReq = await gDev.extractTriage("Bearer patient-token", { messages: [{ role: "user", content: "hi" }] });
+  assert.strictEqual(okReq.status, 200);
+  assert.strictEqual(openRouterCalls.length, 1);
+  assert.strictEqual(openRouterCalls[0].headers.Authorization, "Bearer or-key", "the server-held key, never the caller's");
+  assert.ok(JSON.stringify(okReq.body).indexOf("or-key") === -1, "the key never appears in the response sent back to the client");
+
+  // No Supabase env configured (this repo's own docker-compose default): fails closed, never silently open.
+  const unconfigured = createGateway({ secret: SECRET, mode: "dev", openRouterApiKey: "or-key" });
+  assert.strictEqual((await unconfigured.extractTriage("Bearer x", {})).status, 503);
+
+  // No OpenRouter key configured: also fails closed rather than forwarding with an empty/missing key.
+  const noKey = createGateway({ secret: SECRET, mode: "dev", supabaseUrl: "http://sb", anonKey: "anon-key", fetchImpl: withOpenRouter(sb.fetchImpl) });
+  assert.strictEqual((await noKey.extractTriage("Bearer patient-token", {})).status, 503);
+}
+console.log("✓ triage proxy\n");
+
 console.log("REALTIME GATEWAY TESTS PASSED (100% GREEN)");

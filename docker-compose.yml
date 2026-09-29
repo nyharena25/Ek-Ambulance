@@ -53,6 +53,9 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      # /triage/extract (Phase B item 8): no default - unset means the route fail-closes with
+      # triage_unavailable rather than ever running with a blank/placeholder key.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
       - ./docker/mock-gateway:/app:ro
     healthcheck:

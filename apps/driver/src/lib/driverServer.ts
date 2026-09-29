@@ -1,4 +1,4 @@
-import { isUuid, mapRpcError, parseBoardResponse, type ApiResult, type BoardSnapshot, type GeoPoint } from "@sahayak/domain";
+import { isUuid, mapRpcError, newIdempotencyKey, parseBoardResponse, type ApiResult, type BoardSnapshot, type GeoPoint } from "@sahayak/domain";
 import { supabase } from "./supabaseClient";
 import { parseDriverProfile, type DriverProfile, type DriverProfilePatch, type ServiceZone } from "./driverProfile.core";
 import {
@@ -10,6 +10,8 @@ import {
   type ServerCall,
 } from "./driverServer.core";
 import type { QueuedTelemetryPing } from "../types/driverConnection.types";
+import { buildKycDocumentPath, extensionForMimeType, type ApplicationFieldsResult } from "./kycSubmission.core";
+import type { DocumentSlotKey } from "../state/driverOnboarding.store";
 
 /**
  * Supabase-bound Mission API for the driver app (DATA_AND_SYNC_SPECIFICATION.md 6.4.5). Never throws: failures return
@@ -190,5 +192,100 @@ export async function fetchHospitals(): Promise<HospitalRow[]> {
     return data.map(parseHospitalRow).filter((h): h is HospitalRow => h !== null);
   } catch {
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// KYC (5.4, mission_api.sql). `apps/driver/src/lib/kycSubmission.core.ts` holds the pure field/path mapping.
+// ---------------------------------------------------------------------------
+
+/** License, EMT and vehicle-tier fields (drivers row). Server-validated (PT422 application_incomplete on a
+ *  missing required field); the RPC upserts by id, so a second call before submission just updates the draft. */
+export async function submitDriverApplication(fields: ApplicationFieldsResult["fields"]): Promise<ApiResult<{ kycStatus: string }>> {
+  try {
+    const { data, error } = await supabase.rpc("upsert_driver_application", { p_fields: fields });
+    if (error) return { ok: false, error: mapRpcError(error) };
+    const d = data as { ok?: boolean; kycStatus?: unknown } | null;
+    return d?.ok && typeof d.kycStatus === "string" ? { ok: true, data: { kycStatus: d.kycStatus } } : { ok: false, error: { code: "invalid_response", status: 0, retryable: false } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Moves the application from draft/rejected to pending_verification. The server re-checks everything
+ *  (expiry dates, ACLS for TYPE_D_ALS, an active vehicle, the 3 required document slots) - this call either
+ *  succeeds for real or fails with the specific PT422 reason, never a client-invented "approved". */
+export async function submitKyc(): Promise<ApiResult<{ kycStatus: string; kycReference?: string; submittedAt?: string }>> {
+  try {
+    const { data, error } = await supabase.rpc("submit_kyc");
+    if (error) return { ok: false, error: mapRpcError(error) };
+    const d = data as { ok?: boolean; kycStatus?: unknown; kycReference?: unknown; submittedAt?: unknown } | null;
+    return d?.ok && typeof d.kycStatus === "string"
+      ? { ok: true, data: { kycStatus: d.kycStatus, kycReference: typeof d.kycReference === "string" ? d.kycReference : undefined, submittedAt: typeof d.submittedAt === "string" ? d.submittedAt : undefined } }
+      : { ok: false, error: { code: "invalid_response", status: 0, retryable: false } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Records this device's Expo push token for real dispatch delivery (G-21). `ignoreDuplicates` -> `ON
+ *  CONFLICT (driver_id, token) DO NOTHING`, matching the column-scoped update grant (token, platform only,
+ *  not driver_id): an upsert's `DO UPDATE` would try to also SET driver_id, which that grant does not allow. */
+export async function registerPushToken(driverId: string, token: string, platform: "android" | "ios" | "web"): Promise<ApiResult<true>> {
+  try {
+    const { error } = await supabase
+      .from("driver_push_tokens")
+      .upsert({ driver_id: driverId, token, platform }, { onConflict: "driver_id,token", ignoreDuplicates: true });
+    if (error) return { ok: false, error: mapRpcError(error) };
+    return { ok: true, data: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export interface UploadedKycDocument {
+  slot: DocumentSlotKey;
+  storagePath: string;
+  sizeBytes: number;
+}
+
+/** Uploads one document to the `driver-kyc-documents` bucket, then records it in `driver_documents`.
+ *  Update-then-insert (not `.upsert()`): the update-grant is column-scoped to
+ *  (storage_path, file_name, size_bytes, mime_type) - an upsert's DO UPDATE would try to also SET
+ *  driver_id/slot, which the grant does not permit and Postgres would refuse. */
+export async function uploadKycDocument(
+  driverId: string,
+  slot: DocumentSlotKey,
+  asset: { uri: string; name: string; mimeType: string | null | undefined }
+): Promise<ApiResult<UploadedKycDocument>> {
+  const extension = extensionForMimeType(asset.mimeType);
+  if (!extension) return { ok: false, error: { code: "unsupported_file_type", status: 0, retryable: false } };
+  try {
+    const response = await fetch(asset.uri);
+    const bytes = await response.arrayBuffer();
+    // A known RN gotcha: a file-URI-to-bytes read can silently produce zero bytes. Caught here, not left for
+    // the review step to discover a document that is present but empty.
+    if (bytes.byteLength === 0) return { ok: false, error: { code: "empty_file", status: 0, retryable: true } };
+    const storagePath = buildKycDocumentPath(driverId, slot, extension, newIdempotencyKey());
+    const { error: uploadError } = await supabase.storage
+      .from("driver-kyc-documents")
+      .upload(storagePath, bytes, { contentType: asset.mimeType ?? undefined, upsert: false });
+    if (uploadError) return { ok: false, error: { code: "upload_failed", status: 0, retryable: true, detail: uploadError.message } };
+
+    const row = { storage_path: storagePath, file_name: asset.name, size_bytes: bytes.byteLength, mime_type: asset.mimeType };
+    const { data: updated, error: updateError } = await supabase
+      .from("driver_documents")
+      .update(row)
+      .eq("driver_id", driverId)
+      .eq("slot", slot)
+      .select("id");
+    if (updateError) return { ok: false, error: mapRpcError(updateError) };
+    if (!updated || updated.length === 0) {
+      const { error: insertError } = await supabase.from("driver_documents").insert({ driver_id: driverId, slot, ...row });
+      if (insertError) return { ok: false, error: mapRpcError(insertError) };
+    }
+    return { ok: true, data: { slot, storagePath, sizeBytes: bytes.byteLength } };
+  } catch (e) {
+    return fail(e);
   }
 }

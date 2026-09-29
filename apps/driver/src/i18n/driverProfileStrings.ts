@@ -47,7 +47,6 @@ export interface DriverProfileTranslation {
   fieldError: Record<ProfileFieldError, string>;
   passwordError: Record<PasswordError, string>;
   invalidPhone: string;
-  devPhoneNote: string;
 }
 
 export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTranslation> = {
@@ -106,7 +105,6 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
       mismatch: "The two passwords do not match.",
     },
     invalidPhone: "Enter a valid 10-digit Indian mobile number.",
-    devPhoneNote: "Development build: use code 123456.",
   },
   hi: {
     title: "प्रोफ़ाइल",
@@ -163,6 +161,5 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
       mismatch: "दोनों पासवर्ड मेल नहीं खाते।",
     },
     invalidPhone: "सही 10 अंकों का भारतीय मोबाइल नंबर लिखें।",
-    devPhoneNote: "डेवलपमेंट बिल्ड: कोड 123456 का उपयोग करें।",
   },
 };

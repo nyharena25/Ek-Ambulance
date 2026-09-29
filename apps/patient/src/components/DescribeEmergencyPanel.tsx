@@ -33,9 +33,13 @@ export interface DescribeEmergencyPanelProps {
   language: "en" | "hi";
   /** Applies the suggestion to the form; returns true if the AI's tier was more severe than the engine's. */
   onExtracted: (extraction: TriageExtraction) => boolean;
+  /** The caller's real Supabase session token (verified by the gateway's /triage/extract proxy). Null/absent
+   *  (no real session, e.g. the anonymous quick-emergency path) degrades to manual triage below - the same
+   *  behavior the old "no key configured" case had, now gated on real auth instead of an env var. */
+  authToken?: string | null;
 }
 
-export default function DescribeEmergencyPanel({ language, onExtracted }: DescribeEmergencyPanelProps) {
+export default function DescribeEmergencyPanel({ language, onExtracted, authToken }: DescribeEmergencyPanelProps) {
   const s = STRINGS[language];
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
@@ -46,7 +50,7 @@ export default function DescribeEmergencyPanel({ language, onExtracted }: Descri
     if (loading || !text.trim()) return;
     setLoading(true);
     setStatus(null);
-    const result = await extractTriageIndicators(text);
+    const result = await extractTriageIndicators(text, { authToken });
     setLoading(false);
     setStatus(result.ok ? (onExtracted(result.data) ? "review" : "filled") : "failed");
   };
