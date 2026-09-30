@@ -1,5 +1,5 @@
 import type { IconRef } from "../components/AppIcon";
-import { SupportedLanguage } from "./onboardingStrings";
+import type { SupportedLanguage } from "./onboardingStrings";
 
 export interface DataInventoryItem {
   id: string;
@@ -32,7 +32,10 @@ export interface CompletionTranslation {
   receiptHeading: string;
   receiptSubtitle: string;
   mandateCitation: string;
+  /** Only for a distance the server measured from the transport-leg GPS track (distanceSource `measured`). */
   finalDistanceRow: (km: number) => string;
+  /** Every other case: the server billed the booking estimate, or the source is unknown. */
+  estimatedDistanceRow: (km: number) => string;
   baseFareRow: (initialKm: number) => string;
   additionalDistanceRow: (km: number, rate: number) => string;
   emtStaffingRow: string;
@@ -105,7 +108,9 @@ export const completionStrings: Record<
       "State-mandated tariff issued under Delhi Transport Department Emergency Gazette Order. Zero surge guarantee enforced.",
     mandateCitation: "Regulated Non-Surge Emergency Pricing under State Mandate",
     finalDistanceRow: (km: number) =>
-      `Final Route Traveled (${km.toFixed(1)} km)`,
+      `Route Traveled, GPS-measured (${km.toFixed(1)} km)`,
+    estimatedDistanceRow: (km: number) =>
+      `Booking Estimate, not GPS-measured (${km.toFixed(1)} km)`,
     baseFareRow: (initialKm: number) =>
       `Base Ambulance Tariff (Includes initial ${initialKm.toFixed(1)} km)`,
     additionalDistanceRow: (km: number, rate: number) =>
@@ -220,7 +225,9 @@ export const completionStrings: Record<
       "दिल्ली परिवहन विभाग आपातकालीन गजट आदेश के तहत जारी वैधानिक दरें। बिना-सर्ज गारंटी लागू।",
     mandateCitation: "शासकीय आदेशानुसार नियंत्रित बिना-सर्ज आपातकालीन दरें",
     finalDistanceRow: (km: number) =>
-      `कुल तय की गई दूरी (${km.toFixed(1)} किमी)`,
+      `तय की गई दूरी, GPS द्वारा मापी गई (${km.toFixed(1)} किमी)`,
+    estimatedDistanceRow: (km: number) =>
+      `बुकिंग के समय का अनुमान, GPS द्वारा मापी नहीं गई (${km.toFixed(1)} किमी)`,
     baseFareRow: (initialKm: number) =>
       `मूल एंबुलेंस किराया (प्रारंभिक ${initialKm.toFixed(1)} किमी सम्मिलित)`,
     additionalDistanceRow: (km: number, rate: number) =>
@@ -314,3 +321,12 @@ export const completionStrings: Record<
     returnHomeButton: "पूर्ण • होम स्क्रीन पर जाएं",
   },
 };
+
+/**
+ * The receipt's distance row names where the billed distance came from. Only a server-confirmed `measured` distance is
+ * called GPS-measured; the quote fallback, an older publisher and a receipt rebuilt without the completion record all read
+ * as the booking estimate. The amount itself is the server's either way.
+ */
+export function distanceRowLabel(strings: CompletionTranslation, km: number, source: "measured" | "estimate" | undefined): string {
+  return source === "measured" ? strings.finalDistanceRow(km) : strings.estimatedDistanceRow(km);
+}

@@ -283,4 +283,26 @@ for (const def of search.split(/create (?:or replace )?function /i).slice(1)) {
 }
 console.log("✓ extended search window\n");
 
+console.log("Test 16: busy-driver guard - a driver holding a mission is neither asked nor able to accept...");
+const busy = read("20261001000000_busy_driver_dispatch_guard.sql");
+const busyNext = busy.match(/create or replace function public\.dispatch_next_wave[\s\S]*?\n\$\$;/i)![0];
+assert.match(busyNext, /and not public\._driver_on_mission\(d\.id\)/, "dispatch_next_wave skips drivers on a mission");
+assert.match(busyNext, /cardinality\(x\.eligible_driver_ids\) > 0/, "the search-window rule is kept");
+const busyAccept = busy.match(/create or replace function public\.accept_offer[\s\S]*?\n\$\$;/i)![0];
+assert.match(busyAccept, /from public\.drivers where id = v_uid for update;/, "accept_offer locks the driver row, as claim_emergency does");
+assert.match(busyAccept, /_driver_on_mission\(v_uid\) then perform public\._fail\('already_on_mission', 'PT409'\)/, "accept_offer refuses a busy driver");
+assert.ok(busyAccept.indexOf("'replay', true", busyAccept.indexOf("m.driver_id = v_uid")) < busyAccept.indexOf("already_on_mission"), "a retried accept of the driver's own mission is still a replay");
+assert.ok(busyAccept.indexOf("already_on_mission") < busyAccept.indexOf("update public.missions set driver_id"), "checked before assignment");
+assert.doesNotMatch(busy, /grant |revoke /i, "create or replace keeps the existing grants");
+console.log("✓ busy-driver guard\n");
+
+console.log("Test 17: final fare source - named on the completion record, amount logic unchanged...");
+const fn = (sql: string) => sql.match(/create (?:or replace )?function public\.transition_mission\([\s\S]*?\n\$\$;/i)![0].replace(/^create (or replace )?/i, "");
+const sourced = read("20261001000001_final_fare_distance_source.sql");
+const sourceLine = "      'distanceSource', v_source,\n";
+assert.ok(fn(sourced).includes(`'finalFareInr', (v_fare ->> 'estimatedTotalInr')::integer,\n${sourceLine}`), "distanceSource sits next to finalFareInr on MISSION_COMPLETED");
+assert.strictEqual(fn(sourced).replace(sourceLine, ""), fn(read("20260924000003_mission_api.sql")), "transition_mission is otherwise byte-identical: no pricing change");
+assert.doesNotMatch(sourced, /grant |revoke /i, "create or replace keeps the existing grant");
+console.log("✓ final fare source\n");
+
 console.log("DATA & SYNC SCHEMA VALIDATION TESTS PASSED (100% GREEN)");

@@ -326,6 +326,7 @@ reset role;
 select t.eq(:'complete_seq'::text, '6', 'COMPLETE -> seq 6');
 select t.eq((select status::text from public.missions where id = :'m1'), 'completed', 'mission completed');
 select t.eq((select metadata -> 'audit' ->> 'distanceSource' from public.mission_events where mission_id = :'m1' and seq = 6), 'measured', 'billable distance measured from telemetry, not the quote');
+select t.eq((select metadata ->> 'distanceSource' from public.mission_events where mission_id = :'m1' and seq = 6), 'measured', 'the completion record names the source as a first-class field');
 select t.ok((select distance_km from public.missions where id = :'m1') between 11.0 and 11.3, 'measured transport leg is ~11.1 km');
 select t.ok((select final_fare_inr from public.missions where id = :'m1') between 640 and 665, 'final fare recomputed by the server from the measured distance');
 select t.eq((select (metadata ->> 'finalFareInr')::int from public.mission_events where mission_id = :'m1' and seq = 6), (select final_fare_inr from public.missions where id = :'m1'), 'event finalFareInr equals the stored fare');

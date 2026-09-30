@@ -1,0 +1,17 @@
+# PBL-ONLY TLS front (G4.4-PBL). Temporary university demo deployment, NOT production. Used only by docker-compose.pbl.yml.
+# PBL_HOST is <vm-ip-with-dashes>.sslip.io; Caddy obtains its certificate automatically (HTTP-01 on :80).
+{$PBL_HOST} {
+	# Mobile realtime clients (WSS). Caddy proxies the WebSocket upgrade as-is.
+	handle /connection/websocket {
+		reverse_proxy centrifugo:8000
+	}
+	# Hosted Supabase publish_realtime() -> pg_net -> <vault centrifugo_api_url>/api/publish (API-key protected).
+	# Only the publish method is exposed; every other Centrifugo API method stays unreachable from outside.
+	handle /api/publish {
+		reverse_proxy centrifugo:8000
+	}
+	# Everything else goes to Kong, which only routes /auth/v1, /rest/v1, /storage/v1/object, /realtime/token, /triage/extract.
+	handle {
+		reverse_proxy kong:8000
+	}
+}

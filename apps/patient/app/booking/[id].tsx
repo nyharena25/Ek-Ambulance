@@ -165,6 +165,7 @@ export default function BookingMissionTrackingRoute() {
         pickupAddress={pickupAddress}
         hospitalName={hospitalName}
         completedAt={context.completion?.completedAt}
+        distanceSource={context.completion?.distanceSource}
         fareDetails={
           (context.completion?.fareDetails as ItemizedStatutoryFare | undefined) ||
           context.fareDetails ||

@@ -37,6 +37,15 @@ begin
   end;
   raise exception 'FAIL %: expected SQLSTATE % but the statement succeeded', msg, state;
 end $$;
+
+-- The error code a refused RPC raised (_fail puts it in the message), for errors that share a SQLSTATE.
+create function t.err(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
 grant execute on all functions in schema t to authenticated, anon;
 
 -- ---------------------------------------------------------------------------
@@ -254,6 +263,8 @@ reset role;
 -- last offer wave (on the Booking board) until the window closes; with nobody to ask at any radius it still ends at once.
 -- ---------------------------------------------------------------------------
 update public.drivers set is_online = true, last_seen_at = now() where id in (:'d1', :'d2', :'d3');
+-- d2 has held the fallback fixture mission since the section above; a driver on a mission is never offered another, so it ends.
+update public.missions set status = 'cancelled', cancelled_at = now() where driver_id = :'d2' and status = 'en_route';
 select t.mission(0.009, 0, 'TYPE_D_ALS', 'S1 1km asked') as ms1 \gset
 select t.eq(public.dispatch_next_wave(:'ms1'), 1, 'wave 1 reaches the drivers within 3 km');
 update public.dispatch_waves set expires_at = now() - interval '1 second' where mission_id = :'ms1' and status = 'broadcasting';
@@ -278,6 +289,69 @@ select t.eq((select cancel_note from public.missions where id = :'ms1'), 'no_amb
 select t.mission(0.2, 0, 'TYPE_D_ALS', 'S2 22km away') as ms2 \gset
 select t.eq(public.dispatch_next_wave(:'ms2'), 0, 'nobody within 10 km to ask: nothing to wait for');
 select t.eq((select status::text from public.missions where id = :'ms2'), 'cancelled', 'so it ends at once, as before');
+
+-- ---------------------------------------------------------------------------
+-- Busy drivers and the offer path (migration 20261001000000): a driver holding a mission is never put in a wave and cannot
+-- accept an offer, including one sent before they became busy. d1 and d3 are ~1 km from these pickups, d2 ~7 km; all free.
+-- ---------------------------------------------------------------------------
+\set jwt_d2 '{"sub":"00000000-0000-4000-8000-000000000d02","role":"authenticated"}'
+select t.mission(0.009, 0, 'TYPE_D_ALS', 'BA') as mba \gset
+select t.mission(0.009, 0, 'TYPE_D_ALS', 'BB') as mbb \gset
+select t.eq(public.dispatch_next_wave(:'mba'), 1, 'BA: wave 1 opens');
+select t.eq(public.dispatch_next_wave(:'mbb'), 1, 'BB: wave 1 opens');
+select id as wba from public.dispatch_waves where mission_id = :'mba' and wave_number = 1 \gset
+select id as wbb from public.dispatch_waves where mission_id = :'mbb' and wave_number = 1 \gset
+select t.ok((select eligible_driver_ids @> array[:'d1', :'d3']::uuid[] and cardinality(eligible_driver_ids) = 2 from public.dispatch_waves where id = :'wbb'), 'while d1 is free it is asked for BB as well');
+
+select set_config('request.jwt.claims', :'jwt_d1', false);
+set role authenticated;
+select t.eq((public.accept_offer(:'wba', '00000000-0000-4000-8000-0000000000f2')) ->> 'status', 'en_route', 'd1 accepts BA');
+select t.eq((public.accept_offer(:'wba', '00000000-0000-4000-8000-0000000000f2')) ->> 'replay', 'true', 'a retried accept (same client event id) is a replay, not already_on_mission');
+select t.eq((public.accept_offer(:'wba', gen_random_uuid())) ->> 'replay', 'true', 'so is a retry with a fresh client event id');
+reset role;
+
+select state_version as bb_sv, (select count(*) from public.mission_events where mission_id = :'mbb') as bb_ev from public.missions where id = :'mbb' \gset
+select set_config('request.jwt.claims', :'jwt_d1', false);
+set role authenticated;
+select t.eq(t.err(format($$select public.accept_offer(%L, gen_random_uuid())$$, :'wbb')), 'already_on_mission', 'd1, now busy, cannot accept the BB offer it was sent while free');
+select t.raises(format($$select public.accept_offer(%L)$$, :'wbb'), 'PT409', 'the same SQLSTATE claim_emergency uses');
+select t.eq(t.err(format($$select public.claim_emergency(%L)$$, :'mbb')), 'already_on_mission', 'claim_emergency still refuses a busy driver');
+reset role;
+select t.eq((select status::text from public.missions where id = :'mbb'), 'requesting', 'the refused accept leaves BB requesting');
+select t.eq((select driver_id from public.missions where id = :'mbb'), null::uuid, 'with no driver');
+select t.eq((select state_version from public.missions where id = :'mbb'), :bb_sv, 'state_version unchanged');
+select t.eq((select count(*) from public.mission_events where mission_id = :'mbb'), :bb_ev::bigint, 'no event recorded');
+select t.eq((select status from public.dispatch_waves where id = :'wbb'), 'broadcasting', 'the BB wave still broadcasting');
+select t.eq((select accepted_by from public.dispatch_waves where id = :'wbb'), null::uuid, 'and accepted by nobody');
+select t.eq((select array_agg(id) from public.missions where driver_id = :'d1' and status not in ('completed', 'cancelled')), array[:'mba']::uuid[], 'd1 holds BA only');
+
+select set_config('request.jwt.claims', :'jwt_d3', false);
+set role authenticated;
+select t.eq((public.accept_offer(:'wbb')) ->> 'status', 'en_route', 'another driver on the same offer (d3) still takes BB');
+reset role;
+
+-- d1 (BA) and d3 (BB) are busy inside 3 km; d2 is free at ~7 km.
+select t.mission(0.009, 0, 'TYPE_D_ALS', 'BC') as mbc \gset
+select t.eq(public.dispatch_next_wave(:'mbc'), 3, 'BC: the busy crews do not use up waves 1 and 2; wave 3 opens at once');
+select t.eq((select array_agg(cardinality(eligible_driver_ids) order by wave_number) from public.dispatch_waves where mission_id = :'mbc'), array[0, 0, 1], 'waves 1 and 2 asked nobody');
+select t.eq((select eligible_driver_ids from public.dispatch_waves where mission_id = :'mbc' and wave_number = 3), array[:'d2']::uuid[], 'wave 3 asks the free d2 only');
+select id as wbc from public.dispatch_waves where mission_id = :'mbc' and wave_number = 3 \gset
+select set_config('request.jwt.claims', :'jwt_d2', false);
+set role authenticated;
+select t.eq((public.accept_offer(:'wbc')) ->> 'status', 'en_route', 'd2 takes BC');
+reset role;
+
+select t.mission(0.009, 0, 'TYPE_D_ALS', 'BD') as mbd \gset
+select t.eq(public.dispatch_next_wave(:'mbd'), 0, 'every ALS crew in range is busy: nobody to ask');
+select t.eq((select cancel_note from public.missions where id = :'mbd'), 'no_ambulance_available', 'so BD ends at once with the system cancel');
+
+select set_config('request.jwt.claims', :'jwt_p1', false);
+set role authenticated;
+select t.eq((public.cancel_mission(:'mba')) ->> 'status', 'cancelled', 'the patient cancels BA');
+reset role;
+select t.mission(0.009, 0, 'TYPE_D_ALS', 'BE') as mbe \gset
+select t.eq(public.dispatch_next_wave(:'mbe'), 1, 'BE: wave 1 opens');
+select t.eq((select eligible_driver_ids from public.dispatch_waves where mission_id = :'mbe' and wave_number = 1), array[:'d1']::uuid[], 'd1 is eligible again once its mission ended');
 
 -- ---------------------------------------------------------------------------
 -- Privileges

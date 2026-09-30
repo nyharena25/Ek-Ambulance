@@ -1,0 +1,38 @@
+# PBL-ONLY override (G4.4-PBL): temporary university demo on an Oracle Cloud VM, NOT the production deployment.
+# Layered on top of the production override, which it does not change (strict token-mint, secure Centrifugo, kong.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.pbl.yml up -d
+# Adds a Caddy TLS front on :80/:443 and moves Kong/Centrifugo off the public interface, so the only public entry
+# is https/wss://$PBL_HOST. Needs Docker Compose >= 2.24.4 (!override).
+services:
+  kong:
+    # Behind Caddy every request arrives from Caddy's IP, which would collapse kong.yml's per-IP rate limits into one
+    # shared bucket. Caddy overwrites X-Forwarded-For from untrusted clients, and Kong is loopback/Docker-network only.
+    environment:
+      KONG_TRUSTED_IPS: "0.0.0.0/0,::/0"
+      KONG_REAL_IP_HEADER: X-Forwarded-For
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  centrifugo:
+    ports: !override
+      - "127.0.0.1:8001:8000"
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      PBL_HOST: ${PBL_HOST:?PBL_HOST is required (e.g. 203-0-113-10.sslip.io)}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile.pbl:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - kong
+      - centrifugo
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

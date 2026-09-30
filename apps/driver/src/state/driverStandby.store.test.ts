@@ -1,5 +1,6 @@
 import assert from "node:assert";
-import { useDriverStandbyStore } from "./driverStandby.store.ts";
+import { heartbeatLocation, useDriverStandbyStore } from "./driverStandby.store.ts";
+import { setServerAdapter, type ServerAdapter } from "./driverLifecycle.store.ts";
 
 console.log("=================================================");
 console.log("Running Ek-Ambulance Driver Shift Standby Store Tests");
@@ -55,6 +56,35 @@ assert.strictEqual(
   "Redis geo key is namespaced by the registered AIS-125 tier"
 );
 console.log("✓ AIS-125 tier changes re-key the Redis presence namespace.\n");
+
+console.log("Test 7: before a real GPS fix nothing is sent as the driver's position, dev builds included (G4.7-C)...");
+{
+  const initial = useDriverStandbyStore.getInitialState();
+  assert.strictEqual(initial.hasRealFix, false, "a fresh store has no real fix, even where __DEV__ is true");
+  assert.strictEqual(heartbeatLocation(initial), null, "so the presence heartbeat sends nothing (the Noida preset is not a position)");
+
+  const presenceCalls: unknown[] = [];
+  setServerAdapter({
+    userId: "00000000-0000-4000-8000-00000000d0d0",
+    accessToken: "t",
+    setPresence: async (...args: unknown[]) => { presenceCalls.push(args); return { ok: true, data: true }; },
+  } as unknown as ServerAdapter);
+  useDriverStandbyStore.setState({ ...initial, isOnline: false });
+  useDriverStandbyStore.getState().setJurisdiction("DL_SOUTH");
+  assert.strictEqual(heartbeatLocation(useDriverStandbyStore.getState()), null, "a jurisdiction chip never makes a preset sendable");
+  await useDriverStandbyStore.getState().toggleOnlineState();
+  assert.strictEqual(useDriverStandbyStore.getState().presenceErrorCode, "no_gps_fix", "going online with a session and no fix is refused");
+  assert.strictEqual(useDriverStandbyStore.getState().isOnline, false);
+  assert.strictEqual(presenceCalls.length, 0, "set_driver_presence was never called with the preset");
+
+  const fix = { latitude: 28.6012, longitude: 77.2271, accuracyMeters: 9, heading: 0, speedKmh: 0, altitudeMeters: 0 };
+  useDriverStandbyStore.getState().setGps(fix);
+  assert.deepStrictEqual(heartbeatLocation(useDriverStandbyStore.getState()), fix, "after a fix the heartbeat sends that fix");
+  await useDriverStandbyStore.getState().toggleOnlineState();
+  assert.deepStrictEqual(presenceCalls, [[true, fix]], "going online sends the real fix");
+  setServerAdapter(null);
+}
+console.log("✓ The heartbeat and go-online send a real fix or nothing.\n");
 
 console.log("=================================================");
 console.log("ALL DRIVER SHIFT STANDBY STORE TESTS PASSED (100% GREEN)");

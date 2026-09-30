@@ -172,13 +172,33 @@ export function matchHospitalId(destination: GeoPoint, rows: HospitalRow[], maxK
   return best?.id ?? null;
 }
 
-/** PostgREST returns a geography column as GeoJSON or EWKB hex; only GeoJSON is used here (the app reads `hospitals` via a view-free select). */
+/**
+ * A geography POINT as PostgREST returns it: EWKB hex by default (what a plain `select` gets), GeoJSON when asked for.
+ * Anything else (another geometry type, bad hex) is null.
+ */
+export function readPoint(value: unknown): GeoPoint | null {
+  if (typeof value === "string") {
+    if (value.length < 42 || !/^([0-9a-fA-F]{2})+$/.test(value)) return null;
+    const bytes = new Uint8Array(value.length / 2);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(value.slice(i * 2, i * 2 + 2), 16);
+    const view = new DataView(bytes.buffer);
+    const le = bytes[0] === 1;
+    const type = view.getUint32(1, le);
+    const at = type & 0x20000000 ? 9 : 5; // EWKB SRID flag: 4 SRID bytes sit before the coordinates
+    if ((type & 0xffff) !== 1 || bytes.length < at + 16) return null;
+    const longitude = view.getFloat64(at, le);
+    const latitude = view.getFloat64(at + 8, le);
+    return Number.isFinite(longitude) && Number.isFinite(latitude) ? { longitude, latitude } : null;
+  }
+  const c = (value as { coordinates?: unknown } | null)?.coordinates;
+  return Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number" ? { longitude: c[0], latitude: c[1] } : null;
+}
+
 export function parseHospitalRow(row: unknown): HospitalRow | null {
   if (typeof row !== "object" || row === null) return null;
   const r = row as { id?: unknown; location?: unknown };
-  const c = (r.location as { coordinates?: unknown } | null)?.coordinates;
-  if (!isUuid(r.id) || !Array.isArray(c) || typeof c[0] !== "number" || typeof c[1] !== "number") return null;
-  return { id: r.id, longitude: c[0], latitude: c[1] };
+  const p = readPoint(r.location);
+  return isUuid(r.id) && p ? { id: r.id, ...p } : null;
 }
 
 export interface AssignedMissionRow {
@@ -192,9 +212,7 @@ export function parseAssignedMissionRow(row: unknown): AssignedMissionRow | null
   if (typeof row !== "object" || row === null) return null;
   const r = row as { id?: unknown; status?: unknown; pickup_location?: unknown };
   if (typeof r.id !== "string" || !isMissionStatus(r.status)) return null;
-  const c = (r.pickup_location as { coordinates?: unknown } | null)?.coordinates;
-  const pickup = Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number" ? { longitude: c[0], latitude: c[1] } : undefined;
-  return { missionId: r.id, status: r.status, pickup };
+  return { missionId: r.id, status: r.status, pickup: readPoint(r.pickup_location) ?? undefined };
 }
 
 // ---------------------------------------------------------------------------

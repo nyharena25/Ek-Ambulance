@@ -48,8 +48,9 @@ export interface DriverStandbyStoreState {
   redisPresence: RedisPresenceTelemetry;
   isOfflineModalOpen: boolean;
   /** True only once a real GPS fix has come in via setGps (useDriverLocation). Until then, `gps` is a city
-   *  preset placeholder - with a real server session, going online is refused rather than sending it as if
-   *  it were the driver's real position. Always true in __DEV__/no-session (the preset stands in on purpose). */
+   *  preset placeholder - with a real server session, going online is refused and the presence heartbeat sends
+   *  nothing, rather than sending it as if it were the driver's real position. Dev builds included: a __DEV__
+   *  build can hold a real session against a real project. Without a session the preset only drives the UI. */
   hasRealFix: boolean;
   /** The server's actual refusal reason for the last go-online attempt (e.g. "not_verified"), or a local
    *  "no_gps_fix" when refused before ever reaching the server. Cleared on the next attempt. */
@@ -88,6 +89,11 @@ const SOUTH_DELHI_COORDS: GpsCoordinates = {
   speedKmh: 0,
   altitudeMeters: 228,
 };
+
+/** What a presence heartbeat may send: the last real fix, or null before there is one (never a city preset). */
+export function heartbeatLocation(s: Pick<DriverStandbyStoreState, "gps" | "hasRealFix">): GpsCoordinates | null {
+  return s.hasRealFix ? s.gps : null;
+}
 
 function sendGoOnline(ais125Type: AIS125VehicleType, location: GpsCoordinates) {
   const server = getServerAdapter();
@@ -129,7 +135,7 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
     syncIntervalSec: 3,
   },
   isOfflineModalOpen: false,
-  hasRealFix: IS_DEV,
+  hasRealFix: false,
   presenceErrorCode: null,
 
   toggleOnlineState: async () => {

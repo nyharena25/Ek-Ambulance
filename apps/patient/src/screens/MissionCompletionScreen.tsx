@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { ItemizedStatutoryFare } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
-import { completionStrings } from "../i18n/completionStrings";
+import { completionStrings, distanceRowLabel } from "../i18n/completionStrings";
 
 import { AppIcon } from "../components";
 export interface MissionCompletionScreenProps {
@@ -28,6 +28,9 @@ export interface MissionCompletionScreenProps {
    *  domain contract StatutoryFareBottomSheet emits via onConfirmAndRequest. Required: a receipt screen must
    *  never silently substitute an invented fare when the real one is missing. */
   fareDetails: ItemizedStatutoryFare;
+  /** MISSION_COMPLETED.data.distanceSource. Only `measured` is shown as a GPS-measured distance; anything else
+   *  (the quote fallback, unknown, or a receipt rebuilt without the completion record) is shown as the booking estimate. */
+  distanceSource?: "measured" | "estimate";
   initialLanguage?: SupportedLanguage;
   /** Calls the real confirm_receipt RPC (dispute=false) before returning home; a no-op prop leaves confirmation
    *  unsent rather than inventing a local "confirmed" state. */
@@ -60,6 +63,7 @@ export default function MissionCompletionScreen({
   completedAt,
   onDownloadEmr,
   fareDetails,
+  distanceSource,
   initialLanguage = "en",
   onReturnHome,
   onDisputeFare,
@@ -301,7 +305,7 @@ export default function MissionCompletionScreen({
             {/* Final Distance Row */}
             <View style={styles.tableRow}>
               <Text style={styles.tableLabel}>
-                {strings.finalDistanceRow(fareDetails.totalDistanceKm)}
+                {distanceRowLabel(strings, fareDetails.totalDistanceKm, distanceSource)}
               </Text>
               <Text style={styles.tableValueBold}>
                 {fareDetails.totalDistanceKm.toFixed(1)} km

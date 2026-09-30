@@ -107,6 +107,13 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(readMissionCompleted({ receiptPath: null, finalFareInr: 585 }).receiptPath, undefined, "null receiptPath => still generating");
 assert.strictEqual(readMissionCompleted({ finalFareInr: 585 }).finalFareInr, 585);
+// The source of the billed distance (G4.7-C): only the server's own word counts, and unknown never reads as measured.
+assert.strictEqual(readMissionCompleted({ distanceSource: "measured" }).distanceSource, "measured");
+assert.strictEqual(readMissionCompleted({ distanceSource: "estimate" }).distanceSource, "estimate");
+assert.strictEqual(readMissionCompleted({ audit: { distanceSource: "estimate" } }).distanceSource, "estimate", "a stored row from before the field: read from audit");
+assert.strictEqual(readMissionCompleted({ distanceSource: "estimate", audit: { distanceSource: "measured" } }).distanceSource, "estimate", "the first-class field wins");
+assert.strictEqual(readMissionCompleted({ finalFareInr: 585 }).distanceSource, undefined, "an older publisher: unknown, not measured");
+assert.strictEqual(readMissionCompleted({ distanceSource: "gps" }).distanceSource, undefined, "an unknown value is not trusted");
 assert.strictEqual(readMissionCancelled({}).cancelledBy, undefined, "pre-v1 publisher: who cancelled is unknown, not invented");
 assert.deepStrictEqual(readMissionCancelled({ cancelledBy: "driver", reason: "vehicle_breakdown", fromState: "transporting" }), {
   cancelledBy: "driver",

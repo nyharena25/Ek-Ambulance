@@ -120,6 +120,12 @@ console.log("Test 4: hospital matching by position (fixtures have no ids)...");
   assert.strictEqual(matchHospitalId({ latitude: 28.6189, longitude: 77.3732 }, rows), null, "a hospital not in the table cannot take a hold");
   assert.strictEqual(matchHospitalId({ latitude: 28.5, longitude: 77.2 }, []), null);
   assert.deepStrictEqual(parseHospitalRow({ id: H, location: { type: "Point", coordinates: [77.21, 28.5672] } }), { id: H, longitude: 77.21, latitude: 28.5672 });
+  // What a plain PostgREST select actually returns for geography: EWKB hex (little-endian, SRID 4326). Seeded AIIMS row.
+  const aiims = "0101000020E61000003D0AD7A3704D53408C4AEA0434913C40";
+  assert.deepStrictEqual(parseHospitalRow({ id: H, location: aiims }), { id: H, longitude: 77.21, latitude: 28.5672 });
+  assert.deepStrictEqual(parseAssignedMissionRow({ id: M, status: "en_route", pickup_location: aiims })?.pickup, { longitude: 77.21, latitude: 28.5672 });
+  assert.strictEqual(parseHospitalRow({ id: H, location: "0102000020E61000003D0AD7A3704D53408C4AEA0434913C40" }), null, "not a point");
+  assert.strictEqual(parseHospitalRow({ id: H, location: "zz" }), null);
   assert.strictEqual(parseHospitalRow({ id: "x", location: null }), null);
   assert.strictEqual(parseHospitalRow(null), null);
   assert.deepStrictEqual(parseAssignedMissionRow({ id: M, status: "on_scene", pickup_location: { type: "Point", coordinates: [77.21, 28.5672] } }), { missionId: M, status: "on_scene", pickup: { longitude: 77.21, latitude: 28.5672 } });

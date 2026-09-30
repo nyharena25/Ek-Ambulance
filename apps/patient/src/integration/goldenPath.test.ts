@@ -10,7 +10,8 @@ import {
 } from "@sahayak/domain";
 import { isValidIndianMobile, toE164IndianPhone } from "../hooks/otpAuth.core.ts";
 import { createMockMissionChannel } from "../services/missionChannel.service.ts";
-import { translateLifecycleEvent } from "../services/missionLifecycleBridge.ts";
+import { translateLifecycleEvent, translateLifecycleMessage } from "../services/missionLifecycleBridge.ts";
+import { completionStrings, distanceRowLabel } from "../i18n/completionStrings.ts";
 import { parseCreateMissionResult } from "../lib/missionApi.core.ts";
 
 /**
@@ -213,6 +214,22 @@ console.log("  ✓ TRANSPORT_STARTED -> transporting.");
 mockChannel.controls.triggerMissionCompleted();
 assert.strictEqual(actor.getSnapshot().value, "awaitingReceipt", "MISSION_COMPLETED -> awaitingReceipt");
 console.log("  ✓ MISSION_COMPLETED -> awaitingReceipt.");
+
+// The receipt names where the billed distance came from (G4.7-C): the wire event goes through the real bridge, and only a
+// server-confirmed `measured` distance is labelled GPS-measured; the quote fallback and an unknown source never are.
+{
+  const receiptLabel = (data: Record<string, unknown>) => {
+    const ev = translateLifecycleMessage({ event: "MISSION_COMPLETED", data }, "m-1");
+    assert.strictEqual(ev.type, "SERVER_MISSION_COMPLETED");
+    return distanceRowLabel(completionStrings.en, 11.2, ev.type === "SERVER_MISSION_COMPLETED" ? ev.payload.completion?.distanceSource : undefined);
+  };
+  assert.strictEqual(receiptLabel({ finalFareInr: 655, distanceKm: 11.2, distanceSource: "measured" }), "Route Traveled, GPS-measured (11.2 km)");
+  assert.strictEqual(receiptLabel({ finalFareInr: 655, distanceKm: 11.2, distanceSource: "estimate" }), "Booking Estimate, not GPS-measured (11.2 km)");
+  assert.strictEqual(receiptLabel({ finalFareInr: 655, distanceKm: 11.2 }), "Booking Estimate, not GPS-measured (11.2 km)", "no source: never shown as measured");
+  assert.strictEqual(distanceRowLabel(completionStrings.en, 4, undefined), completionStrings.en.estimatedDistanceRow(4), "a receipt rebuilt without the completion record reads as the estimate");
+  assert.ok(!completionStrings.hi.estimatedDistanceRow(4).includes("मापी गई ("), "the Hindi estimate label does not claim a measurement");
+  console.log("  ✓ Receipt distance label follows the server's distanceSource; the fallback is never shown as measured.");
+}
 
 assert.deepStrictEqual(
   receivedEvents,

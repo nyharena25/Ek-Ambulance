@@ -21,7 +21,7 @@ import {
 } from "../lib/driverServer";
 import { getDevicePushToken } from "../services/dispatchNotifications";
 import { getServerAdapter, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
-import { useDriverStandbyStore } from "../state/driverStandby.store";
+import { heartbeatLocation, useDriverStandbyStore } from "../state/driverStandby.store";
 import { useDriverProfileStore } from "../state/driverProfile.store";
 import { mountMissionWatch, mountOffersChannel } from "../services/driverRealtime";
 import { dismissAllNotifications, notifyIncomingOffer } from "../services/dispatchNotifications";
@@ -179,7 +179,11 @@ export function useServerSync(): void {
   useEffect(() => {
     if (!session || !isOnline) return;
     const beat = async () => {
-      const result = await setPresence(true, useDriverStandbyStore.getState().gps);
+      // No real fix yet: send nothing. A beat without a position would still refresh last_seen_at on whatever position
+      // the server holds from an earlier session, and the city preset is not a position at all.
+      const location = heartbeatLocation(useDriverStandbyStore.getState());
+      if (!location) return;
+      const result = await setPresence(true, location);
       if (!result.ok && result.error.code === "not_verified" && getServerAdapter()) {
         // Not (or no longer) approved: never keep showing "online" for a driver the dispatcher cannot see.
         useDriverStandbyStore.getState().confirmGoOffline();

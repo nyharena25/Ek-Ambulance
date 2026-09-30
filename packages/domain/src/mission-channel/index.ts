@@ -214,15 +214,21 @@ export interface MissionCompletedData {
   distanceKm?: number;
   finalFareInr?: number;
   fareDetails?: Record<string, unknown>;
+  /** Where distanceKm (and so the fare) came from: `measured` from the transport-leg GPS track, `estimate` when the server
+   *  billed the quoted distance for want of a track (D-2). Absent from an older publisher: treat that as not measured. */
+  distanceSource?: "measured" | "estimate";
   /** null/absent while receipt generation is still running. */
   receiptPath?: string;
 }
+const asDistanceSource = (v: unknown): "measured" | "estimate" | undefined => (v === "measured" || v === "estimate" ? v : undefined);
 export function readMissionCompleted(data: Record<string, unknown>): MissionCompletedData {
   return {
     completedAt: asString(data.completedAt),
     distanceKm: asNumber(data.distanceKm),
     finalFareInr: asNumber(data.finalFareInr),
     fareDetails: asObject(data.fareDetails),
+    // Stored rows written before the field existed carry it only under audit (the wire strips audit).
+    distanceSource: asDistanceSource(data.distanceSource) ?? asDistanceSource(asObject(data.audit)?.distanceSource),
     receiptPath: asString(data.receiptPath),
   };
 }
