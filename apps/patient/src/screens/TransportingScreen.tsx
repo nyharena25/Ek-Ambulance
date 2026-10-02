@@ -18,12 +18,14 @@ import { transportingStrings } from "../i18n/transportingStrings";
 
 import { AppIcon, MapViewPort, type DriverMarkerHandle } from "../components";
 import type { MapRoute } from "../hooks/useDrivingRoute";
-import { DEFAULT_PICKUP, findHospital } from "../services/mapGeo.core";
+import { DEFAULT_PICKUP } from "../services/mapGeo.core";
 
 export interface TransportingScreenProps {
   missionId?: string;
   patientName?: string;
   vehicleType?: AIS125VehicleType;
+  /** From the server's DRIVER_ACCEPTED event (assignedDriver.vehicleRegistration). */
+  vehicleRegistration?: string;
   /** The hospital the driver selected (TRANSPORT_STARTED.destination). Absent => "not confirmed yet", never a default hospital. */
   hospitalName?: string;
   /** Only when the server actually made a bed hold; otherwise the ward card is not shown. */
@@ -43,6 +45,8 @@ export interface TransportingScreenProps {
   /** Live pings move the marker through this handle, so no screen re-renders per ping. */
   driverMarkerRef?: Ref<DriverMarkerHandle>;
   driverStart?: GeoPoint;
+  /** The hospital's real coordinate (TRANSPORT_STARTED.destination); absent => no hospital marker, never a guessed one. */
+  destinationCoordinate?: GeoPoint;
   /** Safe-for-text live speed, throttled upstream to at most one update
    *  every ~2s - see useMissionChannel's throttledTelemetry. */
   liveSpeedKmh?: number | null;
@@ -61,6 +65,7 @@ export interface TransportingScreenProps {
  */
 export default function TransportingScreen({
   missionId = "",
+  vehicleRegistration,
   vehicleType = "TYPE_D_ALS",
   hospitalName,
   wardStatus,
@@ -74,7 +79,8 @@ export default function TransportingScreen({
   pickup = DEFAULT_PICKUP,
   route,
   driverMarkerRef,
-  driverStart = pickup,
+  driverStart,
+  destinationCoordinate,
   liveSpeedKmh,
 }: TransportingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
@@ -82,7 +88,7 @@ export default function TransportingScreen({
 
   const strings = transportingStrings[language];
 
-  const hospital = findHospital(hospitalName ?? "");
+  const hospital = hospitalName && destinationCoordinate ? { label: hospitalName, coordinate: destinationCoordinate } : undefined;
 
   // ---------------------------------------------------------------------------
   // FAMILY EMERGENCY SHARE HANDLERS (WHATSAPP & SMS)
@@ -357,61 +363,6 @@ export default function TransportingScreen({
             </View>
           </View>
 
-          {/* 3. ONBOARD CLINICAL TELEMETRY CARD (AIS-125) */}
-          <View style={styles.card}>
-            <Text style={styles.cardSectionLabel}>
-              {strings.telemetrySectionTitle}
-            </Text>
-
-            <View style={styles.vitalsGrid}>
-              <View style={styles.vitalCard}>
-                <AppIcon icon={{ set: "mci", name: "heart-pulse" }} size={16} color={colors.slate700} style={styles.vitalIcon} />
-                <Text style={styles.vitalLabel}>
-                  {strings.vitalHeartRateLabel}
-                </Text>
-                <Text style={styles.vitalValue}>
-                  {strings.vitalHeartRateValue}
-                </Text>
-              </View>
-
-              <View style={styles.vitalCard}>
-                <AppIcon icon={{ set: "mci", name: "lungs" }} size={16} color={colors.slate700} style={styles.vitalIcon} />
-                <Text style={styles.vitalLabel}>
-                  {strings.vitalSpO2Label}
-                </Text>
-                <Text style={styles.vitalValue}>
-                  {strings.vitalSpO2Value}
-                </Text>
-              </View>
-
-              <View style={styles.vitalCard}>
-                <AppIcon icon={{ set: "mci", name: "blood-bag" }} size={16} color={colors.slate700} style={styles.vitalIcon} />
-                <Text style={styles.vitalLabel}>
-                  {strings.vitalBloodPressureLabel}
-                </Text>
-                <Text style={styles.vitalValue}>
-                  {strings.vitalBloodPressureValue}
-                </Text>
-              </View>
-
-              <View style={styles.vitalCard}>
-                <AppIcon icon={{ set: "ion", name: "flash" }} size={16} color={colors.slate700} style={styles.vitalIcon} />
-                <Text style={styles.vitalLabel}>
-                  {strings.vitalOxygenFlowLabel}
-                </Text>
-                <Text style={styles.vitalValue}>
-                  {strings.vitalOxygenFlowValue}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.paramedicNoteBanner}>
-              <Text style={styles.paramedicNoteText}>
-                <AppIcon icon={{ set: "ion", name: "man" }} size={11} />{" "}{strings.paramedicObservation}
-              </Text>
-            </View>
-          </View>
-
           {/* 4. AMBULANCE REGISTRATION & CREW CONTACT */}
           <View style={styles.card}>
             <Text style={styles.cardSectionLabel}>
@@ -419,15 +370,17 @@ export default function TransportingScreen({
             </Text>
 
             <View style={styles.vehicleRow}>
-              {/* Indian HSRP Number Plate */}
-              <View style={styles.hsrpPlate}>
-                <View style={styles.hsrpIndStrip}>
-                  <Text style={styles.hsrpIndText}>IND</Text>
+              {/* The plate the server sent with DRIVER_ACCEPTED; nothing is shown without one. */}
+              {vehicleRegistration ? (
+                <View style={styles.hsrpPlate}>
+                  <View style={styles.hsrpIndStrip}>
+                    <Text style={styles.hsrpIndText}>IND</Text>
+                  </View>
+                  <Text style={styles.hsrpNumberText} numberOfLines={1}>
+                    {vehicleRegistration}
+                  </Text>
                 </View>
-                <Text style={styles.hsrpNumberText}>
-                  {strings.vehicleLicensePlate}
-                </Text>
-              </View>
+              ) : null}
 
               <View style={styles.careTierPill}>
                 <Text style={styles.careTierPillText}>
@@ -511,11 +464,13 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   headerMissionId: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,
@@ -604,24 +559,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.extrabold,
     color: colors.emergencyDark,
     letterSpacing: 0.3,
-  },
-  greenCorridorTag: {
-    backgroundColor: colors.successLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.success,
-  },
-  greenCorridorTagText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.success,
-  },
-  routeCorridorNoticeText: {
-    fontSize: 11,
-    color: colors.slate700,
-    marginTop: 2,
   },
 
   // ===========================================================================
@@ -726,11 +663,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
-  hospitalSubtitleText: {
-    fontSize: 11,
-    color: colors.slate600,
-    marginTop: 1,
-  },
 
   // Prominent Ward Readiness Banner
   wardReadinessBanner: {
@@ -758,39 +690,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: colors.white,
     letterSpacing: 0.5,
-  },
-  wardBannerHeading: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.success,
-    flex: 1,
-  },
-  wardBannerSubtext: {
-    fontSize: 11,
-    color: colors.slate800,
-    lineHeight: 16,
-  },
-  readinessDetailsList: {
-    gap: spacing.sm,
-  },
-  readinessItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate50,
-    padding: spacing.sm,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  readinessItemIcon: {
-    fontSize: 16,
-    marginRight: spacing.sm,
-  },
-  readinessItemText: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate800,
-    flex: 1,
   },
 
   // Emergency Share Card
@@ -848,6 +747,7 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   whatsAppButtonText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
@@ -865,6 +765,7 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   smsButtonText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
@@ -882,47 +783,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.slate300,
     ...shadows.sm,
-  },
-  vitalsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  vitalCard: {
-    width: "48%",
-    backgroundColor: colors.slate50,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  vitalIcon: {
-    fontSize: 16,
-    marginBottom: 2,
-  },
-  vitalLabel: {
-    fontSize: 9,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.slate500,
-    letterSpacing: 0.4,
-  },
-  vitalValue: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-    marginTop: 2,
-  },
-  paramedicNoteBanner: {
-    backgroundColor: colors.infoLight,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  paramedicNoteText: {
-    fontSize: 11,
-    color: colors.info,
-    fontWeight: typography.fontWeights.semibold,
   },
 
   // Vehicle and Crew

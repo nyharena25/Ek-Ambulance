@@ -9,22 +9,15 @@ import {
   Modal,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, typography, spacing, radii, shadows, timerTones } from "@sahayak/ui";
-import {
-  DISPATCH_CONFIG,
-  boardSecondsLeft,
-  boardTimerTone,
-  formatBoardTimer,
-  offerWavesOver,
-  searchWaveAt,
-  type AIS125VehicleType,
-} from "@sahayak/domain";
+import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { formatBoardTimer, type AIS125VehicleType } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { matchingStrings } from "../i18n/matchingStrings";
 
-import { AppIcon, SearchRadar } from "../components";
+import { AppIcon } from "../components";
 export interface ActiveMatchingScreenProps {
   vehicleType?: AIS125VehicleType;
   pickupAddress?: string;
@@ -38,17 +31,9 @@ export interface ActiveMatchingScreenProps {
 }
 
 /**
- * ActiveMatchingScreen for Ek-Ambulance
- *
- * Represents the XState dispatch broadcast and driver matching lifecycle:
- * - Search radar (SearchRadar): three zones (3 / 6 / 10 km) fill green, yellow, orange as the search arrives; red, then 108.
- * - Multi-wave dispatch progress indicator:
- *     Wave 1: 0-3 km (Immediate Local Fleet)
- *     Wave 2: 3-6 km (Expanded Regional Fleet)
- * - Driver acceptance countdown timer with automatic wave escalation.
- * - Immediate Cancel action with safe cancellation reason confirmation modal.
- * - Prominent, floating "Emergency 108 Call Fallback" pill.
- * - WCAG AAA compliant contrast, high-visibility medical typography, and bilingual i18n.
+ * Searching state: the server has the request (create_mission succeeded) and no driver has accepted yet. Shows only
+ * what is known - request received, time since the server created it, ambulance type, pickup - plus Cancel and 108.
+ * The route (booking/matching.tsx) moves on when the server's DRIVER_ACCEPTED or cancellation arrives.
  */
 export default function ActiveMatchingScreen({
   vehicleType = "TYPE_D_ALS",
@@ -66,8 +51,9 @@ export default function ActiveMatchingScreen({
 
   const strings = matchingStrings[language];
 
-  // One clock, the same one a driver's Booking card counts: the deadline is one wave window after the request was made, and
-  // the timer goes negative (red) once it has passed. The wave is derived from elapsed time, not from a second timer.
+  // Only facts the app actually has: the server's creation time and how long ago that was. Which dispatch wave the server
+  // is on is not sent to the patient, so no radius, countdown or progress is shown - a guess could be wrong (empty waves
+  // are skipped at once). The screen changes when the server's DRIVER_ACCEPTED or cancellation arrives.
   const mountedAtMs = useRef(Date.now()).current;
   const startedAt = startedAtMs ?? mountedAtMs;
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -75,11 +61,8 @@ export default function ActiveMatchingScreen({
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const elapsedSeconds = Math.max(0, (nowMs - startedAt) / 1000);
-  const secondsLeft = boardSecondsLeft(new Date(startedAt + DISPATCH_CONFIG.waveWindowSeconds * 1000).toISOString(), nowMs);
-  const tone = timerTones[boardTimerTone(secondsLeft)];
-  const currentWave = searchWaveAt(elapsedSeconds);
-  const wavesOver = offerWavesOver(elapsedSeconds);
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - startedAt) / 1000));
+  const requestedAt = startedAtMs !== undefined ? new Date(startedAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
 
   // ---------------------------------------------------------------------------
   // EMERGENCY 108 CALL HANDLER
@@ -201,248 +184,18 @@ export default function ActiveMatchingScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* SEARCH RADAR: three zones (3 / 6 / 10 km) fill green, yellow, orange as the search arrives; red, then 108, when none accepts */}
-        <SearchRadar wave={currentWave} overtime={wavesOver} strings={strings} />
-
-        {/* DRIVER ACCEPTANCE COUNTDOWN CARD */}
-        <View style={styles.countdownCard}>
-          <View style={styles.countdownHeaderRow}>
-            <View style={styles.countdownTitleGroup}>
-              <Text style={styles.countdownTitle}>{strings.countdownLabel}</Text>
-              <Text style={styles.countdownSubtitle}>
-                {secondsLeft >= 0 ? strings.countdownSubtext(secondsLeft) : strings.countdownOverdue}
-              </Text>
-            </View>
-
-            {/* Large Clock Display */}
-            <View style={[styles.countdownBadge, { backgroundColor: tone.surface, borderColor: tone.fill }]}>
-              <AppIcon icon={{ set: "ion", name: "timer-outline" }} size={18} color={tone.text} style={styles.countdownClockIcon} />
-              <Text style={[styles.countdownTimeText, { color: tone.text }]}>{formatBoardTimer(secondsLeft)}</Text>
-            </View>
+        {/* REQUEST RECEIVED + SEARCHING */}
+        <View style={styles.searchCard} accessibilityLiveRegion="polite">
+          <View style={styles.receivedRow}>
+            <AppIcon icon={{ set: "ion", name: "checkmark-circle" }} size={22} color={colors.success} />
+            <Text style={styles.receivedText}>{strings.receivedTitle}</Text>
           </View>
-
-          {/* Wave Escalation Notice once the search has widened past wave 1 */}
-          {currentWave >= 2 && (
-            <View style={[styles.wave2AlertBanner, wavesOver && { backgroundColor: timerTones.red.surface, borderColor: timerTones.red.fill }]}>
-              <AppIcon icon={{ set: "ion", name: wavesOver ? "call" : "flash" }} size={16} color={wavesOver ? timerTones.red.text : colors.slate700} style={styles.wave2AlertIcon} />
-              <Text style={[styles.wave2AlertText, wavesOver && { color: timerTones.red.text }]}>
-                {wavesOver ? strings.searchExtendedNotice : currentWave === 3 ? strings.wave3EscalatedNotice : strings.waveEscalatedNotice}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* DISPATCH WAVES PROGRESS INDICATOR */}
-        <View style={styles.wavesCard}>
-          <Text style={styles.wavesSectionHeader}>
-            {strings.wavesSectionTitle}
-          </Text>
-
-          <View style={styles.wavesTrackerContainer}>
-            {/* Wave 1: 0-3 km */}
-            <View style={styles.waveItem}>
-              <View style={styles.waveIndicatorColumn}>
-                <View
-                  style={[
-                    styles.waveStepCircle,
-                    currentWave === 1
-                      ? styles.waveStepCircleActive
-                      : styles.waveStepCircleCompleted,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.waveStepNumber,
-                      currentWave === 1
-                        ? styles.waveStepNumberActive
-                        : styles.waveStepNumberCompleted,
-                    ]}
-                  >
-                    {currentWave === 1 ? (
-                    "1"
-                  ) : (
-                    <AppIcon icon={{ set: "ion", name: "checkmark" }} size={13} />
-                  )}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.waveConnectingLine,
-                    currentWave >= 2 && styles.waveConnectingLineActive,
-                  ]}
-                />
-              </View>
-
-              <View style={styles.waveDetailsColumn}>
-                <View style={styles.waveTitleRow}>
-                  <Text style={styles.waveTitleText}>{strings.wave1Title}</Text>
-                  <View
-                    style={[
-                      styles.waveStatusTag,
-                      currentWave === 1
-                        ? styles.waveStatusTagActive
-                        : styles.waveStatusTagCompleted,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.waveStatusTagText,
-                        currentWave === 1
-                          ? styles.waveStatusTagTextActive
-                          : styles.waveStatusTagTextCompleted,
-                      ]}
-                    >
-                      {currentWave === 1 ? "ACTIVE" : "ELAPSED"}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.waveSubtitleText}>
-                  {strings.wave1Subtitle}
-                </Text>
-                <Text style={styles.waveStatusDescription}>
-                  {currentWave === 1
-                    ? strings.wave1StatusActive
-                    : strings.wave1StatusCompleted}
-                </Text>
-              </View>
-            </View>
-
-            {/* Wave 2: 3-6 km */}
-            <View style={styles.waveItem}>
-              <View style={styles.waveIndicatorColumn}>
-                <View
-                  style={[
-                    styles.waveStepCircle,
-                    currentWave === 2
-                      ? styles.waveStepCircleActive
-                      : currentWave === 3
-                        ? styles.waveStepCircleCompleted
-                        : styles.waveStepCirclePending,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.waveStepNumber,
-                      currentWave === 2
-                        ? styles.waveStepNumberActive
-                        : currentWave === 3
-                          ? styles.waveStepNumberCompleted
-                          : styles.waveStepNumberPending,
-                    ]}
-                  >
-                    {currentWave === 3 ? (
-                      <AppIcon icon={{ set: "ion", name: "checkmark" }} size={13} />
-                    ) : (
-                      "2"
-                    )}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.waveConnectingLine,
-                    currentWave === 3 && styles.waveConnectingLineActive,
-                  ]}
-                />
-              </View>
-
-              <View style={styles.waveDetailsColumn}>
-                <View style={styles.waveTitleRow}>
-                  <Text style={styles.waveTitleText}>{strings.wave2Title}</Text>
-                  <View
-                    style={[
-                      styles.waveStatusTag,
-                      currentWave === 2
-                        ? styles.waveStatusTagActive
-                        : currentWave === 3
-                          ? styles.waveStatusTagCompleted
-                          : styles.waveStatusTagPending,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.waveStatusTagText,
-                        currentWave === 2
-                          ? styles.waveStatusTagTextActive
-                          : currentWave === 3
-                            ? styles.waveStatusTagTextCompleted
-                            : styles.waveStatusTagTextPending,
-                      ]}
-                    >
-                      {currentWave === 2 ? "ACTIVE" : currentWave === 3 ? "ELAPSED" : "NEXT"}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.waveSubtitleText}>
-                  {strings.wave2Subtitle}
-                </Text>
-                <Text style={styles.waveStatusDescription}>
-                  {currentWave === 2
-                    ? strings.wave2StatusActive
-                    : currentWave === 3
-                      ? strings.waveWindowElapsed
-                      : strings.wave2StatusPending}
-                </Text>
-              </View>
-            </View>
-
-            {/* Wave 3: 6-10 km */}
-            <View style={styles.waveItem}>
-              <View style={styles.waveIndicatorColumn}>
-                <View
-                  style={[
-                    styles.waveStepCircle,
-                    currentWave === 3
-                      ? styles.waveStepCircleActive
-                      : styles.waveStepCirclePending,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.waveStepNumber,
-                      currentWave === 3
-                        ? styles.waveStepNumberActive
-                        : styles.waveStepNumberPending,
-                    ]}
-                  >
-                    3
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.waveDetailsColumn}>
-                <View style={styles.waveTitleRow}>
-                  <Text style={styles.waveTitleText}>{strings.wave3Title}</Text>
-                  <View
-                    style={[
-                      styles.waveStatusTag,
-                      currentWave === 3
-                        ? styles.waveStatusTagActive
-                        : styles.waveStatusTagPending,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.waveStatusTagText,
-                        currentWave === 3
-                          ? styles.waveStatusTagTextActive
-                          : styles.waveStatusTagTextPending,
-                      ]}
-                    >
-                      {currentWave === 3 ? "ACTIVE" : "NEXT"}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.waveSubtitleText}>
-                  {strings.wave3Subtitle}
-                </Text>
-                <Text style={styles.waveStatusDescription}>
-                  {currentWave === 3
-                    ? strings.wave3StatusActive
-                    : strings.wave3StatusPending}
-                </Text>
-              </View>
-            </View>
+          <View style={styles.findingRow}>
+            <ActivityIndicator size="large" color={colors.emergency} />
+            <Text style={styles.findingTitle}>{strings.findingTitle}</Text>
           </View>
+          <Text style={styles.findingSubtitle}>{strings.findingSubtitle}</Text>
+          <Text style={styles.elapsedText}>{strings.searchingFor(formatBoardTimer(elapsedSeconds))}</Text>
         </View>
 
         {/* MISSION CONTEXT CARD */}
@@ -455,12 +208,17 @@ export default function ActiveMatchingScreen({
               <Text style={styles.contextLabel}>
                 {strings.requestedVehicleLabel}
               </Text>
-              <Text style={styles.contextMainValue}>
-                {vehicleType.replace(/_/g, " ")}
+              <Text style={styles.contextMainValue} numberOfLines={2}>
+                {strings.vehicleTypeName[vehicleType] ?? vehicleType}
               </Text>
               <Text style={styles.contextSubValue}>
                 {strings.lifeSupportTelemetry}
               </Text>
+              {requestedAt && (
+                <Text style={styles.contextSubValue}>
+                  {strings.requestedAtLabel} {requestedAt}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -508,17 +266,17 @@ export default function ActiveMatchingScreen({
       <View style={styles.floatingPillContainer}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${wavesOver ? strings.call108Now : strings.fallbackPillTitle} - ${strings.fallbackPillSubtitle}`}
+          accessibilityLabel={`${strings.fallbackPillTitle} - ${strings.fallbackPillSubtitle}`}
           accessibilityHint="Directly dials national 108 ambulance emergency helpline"
-          style={[styles.floating108Pill, wavesOver && styles.floating108PillUrgent]}
+          style={styles.floating108Pill}
           onPress={handleCall108}
         >
           <View style={styles.pillIconCircle}>
             <AppIcon icon={{ set: "ion", name: "call" }} size={18} color={colors.slate700} style={styles.pillPhoneIcon} />
           </View>
           <View style={styles.pillTextGroup}>
-            <Text style={[styles.pillTitleText, wavesOver && styles.pillTitleTextUrgent]}>
-              {wavesOver ? strings.call108Now : strings.fallbackPillTitle}
+            <Text style={styles.pillTitleText}>
+              {strings.fallbackPillTitle}
             </Text>
             <Text style={styles.pillSubtitleText}>
               {strings.fallbackPillSubtitle}
@@ -616,6 +374,47 @@ export default function ActiveMatchingScreen({
 }
 
 const styles = StyleSheet.create({
+  searchCard: {
+    backgroundColor: colors.white,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  receivedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  receivedText: {
+    flexShrink: 1,
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.success,
+  },
+  findingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  findingTitle: {
+    flexShrink: 1,
+    fontSize: typography.fontSizes["2xl"],
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.slate900,
+  },
+  findingSubtitle: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate700,
+    lineHeight: 20,
+  },
+  elapsedText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.slate600,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.slate100,
@@ -710,205 +509,10 @@ const styles = StyleSheet.create({
   // ---------------------------------------------------------------------------
   // COUNTDOWN CARD
   // ---------------------------------------------------------------------------
-  countdownCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    ...shadows.sm,
-  },
-  countdownHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  countdownTitleGroup: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  countdownTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-    marginBottom: 2,
-  },
-  countdownSubtitle: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate600,
-    lineHeight: 16,
-  },
-  countdownBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate100,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.lg,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-  },
-  countdownClockIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  countdownTimeText: {
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.slate900,
-    letterSpacing: 0.5,
-  },
-  wave2AlertBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.warningLight,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    marginTop: spacing.md,
-  },
-  wave2AlertIcon: {
-    fontSize: 16,
-    marginRight: spacing.sm,
-  },
-  wave2AlertText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.warning,
-    flex: 1,
-  },
 
   // ---------------------------------------------------------------------------
   // DISPATCH WAVES PROGRESS TRACKER
   // ---------------------------------------------------------------------------
-  wavesCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    ...shadows.sm,
-  },
-  wavesSectionHeader: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.slate600,
-    letterSpacing: 0.5,
-    marginBottom: spacing.md,
-  },
-  wavesTrackerContainer: {
-    gap: 0,
-  },
-  waveItem: {
-    flexDirection: "row",
-  },
-  waveIndicatorColumn: {
-    alignItems: "center",
-    width: 32,
-  },
-  waveStepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    zIndex: 2,
-  },
-  waveStepCircleActive: {
-    backgroundColor: colors.emergency,
-    borderColor: colors.emergencyDark,
-  },
-  waveStepCircleCompleted: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
-  },
-  waveStepCirclePending: {
-    backgroundColor: colors.slate100,
-    borderColor: colors.slate300,
-  },
-  waveStepNumber: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.extrabold,
-  },
-  waveStepNumberActive: {
-    color: colors.white,
-  },
-  waveStepNumberCompleted: {
-    color: colors.white,
-  },
-  waveStepNumberPending: {
-    color: colors.slate500,
-  },
-  waveConnectingLine: {
-    width: 2,
-    height: 48,
-    backgroundColor: colors.slate300,
-    marginVertical: -2,
-  },
-  waveConnectingLineActive: {
-    backgroundColor: colors.emergency,
-  },
-  waveDetailsColumn: {
-    flex: 1,
-    marginLeft: spacing.md,
-    paddingBottom: spacing.lg,
-  },
-  waveTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  waveTitleText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  waveStatusTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-  },
-  waveStatusTagActive: {
-    backgroundColor: colors.emergencyLight,
-    borderWidth: 1,
-    borderColor: colors.emergency,
-  },
-  waveStatusTagCompleted: {
-    backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: colors.success,
-  },
-  waveStatusTagPending: {
-    backgroundColor: colors.slate100,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-  },
-  waveStatusTagText: {
-    fontSize: 9,
-    fontWeight: "800",
-  },
-  waveStatusTagTextActive: {
-    color: colors.emergencyDark,
-  },
-  waveStatusTagTextCompleted: {
-    color: colors.success,
-  },
-  waveStatusTagTextPending: {
-    color: colors.slate600,
-  },
-  waveSubtitleText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.medium,
-    color: colors.slate700,
-    marginTop: 2,
-  },
-  waveStatusDescription: {
-    fontSize: 11,
-    color: colors.slate600,
-    marginTop: 2,
-  },
 
   // ---------------------------------------------------------------------------
   // MISSION CONTEXT CARD
@@ -1009,14 +613,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   // Once every zone has been searched, calling 108 is the action: taller, darker, white-edged.
-  floating108PillUrgent: {
-    minHeight: 68,
-    backgroundColor: colors.emergencyDark,
-    borderColor: colors.white,
-  },
-  pillTitleTextUrgent: {
-    fontSize: typography.fontSizes.base,
-  },
   pillIconCircle: {
     width: 38,
     height: 38,

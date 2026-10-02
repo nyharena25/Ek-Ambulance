@@ -1,33 +1,24 @@
 import { Redirect, useRouter } from "expo-router";
-import { Linking } from "react-native";
+import { Linking, View } from "react-native";
+import { colors } from "@sahayak/ui";
 import { OnboardingScreen } from "../src/screens";
-import { usePatientLifecycleStore } from "../src/state/patientLifecycle.store";
+import { realAccessToken, usePatientAuthStore } from "../src/state/patientAuth.store";
 
-export default function OnboardingRoute() {
+/** Entry: a signed-in patient goes straight home; everyone else sees Welcome (Sign in / Create account / Call 108). */
+export default function WelcomeRoute() {
   const router = useRouter();
-  const currentState = usePatientLifecycleStore((s) => s.currentState);
-  // Terminal states are dead ends; a cold launch is always idle, so onboarding stays reachable.
-  if (currentState === "cancelled" || currentState === "receiptConfirmed") return <Redirect href="/(tabs)/home" />;
+  const session = usePatientAuthStore((s) => s.session);
+  const isInitializing = usePatientAuthStore((s) => s.isInitializing);
 
-  const handleQuickEmergencyAccess = () => {
-    // Zero-friction emergency dispatch: routes directly to clinical symptom triage
-    router.push("/booking/triage");
-  };
-
-  const handleSignInWithPhone = () => {
-    // Phone OTP authentication flow for returning users and patient records
-    router.push("/(auth)/phone-entry");
-  };
-
-  const handleCall108 = () => {
-    Linking.openURL("tel:108");
-  };
+  // Nothing while the stored session is read, so a signed-in patient never sees Welcome flash by.
+  if (isInitializing) return <View style={{ flex: 1, backgroundColor: colors.white }} />;
+  if (realAccessToken(session)) return <Redirect href="/(tabs)/home" />;
 
   return (
     <OnboardingScreen
-      onQuickEmergencyAccess={handleQuickEmergencyAccess}
-      onSignInWithPhone={handleSignInWithPhone}
-      onCall108={handleCall108}
+      onSignIn={() => router.push({ pathname: "/(auth)/phone-entry", params: { mode: "signin" } })}
+      onCreateAccount={() => router.push({ pathname: "/(auth)/phone-entry", params: { mode: "signup" } })}
+      onCall108={() => void Linking.openURL("tel:108").catch(() => {})}
     />
   );
 }

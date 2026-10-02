@@ -88,7 +88,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
 
     // Navigation Overlay
     destinationHeading: "Destination Emergency Room",
-    destinationHospitalName: "Jaypee Hospital (Sector 128, Noida)",
+    destinationHospitalName: "Destination hospital",
     destinationRampAccess: "Follow Red Emergency Lane to Trauma Bay Ramp Entrance",
     distanceLeftLabel: "Distance to ER",
     etaLabel: "Arrival ETA",
@@ -115,7 +115,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
     physicianDepartmentPlaceholder: "Apex Trauma & Resuscitation Unit",
 
     emtSignatureHeading: "EMT / Paramedic Digital Signature",
-    emtNameLabel: "Attending Paramedic: Pilot Rajesh Sharma",
+    emtNameLabel: "Attending crew member",
     emtRegNumberLabel: "Council Reg: HSSC/EMT-P/2022/7718",
     emtSignConfirmCheckbox:
       "I hereby certify that patient care, telemetry, and physical custody have been safely handed over to the receiving hospital team.",
@@ -162,7 +162,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
 
     // Navigation Overlay
     destinationHeading: "गंतव्य इमरजेंसी विभाग",
-    destinationHospitalName: "जेपी अस्पताल (सेक्टर 128, नोएडा)",
+    destinationHospitalName: "गंतव्य अस्पताल",
     destinationRampAccess: "ट्रॉमा बे रैंप प्रवेश हेतु लाल आपातकालीन लेन का पालन करें",
     distanceLeftLabel: "अस्पताल तक शेष दूरी",
     etaLabel: "पहुंचने का समय (ETA)",
@@ -188,7 +188,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
     physicianDepartmentPlaceholder: "आपातकालीन एवं रीससिटेशन विभाग",
 
     emtSignatureHeading: "EMT / पैरामेडिक डिजिटल हस्ताक्षर",
-    emtNameLabel: "उपस्थित पैरामेडिक: पायलट राजेश शर्मा",
+    emtNameLabel: "उपस्थित क्रू सदस्य",
     emtRegNumberLabel: "काउंसिल पंजीकरण: HSSC/EMT-P/2022/7718",
     emtSignConfirmCheckbox:
       "मैं प्रमाणित करता/करती हूं कि मरीज की देखभाल, टेलीमेट्री और भौतिक अभिरक्षा अस्पताल टीम को सुरक्षित रूप से सौंप दी गई है।",

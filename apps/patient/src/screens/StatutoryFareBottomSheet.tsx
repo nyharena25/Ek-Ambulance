@@ -353,6 +353,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sheetHeaderCategoryTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -452,6 +453,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   collapseText: {
+    flexShrink: 1,
     fontSize: 11,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,
@@ -480,11 +482,13 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   tableRowTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   tableRowSubtitle: {
+    flexShrink: 1,
     fontSize: 10,
     color: colors.slate600,
     marginTop: 1,
@@ -530,11 +534,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   totalLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.extrabold,
     color: colors.slate900,
   },
   totalSubtitle: {
+    flexShrink: 1,
     fontSize: 9,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,
@@ -574,6 +580,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   collapsedFareLabel: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: typography.fontWeights.semibold,
     color: colors.slate600,
@@ -629,6 +636,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   buttonTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.lg,
     lineHeight: typography.lineHeights.lg,
     fontWeight: typography.fontWeights.extrabold,
@@ -636,6 +644,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   buttonSubtitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.emergencyLight,
     fontWeight: typography.fontWeights.medium,

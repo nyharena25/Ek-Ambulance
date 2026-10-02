@@ -17,18 +17,28 @@ import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { authStrings } from "../i18n/authStrings";
 import { useOtpAuth, VerifyOtpResponse } from "../hooks/useOtpAuth";
+import { normalizeIndianMobileInput, toE164IndianPhone } from "../hooks/otpAuth.core";
 
 import { AppIcon } from "../components";
 export interface PhoneAuthScreenProps {
   onSuccess?: (authResponse: VerifyOtpResponse) => void;
   onBack?: () => void;
   initialLanguage?: SupportedLanguage;
+  /** Both use Supabase phone OTP. Sign In never creates an account (shouldCreateUser: false); Create Account may. */
+  mode?: "signin" | "signup";
+  /** Raw 10-digit number to start with (carried over from Sign In's "account not found"). */
+  initialPhone?: string;
+  /** Sign In found no account for this number: switch to Create Account, keeping the number. */
+  onCreateAccount?: (rawPhone: string) => void;
 }
 
 export default function PhoneAuthScreen({
   onSuccess,
   onBack,
   initialLanguage = "en",
+  mode = "signin",
+  initialPhone = "",
+  onCreateAccount,
 }: PhoneAuthScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = authStrings[language];
@@ -37,7 +47,7 @@ export default function PhoneAuthScreen({
   const [step, setStep] = useState<"phone" | "otp">("phone");
 
   // Step 1: Indian Phone Number State
-  const [rawPhone, setRawPhone] = useState("");
+  const [rawPhone, setRawPhone] = useState(() => normalizeIndianMobileInput(initialPhone));
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
   // Step 2: 6-Digit OTP State
@@ -95,9 +105,6 @@ export default function PhoneAuthScreen({
     }
   }, [rateLimitCooldown]);
 
-  // Format phone number into +91 E.164 string
-  const getFullE164Phone = (tenDigitPhone: string) => `+91${tenDigitPhone}`;
-
   // Validate 10-digit Indian Mobile number (starts with 6, 7, 8, or 9)
   const validateIndianPhone = (number: string): boolean => {
     const clean = number.replace(/\D/g, "");
@@ -116,8 +123,7 @@ export default function PhoneAuthScreen({
   const handlePhoneChange = (text: string) => {
     clearError();
     setPhoneError(null);
-    const cleaned = text.replace(/\D/g, "").slice(0, 10);
-    setRawPhone(cleaned);
+    setRawPhone(normalizeIndianMobileInput(text));
   };
 
   // Trigger Step 1 -> Request OTP
@@ -140,8 +146,8 @@ export default function PhoneAuthScreen({
       return;
     }
 
-    const fullPhone = getFullE164Phone(rawPhone);
-    const success = await requestOtp(fullPhone);
+    const fullPhone = toE164IndianPhone(rawPhone);
+    const success = await requestOtp(fullPhone, mode === "signup");
 
     if (success) {
       setStep("otp");
@@ -158,8 +164,8 @@ export default function PhoneAuthScreen({
   const handleResendOtp = async () => {
     if (isTimerActive || isLoading) return;
     clearError();
-    const fullPhone = getFullE164Phone(rawPhone);
-    const success = await requestOtp(fullPhone);
+    const fullPhone = toE164IndianPhone(rawPhone);
+    const success = await requestOtp(fullPhone, mode === "signup");
     if (success) {
       setCountdown(30);
       setIsTimerActive(true);
@@ -233,7 +239,7 @@ export default function PhoneAuthScreen({
       return;
     }
 
-    const fullPhone = getFullE164Phone(rawPhone);
+    const fullPhone = toE164IndianPhone(rawPhone);
     const response = await verifyOtp(fullPhone, fullCode);
 
     if (response) {
@@ -273,7 +279,7 @@ export default function PhoneAuthScreen({
             </Pressable>
           )}
           <View style={styles.headerTitleGroup}>
-            <Text style={styles.headerTitle}>{strings.headerTitle}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>{mode === "signup" ? strings.createAccountHeader : strings.headerTitle}</Text>
             <Text style={styles.headerTagline}>{strings.headerTagline}</Text>
           </View>
         </View>
@@ -393,8 +399,19 @@ export default function PhoneAuthScreen({
                     ? strings.networkError
                     : apiError?.error === "invalid_otp"
                     ? strings.invalidOtpError
+                    : apiError?.error === "account_not_found" && mode === "signin"
+                    ? strings.accountNotFoundError
                     : apiError?.error_description || strings.genericError)}
               </Text>
+              {apiError?.error === "account_not_found" && mode === "signin" && onCreateAccount ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onCreateAccount(rawPhone)}
+                  style={styles.accountNotFoundButton}
+                >
+                  <Text style={styles.accountNotFoundButtonText}>{strings.createAccountAction}</Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
 
@@ -423,7 +440,7 @@ export default function PhoneAuthScreen({
                   placeholder={strings.phoneInputPlaceholder}
                   placeholderTextColor={colors.slate400}
                   keyboardType="number-pad"
-                  maxLength={11} // allows space
+                  maxLength={16} // room for an autofilled/pasted "+91 98765 43210"; normalized on change
                   value={formatPhoneDisplay(rawPhone)}
                   onChangeText={handlePhoneChange}
                   autoFocus={true}
@@ -732,6 +749,7 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   headerTagline: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,
@@ -839,6 +857,7 @@ const styles = StyleSheet.create({
   /* ERROR BANNER */
   errorAlertContainer: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     backgroundColor: colors.emergencyLight,
     borderWidth: 1.5,
@@ -859,11 +878,27 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.semibold,
   },
 
+  accountNotFoundButton: {
+    flexBasis: "100%",
+    marginTop: spacing.sm,
+    minHeight: 44,
+    borderRadius: radii.md,
+    backgroundColor: colors.emergencyDark,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountNotFoundButtonText: {
+    color: colors.white,
+    fontWeight: typography.fontWeights.bold,
+    fontSize: typography.fontSizes.sm,
+  },
+
   /* STEP 1: PHONE INPUT */
   inputSection: {
     marginBottom: spacing.xl,
   },
   fieldLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -926,6 +961,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   changePhoneText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,

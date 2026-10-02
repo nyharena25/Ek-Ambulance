@@ -24,6 +24,8 @@ import { isValidIndianMobile, toE164IndianPhone } from "../hooks/otpAuth.core";
 
 export interface DriverProfileScreenProps {
   onBack: () => void;
+  /** The driver application (onboarding), which creates the server's driver record. */
+  onOpenApplication?: () => void;
 }
 
 type Notice = { kind: "ok" | "error"; text: string } | null;
@@ -34,10 +36,11 @@ const ZONES: readonly ServiceZone[] = ["DL", "UP"];
  * Profile: the driver's name, phone, password, service area, hospital and the ambulance details a patient sees on accept.
  * Frozen from the moment an offer is held until the mission ends (the lifecycle machine decides; the server refuses too).
  */
-export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps) {
+export default function DriverProfileScreen({ onBack, onOpenApplication }: DriverProfileScreenProps) {
   const language = useDriverStandbyStore((s) => s.language);
   const currentState = useDriverLifecycleStore((s) => s.currentState);
-  const { profile, status, load, save } = useDriverProfileStore();
+  const { profile, status, errorCode, load, save } = useDriverProfileStore();
+  const isOnline = useDriverStandbyStore((s) => s.isOnline);
   const t = driverProfileStrings[language];
   const locked = isProfileLocked(currentState);
 
@@ -103,7 +106,20 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
       <SafeAreaView style={styles.safe}>
         <Header title={t.title} back={t.back} onBack={onBack} />
         <View style={styles.center}>
-          {status === "error" ? (
+          {status === "error" && errorCode === "driver_profile_missing" ? (
+            // A real server answer, not a failure: a driver account whose application (the server's driver record) does
+            // not exist yet. The application is the one way to create it.
+            <>
+              <Text style={styles.missingTitle}>{t.missingTitle}</Text>
+              <Text style={styles.body}>{t.missingBody}</Text>
+              {onOpenApplication && (
+                <Pressable style={styles.primaryBtn} onPress={onOpenApplication} accessibilityRole="button">
+                  <Text style={styles.primaryText}>{t.completeApplication}</Text>
+                </Pressable>
+              )}
+              {signOutButton}
+            </>
+          ) : status === "error" ? (
             <>
               <Text style={styles.body}>{t.loadError}</Text>
               <Pressable style={styles.secondaryBtn} onPress={() => void load()} accessibilityRole="button">
@@ -186,6 +202,13 @@ export default function DriverProfileScreen({ onBack }: DriverProfileScreenProps
           </View>
         )}
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Section title={t.statusSection}>
+            <ReadRow label={t.roleLabel} value={t.roleDriver} />
+            <ReadRow label={t.kycLabel} value={t.kycStatus[profile.kycStatus] ?? profile.kycStatus} />
+            {profile.kycStatus === "rejected" && profile.kycRejectReason ? <ReadRow label={t.kycRejectedReason} value={profile.kycRejectReason} /> : null}
+            <ReadRow label={t.availabilityLabel} value={isOnline ? t.online : t.offline} />
+          </Section>
+
           <Section title={t.personalSection}>
             <Field label={t.fullName} value={draft.fullName} editable={!locked} onChangeText={(v) => setDraft({ ...draft, fullName: v })} error={fieldError("name")} autoCapitalize="words" />
             <Text style={styles.label}>{t.phone}</Text>
@@ -318,6 +341,15 @@ function Header({ title, back, onBack }: { title: string; back: string; onBack: 
   );
 }
 
+function ReadRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.readRow}>
+      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.readValue}>{value}</Text>
+    </View>
+  );
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
@@ -381,6 +413,7 @@ const styles = StyleSheet.create({
   error: { fontSize: typography.fontSizes.xs, lineHeight: typography.lineHeights.xs, color: colors.triageRedText },
   hint: { fontSize: typography.fontSizes.xs, lineHeight: typography.lineHeights.xs, color: colors.slate600 },
   body: { fontSize: typography.fontSizes.sm, color: colors.slate700, textAlign: "center" },
+  missingTitle: { fontSize: typography.fontSizes.lg, fontWeight: typography.fontWeights.bold, color: colors.slate900, textAlign: "center" },
   phoneRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   phoneValue: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.slate900 },
   subForm: { gap: spacing.md, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.slate50, borderWidth: 1, borderColor: colors.slate200 },

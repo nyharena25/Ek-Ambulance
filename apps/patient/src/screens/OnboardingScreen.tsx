@@ -13,13 +13,12 @@ import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   onboardingStrings,
   SupportedLanguage,
-  ValuePropItem,
 } from "../i18n/onboardingStrings";
 
 import { AppIcon } from "../components";
 export interface OnboardingScreenProps {
-  onQuickEmergencyAccess?: () => void;
-  onSignInWithPhone?: () => void;
+  onSignIn?: () => void;
+  onCreateAccount?: () => void;
   onCall108?: () => void;
   initialLanguage?: SupportedLanguage;
 }
@@ -35,8 +34,8 @@ export interface OnboardingScreenProps {
  * - UI boundary elements (Slate-300): 3.1:1 (meets non-text contrast threshold of 3.0:1)
  */
 export default function OnboardingScreen({
-  onQuickEmergencyAccess,
-  onSignInWithPhone,
+  onSignIn,
+  onCreateAccount,
   onCall108,
   initialLanguage = "en",
 }: OnboardingScreenProps) {
@@ -135,20 +134,7 @@ export default function OnboardingScreen({
         showsVerticalScrollIndicator={false}
         accessible={false}
       >
-        {/* Verification Fleet Pill */}
-        <View
-          style={styles.verifiedBadgeContainer}
-          accessible={true}
-          accessibilityRole="text"
-          accessibilityLabel={strings.regulatedBadge}
-        >
-          <View style={styles.verifiedCheckCircle}>
-            <AppIcon icon={{ set: "ion", name: "checkmark" }} size={10} style={styles.verifiedCheckMark} />
-          </View>
-          <Text style={styles.verifiedBadgeText}>{strings.regulatedBadge}</Text>
-        </View>
-
-        {/* Hero Section */}
+        {/* Welcome */}
         <View style={styles.heroSection}>
           <Text
             style={[
@@ -168,50 +154,23 @@ export default function OnboardingScreen({
             {strings.heroSubheading}
           </Text>
         </View>
-
-        {/* Section Title */}
-        <View style={styles.sectionHeader}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              language === "hi" && styles.hindiHeadingFont,
-            ]}
-            accessibilityRole="header"
-          >
-            {strings.valuePropsHeading}
-          </Text>
-          <View style={styles.sectionDivider} />
-        </View>
-
-        {/* 3 Core Emergency Value Propositions */}
-        <View style={styles.cardsContainer}>
-          {strings.valueProps.map((item: ValuePropItem) => (
-            <ValuePropCard
-              key={item.id}
-              item={item}
-              language={language}
-            />
-          ))}
-        </View>
       </ScrollView>
 
       {/* PERSISTENT DUAL ACTION DOCK */}
       <View style={styles.actionDock}>
-        {/* Primary Action: Quick Emergency Access */}
+        {/* Sign in and Create account are the same phone-OTP sign-in; only the wording differs. A request needs a
+            signed-in patient, so there is no anonymous path past this screen. */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={strings.quickEmergencyAccessibility}
-          accessibilityHint="Immediately opens symptom triage to dispatch an ambulance without logging in"
+          accessibilityLabel={strings.signInTitle}
+          accessibilityHint={strings.signInSubtitle}
           style={({ pressed }) => [
             styles.primaryButton,
             pressed && styles.primaryButtonPressed,
           ]}
-          onPress={onQuickEmergencyAccess}
+          onPress={onSignIn}
         >
           <View style={styles.primaryButtonContent}>
-            <View style={styles.sirenIconWrapper}>
-              <AppIcon icon={{ set: "mci", name: "car-emergency" }} size={22} color={colors.slate700} style={styles.sirenIconText} />
-            </View>
             <View style={styles.primaryTextWrapper}>
               <Text
                 style={[
@@ -219,7 +178,7 @@ export default function OnboardingScreen({
                   language === "hi" && styles.hindiHeadingFont,
                 ]}
               >
-                {strings.quickEmergencyTitle}
+                {strings.signInTitle}
               </Text>
               <Text
                 style={[
@@ -227,23 +186,22 @@ export default function OnboardingScreen({
                   language === "hi" && styles.hindiBodyFont,
                 ]}
               >
-                {strings.quickEmergencySubtitle}
+                {strings.signInSubtitle}
               </Text>
             </View>
             <AppIcon icon={{ set: "ion", name: "arrow-forward" }} size={22} style={styles.buttonArrowText} />
           </View>
         </Pressable>
 
-        {/* Secondary Action: Sign In with Phone */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={strings.signInPhoneAccessibility}
-          accessibilityHint="Opens phone number entry screen for OTP verification"
+          accessibilityLabel={strings.createAccountTitle}
+          accessibilityHint={strings.createAccountSubtitle}
           style={({ pressed }) => [
             styles.secondaryButton,
             pressed && styles.secondaryButtonPressed,
           ]}
-          onPress={onSignInWithPhone}
+          onPress={onCreateAccount}
         >
           <Text
             style={[
@@ -251,7 +209,7 @@ export default function OnboardingScreen({
               language === "hi" && styles.hindiHeadingFont,
             ]}
           >
-            {strings.signInPhoneTitle}
+            {strings.createAccountTitle}
           </Text>
         </Pressable>
 
@@ -299,85 +257,6 @@ export default function OnboardingScreen({
   );
 }
 
-/**
- * High-Contrast Emergency Value Proposition Card
- */
-function ValuePropCard({
-  item,
-  language,
-}: {
-  item: ValuePropItem;
-  language: SupportedLanguage;
-}) {
-  // Rupee is a real typographic character; the other two are icons.
-  const renderIcon = () => {
-    switch (item.id) {
-      case "pricing":
-        return <Text style={styles.cardIconGlyph}>₹</Text>;
-      case "ais125":
-        return (
-          <AppIcon
-            icon={{ set: "ion", name: "shield-checkmark" }}
-            size={22}
-            color={colors.emergencyDark}
-          />
-        );
-      case "triage":
-        return (
-          <AppIcon
-            icon={{ set: "mci", name: "medical-bag" }}
-            size={22}
-            color={colors.emergencyDark}
-          />
-        );
-    }
-  };
-
-  return (
-    <View
-      style={styles.card}
-      accessible={true}
-      accessibilityRole="summary"
-      accessibilityLabel={item.accessibilityLabel}
-    >
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.cardIconContainer}>
-          {renderIcon()}
-        </View>
-        <View style={styles.cardTitleContainer}>
-          <Text
-            style={[
-              styles.cardTitle,
-              language === "hi" && styles.hindiHeadingFont,
-            ]}
-          >
-            {item.title}
-          </Text>
-          <Text
-            style={[
-              styles.cardSubtitle,
-              language === "hi" && styles.hindiCaptionFont,
-            ]}
-          >
-            {item.subtitle}
-          </Text>
-        </View>
-        <View style={styles.cardBadge}>
-          <Text style={styles.cardBadgeText}>{item.badge}</Text>
-        </View>
-      </View>
-
-      <Text
-        style={[
-          styles.cardDescription,
-          language === "hi" && styles.hindiBodyFont,
-        ]}
-      >
-        {item.description}
-      </Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -513,38 +392,6 @@ const styles = StyleSheet.create({
   },
 
   /* VERIFIED BADGE */
-  verifiedBadgeContainer: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.successLight,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.success,
-    marginBottom: spacing.base,
-  },
-  verifiedCheckCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.success,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 6,
-  },
-  verifiedCheckMark: {
-    color: colors.white,
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  verifiedBadgeText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.success,
-    letterSpacing: 0.2,
-  },
 
   /* HERO */
   heroSection: {
@@ -566,90 +413,8 @@ const styles = StyleSheet.create({
   },
 
   /* SECTION HEADER */
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.base,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate700,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  sectionDivider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.slate200,
-    marginLeft: spacing.md,
-  },
 
   /* VALUE PROPOSITION CARDS (WCAG AAA) */
-  cardsContainer: {
-    gap: spacing.md,
-  },
-  card: {
-    backgroundColor: colors.slate50,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    ...shadows.sm,
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  cardIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.lg,
-    backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.md,
-  },
-  cardIconGlyph: {
-    fontSize: 20,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.emergencyDark,
-  },
-  cardTitleContainer: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: typography.fontSizes.base,
-    lineHeight: typography.lineHeights.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  cardSubtitle: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate600,
-    fontWeight: typography.fontWeights.medium,
-    marginTop: 1,
-  },
-  cardBadge: {
-    backgroundColor: colors.slate200,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-  },
-  cardBadgeText: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
-  },
-  cardDescription: {
-    fontSize: typography.fontSizes.sm,
-    lineHeight: typography.lineHeights.sm + 2,
-    color: colors.slate700,
-    fontWeight: typography.fontWeights.normal,
-  },
 
   /* PERSISTENT ACTION DOCK */
   actionDock: {
@@ -683,22 +448,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  sirenIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.full,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.md,
-  },
-  sirenIconText: {
-    fontSize: 22,
-  },
   primaryTextWrapper: {
     flex: 1,
   },
   primaryButtonTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.lg,
     lineHeight: typography.lineHeights.lg,
     fontWeight: typography.fontWeights.bold,
@@ -706,6 +460,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   primaryButtonSubtitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.emergencyLight,
     fontWeight: typography.fontWeights.medium,

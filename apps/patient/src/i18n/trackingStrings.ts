@@ -23,18 +23,10 @@ export interface TrackingTranslation {
   trackingConnectingBadge: string;
   trackingPausedBadge: string;
   etaOnlyLabel: (mins: number) => string;
-  centrifugoConnectingBadge: string;
   languageToggleLabel: string;
-  englishLabel: string;
-  hindiLabel: string;
 
   // Map & Telemetry
-  pickupPinTitle: string;
-  pickupPinSubtitle: string;
-  ambulanceMarkerLabel: string;
-  trafficEtaLabel: (mins: number, km: number) => string;
   liveGpsBadge: string;
-  trafficCorridorNotice: string;
   speedIndicator: (kmh: number) => string;
 
   // Mission State Progression
@@ -43,35 +35,24 @@ export interface TrackingTranslation {
   stateStepArrived: string;
   activeStatusBanner: string;
 
-  // Driver Card
-  driverSectionTitle: string;
-  driverName: string;
-  driverRoleBadge: string;
-  driverRatingText: (rating: number, count: number) => string;
-  verifiedDriverBadge: string;
-  verifiedBadgeShort: string;
 
   // Ambulance Card
-  vehicleSectionTitle: string;
   /** "Force Traveller · White" line under the plate, and the crew size. */
   crewSize: (count: number) => string;
-  licensePlateLabel: string;
-  licensePlateNumber: string;
-  careTierBadge: string;
-  equipmentVentilator: string;
-  equipmentDefibrillator: string;
-  equipmentOxygen: string;
-  equipmentParamedic: string;
 
   // Communications
   callDriverButton: string;
   callDriverSubtitle: string;
+  matchedTitle: string;
+  arrivedTitle: string;
+  vehicleTypeName: Record<string, string>;
+  driverLabel: string;
+  vehicleLabel: string;
+  etaLabel: string;
 
   // Expandable Preparation Guide
   guideHeaderTitle: string;
   guideHeaderSubtitle: string;
-  guideExpandLabel: string;
-  guideCollapseLabel: string;
   guidesBySymptom: {
     chest_pain: SymptomGuide;
     severe_bleeding: SymptomGuide;
@@ -82,7 +63,6 @@ export interface TrackingTranslation {
 
   // Emergency Fallback
   fallback108Button: string;
-  calling108Notice: string;
 }
 
 export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
@@ -93,48 +73,29 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     trackingConnectingBadge: "Connecting to live tracking...",
     trackingPausedBadge: "Live tracking paused - last position shown",
     etaOnlyLabel: (mins: number) => `${mins} MINS`,
-    centrifugoConnectingBadge: "Centrifugo WS: Connecting...",
     languageToggleLabel: "Language Switch",
-    englishLabel: "EN",
-    hindiLabel: "हिन्दी",
 
-    pickupPinTitle: "Pickup Location",
-    pickupPinSubtitle: "AIIMS New Delhi Emergency Ward",
-    ambulanceMarkerLabel: "Live Ambulance",
-    trafficEtaLabel: (mins: number, km: number) => `${mins} MINS (${km.toFixed(1)} km)`,
     liveGpsBadge: "LIVE GPS",
-    trafficCorridorNotice: "Green Corridor Active • Moderate Traffic on Ring Road",
     speedIndicator: (kmh: number) => `${kmh} km/h`,
 
     stateStepAssigned: "Driver Assigned",
     stateStepEnRoute: "En Route to Patient",
     stateStepArrived: "Arrived on Scene",
-    activeStatusBanner: "Ambulance is actively navigating towards your pickup point with siren & GPS telemetry.",
+    activeStatusBanner: "Your ambulance is on its way to your pickup point. Stay where you are if it is safe.",
 
-    driverSectionTitle: "CERTIFIED PARAMEDIC DRIVER",
-    driverName: "Rajesh Kumar",
-    driverRoleBadge: "Govt. Certified ALS Paramedic",
-    driverRatingText: (rating: number, count: number) => `${rating.toFixed(2)} (${count}+ emergency missions)`,
-    verifiedDriverBadge: "Verified & Background Checked",
-    verifiedBadgeShort: "VERIFIED",
-
-    vehicleSectionTitle: "AMBULANCE SPECIFICATION",
     crewSize: (count) => `Crew on board: ${count}`,
-    licensePlateLabel: "HSRP REGISTRATION",
-    licensePlateNumber: "DL 1E AM 4092",
-    careTierBadge: "Type D - Advanced Life Support (ALS)",
-    equipmentVentilator: "Transport Ventilator",
-    equipmentDefibrillator: "Biphasic Defibrillator",
-    equipmentOxygen: "2,000L Medical Oxygen",
-    equipmentParamedic: "Onboard Certified EMT",
 
-    callDriverButton: "Call Driver (Masked)",
-    callDriverSubtitle: "Private telecom relay • No PII shared",
+    callDriverButton: "Call driver",
+    callDriverSubtitle: "Your number stays private",
+    matchedTitle: "Ambulance on the way",
+    arrivedTitle: "Your ambulance has arrived",
+    vehicleTypeName: { TYPE_D_ALS: "Type D · Advanced Life Support", TYPE_C_BLS: "Type C · Basic Life Support", TYPE_B_PTA: "Type B · Patient Transport", TYPE_A_MFR: "Type A · First Responder" },
+    driverLabel: "Driver",
+    vehicleLabel: "Vehicle",
+    etaLabel: "Arriving in",
 
     guideHeaderTitle: "Pre-Arrival Preparation Guide",
     guideHeaderSubtitle: "Critical first-aid actions while ambulance is en route",
-    guideExpandLabel: "View Critical Steps",
-    guideCollapseLabel: "Collapse Guide",
     guidesBySymptom: {
       chest_pain: {
         symptomName: "Cardiac / Chest Pain Emergency",
@@ -319,7 +280,6 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     },
 
     fallback108Button: "Call 108 Emergency Fallback",
-    calling108Notice: "Dialing 108 Emergency Helpline...",
   },
   hi: {
     screenTitle: "लाइव मिशन ट्रैकिंग",
@@ -328,48 +288,29 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     trackingConnectingBadge: "लाइव ट्रैकिंग से जुड़ रहा है...",
     trackingPausedBadge: "लाइव ट्रैकिंग रुकी है - आख़िरी स्थिति दिखाई गई",
     etaOnlyLabel: (mins: number) => `${mins} मिनट`,
-    centrifugoConnectingBadge: "सेंट्रीफ्यूगो WS: संपर्क स्थापित हो रहा है...",
     languageToggleLabel: "भाषा चयन",
-    englishLabel: "EN",
-    hindiLabel: "हिन्दी",
 
-    pickupPinTitle: "पिकअप स्थान",
-    pickupPinSubtitle: "एम्स नई दिल्ली आपातकालीन वार्ड",
-    ambulanceMarkerLabel: "लाइव एंबुलेंस",
-    trafficEtaLabel: (mins: number, km: number) => `${mins} मिनट (${km.toFixed(1)} किमी)`,
     liveGpsBadge: "लाइव GPS",
-    trafficCorridorNotice: "ग्रीन कॉरिडोर सक्रिय • रिंग रोड पर सामान्य यातायात",
     speedIndicator: (kmh: number) => `${kmh} किमी/घंटा`,
 
     stateStepAssigned: "चालक आवंटित",
     stateStepEnRoute: "मरीज की ओर अग्रसर",
     stateStepArrived: "घटनास्थल पर पहुंची",
-    activeStatusBanner: "एंबुलेंस सायरन व लाइव जीपीएस टेलीमेट्री के साथ आपके पिकअप स्थल की ओर तेजी से आ रही है।",
+    activeStatusBanner: "आपकी एम्बुलेंस पिकअप स्थल की ओर आ रही है। सुरक्षित हो तो वहीं रहें।",
 
-    driverSectionTitle: "प्रमाणित पैरामेडिक चालक",
-    driverName: "राजेश कुमार",
-    driverRoleBadge: "शासकीय प्रमाणित ALS पैरामेडिक",
-    driverRatingText: (rating: number, count: number) => `${rating.toFixed(2)} (${count}+ आपातकालीन मिशन)`,
-    verifiedDriverBadge: "सत्यापित एवं पृष्ठभूमि प्रमाणित",
-    verifiedBadgeShort: "सत्यापित",
-
-    vehicleSectionTitle: "एंबुलेंस विशिष्टता",
     crewSize: (count) => `टीम में लोग: ${count}`,
-    licensePlateLabel: "HSRP नंबर प्लेट",
-    licensePlateNumber: "DL 1E AM 4092",
-    careTierBadge: "टाइप D - एडवांस्ड लाइफ सपोर्ट (ALS)",
-    equipmentVentilator: "ट्रांसपोर्ट वेंटिलेटर",
-    equipmentDefibrillator: "बाईफेसिक डिफाइब्रिलेटर",
-    equipmentOxygen: "2,000 लीटर मेडिकल ऑक्सीजन",
-    equipmentParamedic: "ऑनबोर्ड प्रमाणित पैरामेडिक",
 
-    callDriverButton: "चालक को कॉल करें (मास्क्ड)",
-    callDriverSubtitle: "सुरक्षित टेलीकॉम रिले • निजी नंबर गुप्त",
+    callDriverButton: "ड्राइवर को कॉल करें",
+    callDriverSubtitle: "आपका नंबर निजी रहता है",
+    matchedTitle: "एम्बुलेंस रास्ते में है",
+    arrivedTitle: "आपकी एम्बुलेंस पहुँच गई है",
+    vehicleTypeName: { TYPE_D_ALS: "टाइप D · एडवांस्ड लाइफ़ सपोर्ट", TYPE_C_BLS: "टाइप C · बेसिक लाइफ़ सपोर्ट", TYPE_B_PTA: "टाइप B · मरीज़ परिवहन", TYPE_A_MFR: "टाइप A · फ़र्स्ट रिस्पॉन्डर" },
+    driverLabel: "ड्राइवर",
+    vehicleLabel: "वाहन",
+    etaLabel: "पहुँचने में",
 
     guideHeaderTitle: "आगमन पूर्व तैयारी निर्देश",
     guideHeaderSubtitle: "एंबुलेंस आने तक अत्यंत महत्वपूर्ण प्राथमिक उपचार कदम",
-    guideExpandLabel: "महत्वपूर्ण कदम देखें",
-    guideCollapseLabel: "निर्देश संक्षिप्त करें",
     guidesBySymptom: {
       chest_pain: {
         symptomName: "हृदय / सीने में दर्द आपातकाल",
@@ -554,6 +495,5 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     },
 
     fallback108Button: "108 आपातकालीन हेल्पलाइन",
-    calling108Notice: "108 आपातकालीन हेल्पलाइन पर संपर्क किया जा रहा है...",
   },
 };

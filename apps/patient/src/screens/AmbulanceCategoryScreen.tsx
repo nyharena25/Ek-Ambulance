@@ -477,12 +477,14 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     lineHeight: typography.lineHeights.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   headerTagline: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,

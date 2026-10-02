@@ -3,6 +3,7 @@ import { AuthApiError as SupabaseAuthApiError } from "@supabase/supabase-js";
 import {
   isValidIndianMobile,
   toE164IndianPhone,
+  normalizeIndianMobileInput,
   extractCooldownSeconds,
   mapAuthError,
   networkErrorToApiError,
@@ -23,6 +24,11 @@ assert.strictEqual(isValidIndianMobile("+919876543210"), false, "Invalid: must b
 assert.strictEqual(isValidIndianMobile("98765abcde"), false, "Invalid: contains non-digit characters");
 assert.strictEqual(isValidIndianMobile(""), false, "Invalid: empty string");
 assert.strictEqual(toE164IndianPhone("9876543210"), "+919876543210", "E.164 formatting adds +91 prefix");
+for (const typed of ["9876543210", "98765 43210", "+91 98765 43210", "+919876543210", "919876543210", "09876543210", "+91-98765-43210"]) {
+  assert.strictEqual(toE164IndianPhone(normalizeIndianMobileInput(typed)), "+919876543210", `"${typed}" normalizes to +919876543210`);
+}
+assert.strictEqual(normalizeIndianMobileInput("98765432101"), "9876543210", "an extra typed digit is dropped, not shifted in");
+assert.strictEqual(normalizeIndianMobileInput("9198765432"), "9198765432", "a 10-digit number starting 91 is left alone");
 console.log("✓ Valid and invalid +91 formats classified correctly.\n");
 
 // Test 2: OTP resend cooldown extraction (the pure logic behind the resend
@@ -63,6 +69,17 @@ assert.strictEqual(
   "error_description is the verbatim GoTrue message, per P03's explicit requirement"
 );
 console.log("✓ Rate-limit errors correctly flagged with their cooldown.\n");
+
+// Sign In (shouldCreateUser: false) with a phone that has no account: the hosted project answers exactly this
+// (probed 2026-10-02 with a number confirmed absent; no account was created and no SMS sent).
+console.log("Test 3b: Validating Sign In with an unknown phone maps to account_not_found...");
+const signupsNotAllowed = new SupabaseAuthApiError("Signups not allowed for otp", 422, "otp_disabled");
+assert.strictEqual(mapAuthError(signupsNotAllowed, false).error, "account_not_found");
+assert.strictEqual(mapAuthError(signupsNotAllowed, false).isRateLimited, false);
+// An older GoTrue with no error code still says it in the message.
+assert.strictEqual(mapAuthError(new SupabaseAuthApiError("Signups not allowed for otp", 422, undefined as never), false).error, "account_not_found");
+assert.notStrictEqual(mapAuthError(signupsNotAllowed, true).error, "account_not_found", "only the request step means 'no account'");
+console.log("✓ Unknown phone on Sign In is account_not_found.\n");
 
 // Test 4: expired/invalid OTP token errors normalize to "invalid_otp" -
 // PhoneAuthScreen.tsx checks this exact literal string to pick the right

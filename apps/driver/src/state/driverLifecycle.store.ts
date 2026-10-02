@@ -12,7 +12,7 @@ import { newIdempotencyKey, type ApiError, type ApiResult } from "@sahayak/domai
 import { buildServerCall, type ServerCall } from "../lib/driverServer.core.ts";
 import type { BoardSnapshot, DriverMissionEnd } from "@sahayak/domain";
 import type { DriverProfile, DriverProfilePatch } from "../lib/driverProfile.core.ts";
-import type { ApplicationFieldsResult } from "../lib/kycSubmission.core.ts";
+import type { ApplicationFields, DraftApplicationFields } from "../lib/kycSubmission.core.ts";
 import type { UploadedKycDocument } from "../lib/driverServer.ts";
 import type { DocumentSlotKey } from "./driverOnboarding.store.ts";
 
@@ -33,7 +33,8 @@ export interface ServerAdapter {
   saveProfile: (patch: DriverProfilePatch) => Promise<ApiResult<DriverProfile>>;
   /** KYC (5.4): license/EMT/vehicle-tier fields, document upload, and the final submit. Each call is
    *  server-validated on its own - there is no client-side "approved" outcome anywhere in this adapter. */
-  submitApplication: (fields: ApplicationFieldsResult["fields"]) => Promise<ApiResult<{ kycStatus: string }>>;
+  /** upsert_driver_application: the Step 1 draft before the first upload, then the full application on Submit. */
+  submitApplication: (fields: ApplicationFields | DraftApplicationFields) => Promise<ApiResult<{ kycStatus: string }>>;
   submitKyc: () => Promise<ApiResult<{ kycStatus: string; kycReference?: string; submittedAt?: string }>>;
   uploadDocument: (
     slot: DocumentSlotKey,

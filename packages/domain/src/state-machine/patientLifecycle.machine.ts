@@ -128,6 +128,8 @@ export const patientLifecycleMachine = setup({
         jurisdiction: p.jurisdiction ?? context.jurisdiction,
         pickup: p.pickup ?? context.pickup,
         fareDetails: p.fareDetails ?? context.fareDetails,
+        // Back to `requesting` (driver released): nobody is assigned any more. ETA is never restored: it was only true when sent.
+        assignedDriver: p.status === "requesting" ? null : (p.driver ?? context.assignedDriver),
         driverHasArrived: p.status === "on_scene",
         hospitalArrived: p.status === "arrived_hospital",
         error: null,

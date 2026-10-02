@@ -20,7 +20,7 @@ import { EMERGENCY_TYPES, hospitalsFor, type EmergencyType } from "../hooks/hosp
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
 import { AppIcon, openGoogleMapsNavigation } from "../components";
-import { IS_DEV } from "../config/env";
+import { IS_TEST_RUNNER } from "../config/env";
 
 const EMERGENCY_LABELS: Record<EmergencyType, { en: string; hi: string }> = {
   trauma: { en: "Trauma", hi: "ट्रॉमा" },
@@ -30,7 +30,7 @@ const EMERGENCY_LABELS: Record<EmergencyType, { en: string; hi: string }> = {
   general: { en: "Other", hi: "अन्य" },
 };
 
-// __DEV__ only: a release build reaching this screen without real pickup params (stale link / reload) falls
+// The DEMO_* point is for the test runner only: any build on a phone reaching this screen without real pickup params (stale link / reload) falls
 // back to the driver's own current position rather than a fixed, confidently-wrong location.
 const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 export interface OnSceneCareScreenProps {
@@ -55,7 +55,7 @@ export default function OnSceneCareScreen({
 }: OnSceneCareScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const driverGps = useDriverStandbyStore((s) => s.gps);
-  const pickupCoordinates = pickupCoordinatesProp ?? (IS_DEV ? DEMO_PICKUP : { latitude: driverGps.latitude, longitude: driverGps.longitude });
+  const pickupCoordinates = pickupCoordinatesProp ?? (IS_TEST_RUNNER ? DEMO_PICKUP : { latitude: driverGps.latitude, longitude: driverGps.longitude });
 
   // Vitals State
   // D-UX-05: nothing is pre-set. A blank reading is "not entered" (null) and is never coerced to 0 or shown as a plausible
@@ -645,12 +645,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
     lineHeight: typography.lineHeights.base,
   },
   sectionSub: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
   },
@@ -675,6 +677,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   vitalLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate800,
@@ -733,6 +736,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   mapPillText: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: typography.fontWeights.bold,
     color: colors.info,
@@ -750,6 +754,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bpSubLabel: {
+    flexShrink: 1,
     fontSize: 10,
     color: colors.slate600,
     marginBottom: 4,
@@ -802,6 +807,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
   gcsScoreBadgeText: {
+    flexShrink: 1,
     color: colors.white,
     fontSize: 10,
     fontWeight: typography.fontWeights.bold,

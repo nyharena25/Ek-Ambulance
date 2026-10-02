@@ -51,6 +51,8 @@ export function useServerSync(): void {
     const adopt = (raw: Session | null) => {
       if (!alive) return;
       const s: ServerSession | null = verifiedDriverSession(raw);
+      // The KYC state belongs to one account: never route the next sign-in on the previous driver's profile.
+      if (s?.userId !== getServerAdapter()?.userId) useDriverProfileStore.setState({ profile: null, status: "idle", errorCode: null });
       useDriverAuthStore.setState({ status: s ? "signedIn" : "signedOut" });
       setSession(s);
       setServerAdapter(

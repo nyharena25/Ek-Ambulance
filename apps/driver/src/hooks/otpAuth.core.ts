@@ -24,6 +24,15 @@ export function toE164IndianPhone(rawNumber: string): string {
   return `+91${rawNumber}`;
 }
 
+/** Phone-field text -> the raw 10-digit number. Autofill and paste bring "+91 98765 43210" or "098765 43210"; keeping
+ *  the first 10 digits of those would keep the country/trunk prefix and drop the end of the number. */
+export function normalizeIndianMobileInput(text: string): string {
+  const digits = text.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits.slice(0, 10);
+}
+
 /** Extracts cooldown seconds from GoTrue rate-limit descriptions such as:
  * "For security purposes, you can only request this after 33 seconds." */
 export function extractCooldownSeconds(description: string): number | null {
@@ -100,12 +109,49 @@ export function verifiedDriverSession(
 export type DriverAuthStatus = "loading" | "signedIn" | "signedOut";
 
 /**
- * Where the router must go for the current auth state, or null to stay. `firstSegment` is expo-router's first route
- * segment (undefined at the index route). Signed out: only the (auth) screens are reachable. Signed in: the index
- * route opens the shift; (auth) stays reachable because onboarding lives there. Loading: never redirect (no flash).
+ * The driver's authorization, read from the server's own KYC state (get_driver_profile), never a local flag:
+ * "unknown" until the first profile read answers, "error" when it could not be read, "application" for an incomplete
+ * (draft / no drivers row yet) or rejected application, "pending" while staff review it, "approved" once verified.
  */
-export function authRedirectTarget(status: DriverAuthStatus, firstSegment: string | undefined): string | null {
+export type DriverKycGate = "unknown" | "error" | "application" | "pending" | "approved";
+
+export function driverKycGate(p: {
+  status: "idle" | "loading" | "ready" | "error";
+  errorCode: string | null;
+  profile: { kycStatus: string } | null;
+}): DriverKycGate {
+  if (p.profile) {
+    if (p.profile.kycStatus === "approved") return "approved";
+    return p.profile.kycStatus === "pending_verification" ? "pending" : "application";
+  }
+  if (p.status !== "error") return "unknown";
+  // A driver-role account with no drivers row has simply not started the application yet.
+  return p.errorCode === "driver_profile_missing" ? "application" : "error";
+}
+
+/**
+ * Where the router must go for the current auth + KYC state, or null to stay. `segments` are expo-router's route
+ * segments ([] at the index route). Signed out: only the (auth) screens are reachable. Signed in, authentication is not
+ * authorization: only an approved driver reaches the shift (standby, booking board, offers); an incomplete or rejected
+ * application goes to onboarding, a submitted one to the verification screen. Until the KYC state is known the index
+ * route waits (it shows the load error and a retry). A live mission screen is never interrupted. Loading: never redirect.
+ */
+export function authRedirectTarget(status: DriverAuthStatus, segments: readonly string[], kyc: DriverKycGate): string | null {
   if (status === "loading") return null;
-  if (status === "signedOut") return firstSegment === "(auth)" ? null : "/(auth)/phone-entry";
-  return firstSegment === undefined ? "/(shift)/standby" : null;
+  const [first, second] = segments;
+  if (status === "signedOut") return first === "(auth)" ? null : "/(auth)/phone-entry";
+  if (first === "mission") return null;
+  const at = (route: string) => (`/${first}/${second}` === route ? null : route);
+  switch (kyc) {
+    case "unknown":
+    case "error":
+      return first === "(shift)" ? "/" : null;
+    case "application":
+      return at("/(auth)/onboarding");
+    case "pending":
+      return at("/(auth)/verification");
+    case "approved":
+      // Onboarding stays reachable: it shows the approved status.
+      return first === "(shift)" || second === "onboarding" ? null : "/(shift)/standby";
+  }
 }

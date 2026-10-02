@@ -2,12 +2,12 @@ import { create } from "zustand";
 import type { AIS125VehicleType } from "@sahayak/domain";
 import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
 import { getServerAdapter } from "./driverLifecycle.store.ts";
-import { mapFormDataToApplicationFields } from "../lib/kycSubmission.core.ts";
+import { mapFormDataToApplicationFields, mapStep1ToDraftFields, step1ValidationErrors } from "../lib/kycSubmission.core.ts";
 
-// `IS_DEV` is true under the node test runner (where `__DEV__` does not exist) and in a dev build; false in a
-// release build. A release build must never seed a real driver's onboarding wizard with fake DL/plate/document
+// `IS_TEST_RUNNER` is true only under the node test runner (where `__DEV__` does not exist); false in every build on a
+// phone. A release build must never seed a real driver's onboarding wizard with fake DL/plate/document
 // data just because the real session hasn't hydrated yet - see `initialFormData`/`initialDocuments` below.
-const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
+const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
 
 export type EMTLevel = "EMT_P" | "EMT_A" | "EMT_B" | "FMR";
 
@@ -18,6 +18,9 @@ export interface DocumentUploadState {
   uploadedAt?: string;
   uri?: string;
   progress?: number;
+  /** A failed upload's machine code and the server's short reason, shown on the slot (status "error"). */
+  errorCode?: string;
+  errorDetail?: string;
 }
 
 export type DocumentSlotKey =
@@ -49,7 +52,8 @@ export interface DriverOnboardingFormData {
   makeModel: string;
   manufactureYear: string;
   vinChassisNumber: string;
-  ais125VehicleType: AIS125VehicleType;
+  /** Null until the driver chooses one in Step 1: never a preselected default stored in their application. */
+  ais125VehicleType: AIS125VehicleType | null;
 }
 
 export interface SubmissionResult {
@@ -67,10 +71,14 @@ export interface DriverOnboardingStoreState {
   documents: Record<DocumentSlotKey, DocumentUploadState>;
   stepErrors: Record<number, string[]>;
   isSubmitting: boolean;
+  /** The user id whose draft drivers row upsert_driver_application has created/updated in this app session (null:
+   *  not yet). Every KYC write policy (Storage, driver_documents, driver_vehicles) requires that row, so no upload
+   *  is attempted before it. Keyed by user so a second account signing in on the same phone gets its own draft. */
+  draftReadyFor: string | null;
   submissionResult: SubmissionResult | null;
   /** The real submit_kyc/upsert_driver_application/saveProfile error code on a failed real submission (a
    *  server session exists), or "no_session" if there is no session and this isn't a dev build. Null in the
-   *  IS_DEV/no-session local path, which always succeeds locally. */
+   *  IS_TEST_RUNNER/no-session local path, which always succeeds locally. */
   submissionError: string | null;
 
   // Actions
@@ -128,7 +136,7 @@ export const EMPTY_FORM_DATA: DriverOnboardingFormData = {
   makeModel: "",
   manufactureYear: "",
   vinChassisNumber: "",
-  ais125VehicleType: "TYPE_A_MFR",
+  ais125VehicleType: null,
 };
 
 export const EMPTY_DOCUMENTS: Record<DocumentSlotKey, DocumentUploadState> = {
@@ -206,10 +214,11 @@ const initialDocuments: Record<DocumentSlotKey, DocumentUploadState> = {
 export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set, get) => ({
   currentStep: 1,
   language: "en",
-  formData: IS_DEV ? initialFormData : EMPTY_FORM_DATA,
-  documents: IS_DEV ? initialDocuments : EMPTY_DOCUMENTS,
+  formData: IS_TEST_RUNNER ? initialFormData : EMPTY_FORM_DATA,
+  documents: IS_TEST_RUNNER ? initialDocuments : EMPTY_DOCUMENTS,
   stepErrors: {},
   isSubmitting: false,
+  draftReadyFor: null,
   submissionResult: null,
   submissionError: null,
 
@@ -283,13 +292,35 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
     if (!adapter) return;
     const { startDocumentUpload, finishDocumentUpload } = get();
     const sizeLabel = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    const failSlot = (errorCode: string, errorDetail?: string) =>
+      set((state) => ({ documents: { ...state.documents, [slot]: { status: "error", fileName: asset.name, errorCode, errorDetail } } }));
+
+    // The draft drivers row must exist before any KYC write (see draftReadyFor). Created from the Step 1 values only,
+    // through the same upsert_driver_application the final Submit calls again. A draft is never dispatch-eligible:
+    // is_verified stays false until KYC approval, and going online requires it.
+    if (get().draftReadyFor !== adapter.userId) {
+      const draft = mapStep1ToDraftFields(get().formData);
+      if (!draft.ok) {
+        set((state) => ({ stepErrors: { ...state.stepErrors, 1: draft.errors } }));
+        failSlot("step1_incomplete");
+        return;
+      }
+      startDocumentUpload(slot, asset.name, "");
+      const draftResult = await adapter.submitApplication(draft.fields);
+      if (!draftResult.ok) {
+        failSlot(draftResult.error.code, draftResult.error.detail);
+        return;
+      }
+      set({ draftReadyFor: adapter.userId });
+    }
+
     startDocumentUpload(slot, asset.name, "");
     const result = await adapter.uploadDocument(slot, asset);
     if (result.ok) {
       finishDocumentUpload(slot, result.data.storagePath);
       set((state) => ({ documents: { ...state.documents, [slot]: { ...state.documents[slot], fileSize: sizeLabel(result.data.sizeBytes) } } }));
     } else {
-      set((state) => ({ documents: { ...state.documents, [slot]: { status: "error", fileName: asset.name } } }));
+      failSlot(result.error.code, result.error.detail);
     }
   },
 
@@ -306,15 +337,7 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
     const errors: string[] = [];
 
     if (currentStep === 1) {
-      if (!formData.commercialDlNumber || formData.commercialDlNumber.trim().length < 8) {
-        errors.push("VALIDATION_INVALID_DL");
-      }
-      if (!formData.dlExpiry || formData.dlExpiry.trim().length === 0) {
-        errors.push("VALIDATION_EXPIRED_DL");
-      }
-      if (!formData.psvBadgeNumber || formData.psvBadgeNumber.trim().length < 4) {
-        errors.push("VALIDATION_MISSING_PSV");
-      }
+      errors.push(...step1ValidationErrors(formData));
     } else if (currentStep === 2) {
       if (!formData.emtNumber || formData.emtNumber.trim().length < 4) {
         errors.push("VALIDATION_MISSING_EMT");
@@ -331,9 +354,6 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
       }
       if (!formData.makeModel || formData.makeModel.trim().length < 2) {
         errors.push("VALIDATION_MISSING_MAKE_MODEL");
-      }
-      if (!formData.ais125VehicleType) {
-        errors.push("VALIDATION_MISSING_AIS125");
       }
     } else if (currentStep === 4) {
       // Mandatory statutory slots: ARAI and Fitness permit and RC!
@@ -360,6 +380,11 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
 
   submitApplication: async () => {
     const { formData } = get();
+    const vehicleType = formData.ais125VehicleType;
+    if (!vehicleType) {
+      set({ isSubmitting: false, submissionError: "invalid_ais125Type" });
+      return false;
+    }
     set({ isSubmitting: true, submissionError: null });
 
     const adapter = getServerAdapter();
@@ -397,21 +422,21 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
         submissionResult: {
           trackingId: kycResult.data.kycReference ?? "",
           submittedAt: kycResult.data.submittedAt ?? new Date().toISOString(),
-          vehicleType: formData.ais125VehicleType,
-          careLevelCode: CARE_LEVEL_LABELS[formData.ais125VehicleType],
+          vehicleType,
+          careLevelCode: CARE_LEVEL_LABELS[vehicleType],
           status: "PENDING_STA_VERIFICATION",
         },
       });
       return true;
     }
 
-    if (!IS_DEV) {
+    if (!IS_TEST_RUNNER) {
       // A release build with no session must refuse rather than fabricate a submission the real backend never saw.
       set({ isSubmitting: false, submissionError: "no_session" });
       return false;
     }
 
-    // IS_DEV/no-session local path, unchanged.
+    // IS_TEST_RUNNER/no-session local path, unchanged.
     await new Promise((resolve) => setTimeout(resolve, 1200));
     const trackingId = `EK-AMB-DL-${Date.now().toString().slice(-6)}`;
     set({
@@ -419,8 +444,8 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
       submissionResult: {
         trackingId,
         submittedAt: new Date().toISOString(),
-        vehicleType: formData.ais125VehicleType,
-        careLevelCode: CARE_LEVEL_LABELS[formData.ais125VehicleType],
+        vehicleType,
+        careLevelCode: CARE_LEVEL_LABELS[vehicleType],
         status: "PENDING_STA_VERIFICATION",
       },
     });
@@ -430,10 +455,11 @@ export const useDriverOnboardingStore = create<DriverOnboardingStoreState>((set,
   resetOnboarding: () =>
     set({
       currentStep: 1,
-      formData: IS_DEV ? initialFormData : EMPTY_FORM_DATA,
-      documents: IS_DEV ? initialDocuments : EMPTY_DOCUMENTS,
+      formData: IS_TEST_RUNNER ? initialFormData : EMPTY_FORM_DATA,
+      documents: IS_TEST_RUNNER ? initialDocuments : EMPTY_DOCUMENTS,
       stepErrors: {},
       isSubmitting: false,
+      draftReadyFor: null,
       submissionResult: null,
       submissionError: null,
     }),

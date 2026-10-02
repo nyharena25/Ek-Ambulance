@@ -7,15 +7,18 @@ export interface MapRoute {
   isEstimate: boolean;
 }
 
-/** Fetched once per origin/destination pair (never per telemetry ping). */
-export function useDrivingRoute(origin: GeoPoint, destination: GeoPoint): MapRoute | null {
+/** Fetched once per origin/destination pair (never per telemetry ping). No real endpoint, no route. */
+export function useDrivingRoute(origin: GeoPoint | null, destination: GeoPoint | null): MapRoute | null {
   const [route, setRoute] = useState<MapRoute | null>(null);
-  const { latitude: oLat, longitude: oLng } = origin;
-  const { latitude: dLat, longitude: dLng } = destination;
+  const oLat = origin?.latitude ?? NaN;
+  const oLng = origin?.longitude ?? NaN;
+  const dLat = destination?.latitude ?? NaN;
+  const dLng = destination?.longitude ?? NaN;
 
   useEffect(() => {
     let stale = false;
     setRoute(null);
+    if (![oLat, oLng, dLat, dLng].every(Number.isFinite)) return;
     getDrivingRoute({ latitude: oLat, longitude: oLng }, { latitude: dLat, longitude: dLng }).then((r) => {
       if (stale) return;
       const coordinates = routeToCoordinates(r.geometry);

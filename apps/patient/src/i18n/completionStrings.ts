@@ -92,7 +92,7 @@ export const completionStrings: Record<
     completionBannerBadge: "COMPLETED",
     completionBannerTitle: "Patient Safely Transferred to Emergency",
     completionBannerSubtitle:
-      "Clinical handoff successfully completed at Jai Prakash Narayan Apex Trauma Center, AIIMS.",
+      "The crew has handed the patient over to the hospital team.",
     languageToggleLabel: "Language Switch",
     englishLabel: "EN",
     hindiLabel: "हिन्दी",
@@ -209,7 +209,7 @@ export const completionStrings: Record<
     completionBannerBadge: "सफलतापूर्वक पूर्ण",
     completionBannerTitle: "मरीज को आपातकालीन वार्ड में सुरक्षित सौंपा गया",
     completionBannerSubtitle:
-      "जय प्रकाश नारायण एपेक्स ट्रॉमा सेंटर, एम्स में चिकित्सीय हैंडऑफ सफलतापूर्वक संपन्न।",
+      "टीम ने मरीज़ को अस्पताल की टीम को सौंप दिया है।",
     languageToggleLabel: "भाषा चयन",
     englishLabel: "EN",
     hindiLabel: "हिन्दी",

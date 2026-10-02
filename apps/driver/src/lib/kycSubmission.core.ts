@@ -41,7 +41,7 @@ export interface ApplicationFieldsResult {
 export interface ApplicationFieldsError {
   ok: false;
   /** Which onboarding step the bad field lives on, so the caller can route the driver back to it. */
-  field: "dlExpiry" | "emtExpiry";
+  field: "dlExpiry" | "emtExpiry" | "ais125Type";
 }
 
 /** Maps the onboarding store's form (step 1-3) to upsert_driver_application's p_fields. The RPC itself
@@ -50,6 +50,8 @@ export interface ApplicationFieldsError {
 export function mapFormDataToApplicationFields(formData: DriverOnboardingFormData): ApplicationFieldsResult | ApplicationFieldsError {
   const dlExpiry = parseFormDate(formData.dlExpiry);
   if (!dlExpiry) return { ok: false, field: "dlExpiry" };
+  const ais125Type = formData.ais125VehicleType;
+  if (!ais125Type) return { ok: false, field: "ais125Type" };
   // emtExpiry is optional in the RPC (only checked if not null); an empty/unparseable value here means "not
   // set", matching update_driver_profile's own null-means-absent convention, not a hard error.
   const emtExpiry = formData.emtExpiry.trim() ? parseFormDate(formData.emtExpiry) : "";
@@ -58,7 +60,7 @@ export function mapFormDataToApplicationFields(formData: DriverOnboardingFormDat
     ok: true,
     fields: {
       licenseNumber: formData.commercialDlNumber.trim(),
-      ais125Type: formData.ais125VehicleType,
+      ais125Type,
       dlExpiry,
       dlState: formData.dlState.trim(),
       psvBadgeNumber: formData.psvBadgeNumber.trim(),
@@ -70,6 +72,62 @@ export function mapFormDataToApplicationFields(formData: DriverOnboardingFormDat
       blsCertified: formData.isBlsCertified,
     },
   };
+}
+
+export type ApplicationFields = ApplicationFieldsResult["fields"];
+
+/** What upsert_driver_application needs to create the draft drivers row before the first document upload: only the
+ *  Step 1 values the driver entered or chose (licence + AIS-125 type), never the untouched EMT/ACLS defaults. Every
+ *  write policy on driver-kyc-documents, driver_documents and driver_vehicles requires that draft row to exist. */
+export type DraftApplicationFields = Pick<ApplicationFields, "licenseNumber" | "ais125Type" | "dlExpiry" | "dlState" | "psvBadgeNumber">;
+
+/** Step 1's rules (licence + AIS-125 type), shared by the wizard's Continue and the pre-upload draft check. */
+export function step1ValidationErrors(formData: DriverOnboardingFormData): string[] {
+  const errors: string[] = [];
+  if (!formData.commercialDlNumber || formData.commercialDlNumber.trim().length < 8) errors.push("VALIDATION_INVALID_DL");
+  if (!formData.dlExpiry || formData.dlExpiry.trim().length === 0) errors.push("VALIDATION_EXPIRED_DL");
+  if (!formData.psvBadgeNumber || formData.psvBadgeNumber.trim().length < 4) errors.push("VALIDATION_MISSING_PSV");
+  if (!formData.ais125VehicleType) errors.push("VALIDATION_MISSING_AIS125");
+  return errors;
+}
+
+export function mapStep1ToDraftFields(
+  formData: DriverOnboardingFormData
+): { ok: true; fields: DraftApplicationFields } | { ok: false; errors: string[] } {
+  const errors = step1ValidationErrors(formData);
+  const dlExpiry = parseFormDate(formData.dlExpiry);
+  if (!dlExpiry && !errors.includes("VALIDATION_EXPIRED_DL")) errors.push("VALIDATION_EXPIRED_DL");
+  if (errors.length > 0 || !dlExpiry || !formData.ais125VehicleType) return { ok: false, errors };
+  return {
+    ok: true,
+    fields: {
+      licenseNumber: formData.commercialDlNumber.trim(),
+      ais125Type: formData.ais125VehicleType,
+      dlExpiry,
+      dlState: formData.dlState.trim(),
+      psvBadgeNumber: formData.psvBadgeNumber.trim(),
+    },
+  };
+}
+
+const UPLOAD_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  step1_incomplete: "Complete your licence details and choose your ambulance type before uploading documents.",
+  unsupported_file_type: "Only PDF, JPG or PNG files can be uploaded.",
+  empty_file: "The selected file could not be read. Choose it again.",
+  upload_failed: "The document was not uploaded.",
+  not_a_driver: "This account is not registered as a driver.",
+  kyc_locked: "Your application is under review and cannot be changed.",
+  application_incomplete: "Complete your licence details and choose your ambulance type before uploading documents.",
+  unauthenticated: "Your session has ended. Sign in again.",
+  network: "No connection. The document was NOT uploaded. Try again.",
+};
+
+/** The driver-facing text for a failed document upload: a fixed message per code plus the server's short reason
+ *  (e.g. a Storage refusal), never tokens, URLs or file contents. Unknown codes still say the upload did not happen. */
+export function documentUploadErrorMessage(code: string, detail?: string): string {
+  const base = UPLOAD_ERROR_MESSAGES[code] ?? "The document was not uploaded. Try again.";
+  const reason = detail?.trim().slice(0, 160);
+  return reason ? `${base} (${reason})` : base;
 }
 
 /** driver_documents.storage_path check constraint: `like driver_id::text || '/' || slot || '/%'`. */

@@ -25,7 +25,7 @@ import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 import { distanceKm as distanceKmBetween } from "../hooks/hospitalSelection.core";
 import { AppIcon, DriverMap, NavigateInGoogleMapsButton } from "../components";
-import { IS_DEV } from "../config/env";
+import { IS_TEST_RUNNER } from "../config/env";
 
 export interface DriverNavigationScreenProps {
   missionId?: string;
@@ -39,7 +39,7 @@ export interface DriverNavigationScreenProps {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-// __DEV__ only: a release build reaching this screen without real pickup params (stale link / reload) falls
+// The DEMO_* point is for the test runner only: any build on a phone reaching this screen without real pickup params (stale link / reload) falls
 // back to the driver's own current position (distance 0) rather than a fixed, confidently-wrong location.
 const DEMO_PICKUP: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 const SLIDER_THUMB_SIZE = 58;
@@ -68,7 +68,7 @@ export default function DriverNavigationScreen({
   const gps = useDriverStandbyStore((s) => s.gps);
   const currentSpeed = Math.round(gps.speedKmh);
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
-  const effectivePickup = pickupCoordinates ?? (IS_DEV ? DEMO_PICKUP : driverPos);
+  const effectivePickup = pickupCoordinates ?? (IS_TEST_RUNNER ? DEMO_PICKUP : driverPos);
   const distanceKm = distanceKmBetween(driverPos, effectivePickup);
 
   const strings = driverNavigationStrings[language];
@@ -797,6 +797,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   callPatientBtnText: {
+    flexShrink: 1,
     color: colors.white,
     fontSize: 11,
     fontWeight: typography.fontWeights.bold,
@@ -811,6 +812,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   callDispatchBtnText: {
+    flexShrink: 1,
     color: colors.white,
     fontSize: 11,
     fontWeight: typography.fontWeights.semibold,
@@ -907,11 +909,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   drawerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   drawerSub: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     marginTop: 2,

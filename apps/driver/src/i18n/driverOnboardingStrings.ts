@@ -173,11 +173,11 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     languageToggleHi: "हिन्दी",
 
     // Steps
-    step1Title: "Driver License",
+    step1Title: "License & Type",
     step1Subtitle: "Commercial DL & PSV",
     step2Title: "EMT Details",
     step2Subtitle: "Medical Credentials",
-    step3Title: "Vehicle & AIS-125",
+    step3Title: "Vehicle",
     step3Subtitle: "Classification & Specs",
     step4Title: "Statutory Permits",
     step4Subtitle: "ARAI & Fitness",
@@ -185,7 +185,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     // Step 1: CDL
     step1Header: "Commercial Driver Credentials",
     step1Description:
-      "Enter your state-issued Commercial Driver's License (CDL) and Public Service Vehicle (PSV) ambulance badge authorized by the Regional Transport Office (RTO).",
+      "Enter your state-issued Commercial Driver's License (CDL) and Public Service Vehicle (PSV) ambulance badge authorized by the Regional Transport Office (RTO), and choose your ambulance's AIS-125 type. Its classification determines the patient triage levels you are authorized to accept.",
     dlNumberLabel: "Commercial Driving License (CDL) Number",
     dlNumberPlaceholder: "e.g. DL-0420110012345",
     dlNumberHelp: "Must contain valid state code followed by RTO license format (minimum 10 characters).",
@@ -243,9 +243,9 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     emtUploadHeading: "Upload EMT / Paramedic Certificate",
 
     // Step 3: Vehicle & AIS-125
-    step3Header: "Vehicle Registration & AIS-125 Classification",
+    step3Header: "Vehicle Registration",
     step3Description:
-      "Register the emergency vehicle under Indian Standard AIS-125 specifications. Vehicle classification determines the patient triage levels you are authorized to accept.",
+      "Register the emergency vehicle you will operate. Its AIS-125 classification was chosen in Step 1.",
     vehicleRegLabel: "Vehicle Registration Number (License Plate)",
     vehicleRegPlaceholder: "e.g. DL 01 AB 1234 or UP 16 CD 5678",
     vehicleRegHelp: "Must be registered as a Commercial Emergency Vehicle (Ambulance) with RTO.",
@@ -490,11 +490,11 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     languageToggleHi: "हिन्दी",
 
     // Steps
-    step1Title: "चालक लाइसेंस",
+    step1Title: "लाइसेंस व प्रकार",
     step1Subtitle: "वाणिज्यिक DL व PSV",
     step2Title: "EMT विवरण",
     step2Subtitle: "चिकित्सा प्रमाणन",
-    step3Title: "वाहन व AIS-125",
+    step3Title: "वाहन",
     step3Subtitle: "श्रेणी व उपकरण",
     step4Title: "वैधानिक परमिट",
     step4Subtitle: "ARAI व फिटनेस",
@@ -502,7 +502,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     // Step 1: CDL
     step1Header: "वाणिज्यिक चालक पहचान व लाइसेंस",
     step1Description:
-      "परिवहन कार्यालय (RTO) द्वारा जारी अपना वैध वाणिज्यिक ड्राइविंग लाइसेंस (CDL) और सार्वजनिक सेवा वाहन (PSV) एंबुलेंस बैज विवरण दर्ज करें।",
+      "परिवहन कार्यालय (RTO) द्वारा जारी अपना वैध वाणिज्यिक ड्राइविंग लाइसेंस (CDL) और सार्वजनिक सेवा वाहन (PSV) एंबुलेंस बैज विवरण दर्ज करें, और अपनी एंबुलेंस का AIS-125 प्रकार चुनें। इसका वर्गीकरण निर्धारित करता है कि आप किन चिकित्सा आपातकालों के लिए अधिकृत हैं।",
     dlNumberLabel: "वाणिज्यिक ड्राइविंग लाइसेंस (CDL) नंबर",
     dlNumberPlaceholder: "उदा. DL-0420110012345",
     dlNumberHelp: "राज्य कोड के साथ सही RTO लाइसेंस प्रारूप दर्ज करें (कम से कम 10 अक्षर)।",
@@ -560,9 +560,9 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     emtUploadHeading: "EMT / पैरामेडिक प्रमाण पत्र अपलोड करें",
 
     // Step 3: Vehicle & AIS-125
-    step3Header: "वाहन पंजीकरण एवं AIS-125 वर्गीकरण",
+    step3Header: "वाहन पंजीकरण",
     step3Description:
-      "भारतीय मानक AIS-125 के अंतर्गत अपने वाहन का पंजीकरण करें। आपके वाहन का वर्गीकरण निर्धारित करता है कि आप किन चिकित्सा आपातकालों के लिए अधिकृत हैं।",
+      "जिस आपातकालीन वाहन को आप चलाएंगे उसका पंजीकरण करें। इसका AIS-125 वर्गीकरण चरण 1 में चुना गया था।",
     vehicleRegLabel: "वाहन पंजीकरण संख्या (नंबर प्लेट)",
     vehicleRegPlaceholder: "उदा. DL 01 AB 1234 या UP 16 CD 5678",
     vehicleRegHelp: "RTO में वाणिज्यिक आपातकालीन वाहन (एंबुलेंस) के रूप में पंजीकृत होना आवश्यक है।",

@@ -321,6 +321,7 @@ const styles = StyleSheet.create({
   backArrow: { fontSize: 20, fontWeight: "700", color: colors.slate900 },
   headerTitleGroup: { flex: 1 },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     lineHeight: typography.lineHeights.base,
     fontWeight: typography.fontWeights.bold,

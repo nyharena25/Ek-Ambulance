@@ -19,8 +19,9 @@ import {
   subscribeToOfferActions,
 } from "../src/services/dispatchNotifications";
 import { resolveOfferAction } from "../src/services/dispatchNotifications.core";
-import { authRedirectTarget } from "../src/hooks/otpAuth.core";
+import { authRedirectTarget, driverKycGate } from "../src/hooks/otpAuth.core";
 import { useDriverAuthStore } from "../src/state/driverAuth.store";
+import { useDriverProfileStore } from "../src/state/driverProfile.store";
 
 assertEnvOrWarn();
 
@@ -29,15 +30,17 @@ export default function RootLayout() {
   useDriverLocation();
   useServerSync();
 
-  // Route gate: without a verified driver session (Supabase phone OTP + app_metadata.role = driver) only the sign-in
-  // screens are reachable; an expired, signed-out or wrong-role session lands back on phone entry.
+  // Route gate. Authentication: without a verified driver session (Supabase phone OTP + app_metadata.role = driver) only
+  // the sign-in screens are reachable. Authorization: the server's KYC state (get_driver_profile) decides whether the
+  // driver reaches the shift at all, or the application / verification screens instead.
   const authStatus = useDriverAuthStore((s) => s.status);
+  const kyc = useDriverProfileStore(driverKycGate);
   const segments = useSegments();
-  const firstSegment = segments[0] as string | undefined;
+  const path = segments.join("/");
   useEffect(() => {
-    const target = authRedirectTarget(authStatus, firstSegment);
+    const target = authRedirectTarget(authStatus, path ? path.split("/") : [], kyc);
     if (target) router.replace(target as never);
-  }, [authStatus, firstSegment]);
+  }, [authStatus, path, kyc]);
 
   // Accept/Decline buttons on the dispatch notification run the same lifecycle events as the offer screen, through the
   // same server-authoritative path: an Accept the server refuses (offer taken, expired) does not move the machine.

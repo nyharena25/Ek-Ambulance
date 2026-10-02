@@ -39,6 +39,15 @@ assert.deepStrictEqual(
 );
 console.log("✓ Partial configuration reports exactly the missing keys.\n");
 
+console.log("Test 4: The Supabase client URL is EXPO_PUBLIC_SUPABASE_URL, never a localhost fallback...");
+process.env.EXPO_PUBLIC_SUPABASE_URL = "https://nzwbwuhbtqhhjwnopwmm.supabase.co";
+const { SUPABASE_URL: hostedUrl } = await import(`./env.ts?t=${Date.now()}D`);
+assert.strictEqual(hostedUrl, "https://nzwbwuhbtqhhjwnopwmm.supabase.co");
+process.env.EXPO_PUBLIC_SUPABASE_URL = "";
+const { SUPABASE_URL: unsetUrl } = await import(`./env.ts?t=${Date.now()}E`);
+assert.ok(unsetUrl.startsWith("https://") && !/localhost|127\.0\.0\.1|10\.0\.2\.2/.test(unsetUrl), "unset URL fails loudly, not localhost");
+console.log("✓ Hosted URL used as-is; unset URL is a non-localhost placeholder.\n");
+
 console.log("=================================================");
 console.log("ALL PATIENT ENV CONFIG TESTS PASSED (100% GREEN)");
 console.log("=================================================");

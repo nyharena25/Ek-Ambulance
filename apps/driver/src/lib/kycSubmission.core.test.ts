@@ -6,6 +6,9 @@ import {
   extensionForMimeType,
   hasRequiredKycDocuments,
   REQUIRED_KYC_SLOTS,
+  step1ValidationErrors,
+  mapStep1ToDraftFields,
+  documentUploadErrorMessage,
 } from "./kycSubmission.core.ts";
 import type { DriverOnboardingFormData } from "../state/driverOnboarding.store.ts";
 
@@ -88,6 +91,27 @@ assert.strictEqual(
   "extra optional slots don't hurt"
 );
 console.log("✓ required-slot rule\n");
+
+console.log("Test 9: the Step 1 draft carries only the driver's own Step 1 values, and never an unchosen type...");
+const draft = mapStep1ToDraftFields(baseForm);
+assert.deepStrictEqual(draft, {
+  ok: true,
+  fields: { licenseNumber: "DL-0420180098712", ais125Type: "TYPE_D_ALS", dlExpiry: "2028-08-14", dlState: "NCT of Delhi (DL)", psvBadgeNumber: "PSV-AMB-2023-4109" },
+});
+const untyped = { ...baseForm, ais125VehicleType: null };
+assert.deepStrictEqual(step1ValidationErrors(untyped), ["VALIDATION_MISSING_AIS125"]);
+assert.deepStrictEqual(mapStep1ToDraftFields(untyped), { ok: false, errors: ["VALIDATION_MISSING_AIS125"] });
+assert.deepStrictEqual(mapFormDataToApplicationFields(untyped), { ok: false, field: "ais125Type" }, "final Submit refuses it too");
+const badDate = mapStep1ToDraftFields({ ...baseForm, dlExpiry: "2028-08-14" });
+assert.deepStrictEqual(badDate, { ok: false, errors: ["VALIDATION_EXPIRED_DL"] }, "an unparseable expiry is never sent");
+console.log("✓ Step 1 draft mapping\n");
+
+console.log("Test 10: upload error text names the cause and keeps the server's short reason...");
+assert.strictEqual(documentUploadErrorMessage("unsupported_file_type"), "Only PDF, JPG or PNG files can be uploaded.");
+assert.strictEqual(documentUploadErrorMessage("upload_failed", "Payload too large"), "The document was not uploaded. (Payload too large)");
+assert.strictEqual(documentUploadErrorMessage("something_new"), "The document was not uploaded. Try again.", "unknown codes never imply success");
+assert.ok(documentUploadErrorMessage("upload_failed", "x".repeat(500)).length < 220, "long server text is truncated");
+console.log("✓ upload error text\n");
 
 console.log("=================================================");
 console.log("ALL KYC SUBMISSION CORE TESTS PASSED (100% GREEN)");

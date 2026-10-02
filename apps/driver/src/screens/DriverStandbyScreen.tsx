@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { driverStandbyStrings } from "../i18n/driverStandbyStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
@@ -20,6 +20,7 @@ import { useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { isProfileLocked } from "../state/driverAvailability.core";
 
 import { AppIcon, DriverMap, StandbyBookingSection } from "../components";
+import { driverErrorMessage } from "../lib/driverServer.core";
 export interface DriverStandbyScreenProps {
   onNavigateToOnboarding?: () => void;
   onOpenBooking?: () => void;
@@ -39,8 +40,8 @@ export default function DriverStandbyScreen({
     language,
     currentJurisdiction,
     gps,
-    registeredAis125Type,
     isOfflineModalOpen,
+    hasRealFix,
     toggleOnlineState,
     confirmGoOffline,
     closeOfflineModal,
@@ -51,8 +52,9 @@ export default function DriverStandbyScreen({
 
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
   const strings = driverStandbyStrings[language];
-  const ais125Info = strings.ais125TierBadge[registeredAis125Type];
   const profile = useDriverProfileStore((s) => s.profile);
+  // Only the server's registered classification is shown - never the store's pre-profile default.
+  const ais125Info = profile?.ais125Type ? strings.ais125TierBadge[profile.ais125Type] : null;
   // The service area is part of the profile: the chips freeze from the offer to the end of the mission.
   const profileLocked = isProfileLocked(useDriverLifecycleStore((s) => s.currentState));
 
@@ -83,19 +85,19 @@ export default function DriverStandbyScreen({
             />
           </View>
           <View style={styles.pilotTextWrap}>
-            {/* strings.driverName is a demo identity: only a development build may show it. A real driver with no name yet sees the Profile label. */}
-            <Text style={styles.pilotName}>{profile?.fullName || (__DEV__ ? strings.driverName : driverBookingStrings[language].profileEntry)}</Text>
+            {/* Real profile data only: a driver with no name yet sees the Profile label, and no plate badge without a plate. */}
+            <Text style={styles.pilotName} numberOfLines={1}>{profile?.fullName || driverBookingStrings[language].profileEntry}</Text>
             <View style={styles.plateRow}>
-              {(profile?.vehicle.registrationNumber || __DEV__) && (
+              {profile?.vehicle.registrationNumber ? (
                 <View style={styles.plateMiniBadge}>
-                  <Text style={styles.plateMiniText}>{profile?.vehicle.registrationNumber || strings.vehiclePlate}</Text>
+                  <Text style={styles.plateMiniText} numberOfLines={1}>{profile.vehicle.registrationNumber}</Text>
                 </View>
-              )}
+              ) : null}
               <Pressable
                 onPress={onNavigateToOnboarding}
                 style={styles.manageFleetBtn}
               >
-                <Text style={styles.manageFleetBtnText}>AIS-125 Docs{" "}<AppIcon icon={{ set: "ion", name: "open-outline" }} size={10} /></Text>
+                <Text style={styles.manageFleetBtnText} numberOfLines={1}>{strings.documentsButton}{" "}<AppIcon icon={{ set: "ion", name: "open-outline" }} size={10} /></Text>
               </Pressable>
             </View>
           </View>
@@ -170,13 +172,6 @@ export default function DriverStandbyScreen({
               </Text>
             </View>
 
-            <View style={styles.redisBadge}>
-              <Text style={styles.redisBadgeText}>
-                {isOnline
-                  ? strings.redisGeoaddActive
-                  : strings.redisGeoaddInactive}
-              </Text>
-            </View>
           </View>
 
           {/* Subtitle & Radar Info */}
@@ -189,7 +184,9 @@ export default function DriverStandbyScreen({
             <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]} accessibilityRole="alert">
               {presenceErrorCode === "no_gps_fix"
                 ? (language === "hi" ? "स्थान की पुष्टि होने की प्रतीक्षा करें, फिर पुनः प्रयास करें।" : "Waiting for a GPS fix - try again in a moment.")
-                : (language === "hi" ? `ऑनलाइन नहीं हो सके: ${presenceErrorCode}` : `Could not go online: ${presenceErrorCode}`)}
+                : language === "hi"
+                  ? strings.presenceRefused
+                  : driverErrorMessage(presenceErrorCode)}
             </Text>
           )}
 
@@ -284,9 +281,6 @@ export default function DriverStandbyScreen({
               <Text style={styles.mapSectionTitle}>
                 <AppIcon icon={{ set: "ion", name: "map" }} />{" "}{strings.mapSectionTitle}
               </Text>
-              <Text style={styles.mapGeofenceBadge}>
-                {strings.mapDispatchRadius(15)}
-              </Text>
             </View>
             <Pressable style={styles.recenterIconBtn} onPress={recenterGps}>
               <Text style={styles.recenterIconText}><AppIcon icon={{ set: "mci", name: "target" }} size={11} />{" "}{strings.btnRecenterGps}</Text>
@@ -295,7 +289,15 @@ export default function DriverStandbyScreen({
 
           {/* LIVE MAP */}
           <View style={styles.mapCanvas}>
-            <DriverMap style={StyleSheet.absoluteFill} driver={driverPos} headingDeg={gps.heading} controlsBottom={spacing.sm} />
+            {/* No marker before a real fix: the store's starting coordinate is a placeholder, not where the driver is. */}
+            {hasRealFix ? (
+              <DriverMap style={StyleSheet.absoluteFill} driver={driverPos} headingDeg={gps.heading} controlsBottom={spacing.sm} />
+            ) : (
+              <View style={styles.mapWaiting}>
+                <ActivityIndicator color={colors.slate500} />
+                <Text style={styles.mapWaitingText}>{strings.waitingForGps}</Text>
+              </View>
+            )}
           </View>
 
         </View>
@@ -392,47 +394,27 @@ export default function DriverStandbyScreen({
           </View>
         </View>
 
-        {/* REGISTERED AIS-125 TIER BADGE */}
-        <View style={styles.ais125Card}>
-          <View style={styles.ais125HeaderRow}>
-            <View style={styles.ais125Emblem}>
-              <AppIcon icon={{ set: "mci", name: "ambulance" }} size={20} color={colors.slate700} style={styles.ais125EmblemIcon} />
-            </View>
-            <View style={styles.ais125TitleBox}>
-              <Text style={styles.ais125TierTitle}>
-                {strings.ais125TierTitle}
-              </Text>
-              <Text style={styles.ais125CardMainTitle}>
-                {ais125Info.title}
-              </Text>
-              <Text style={styles.ais125CardSubTitle}>
-                {ais125Info.subtitle}
-              </Text>
-            </View>
-            <View style={styles.ais125BadgePill}>
-              <Text style={styles.ais125BadgeText}>{ais125Info.badge}</Text>
-            </View>
-          </View>
-
-          {/* Equipment Readiness Checklist */}
-          <View style={styles.equipmentBox}>
-            <View style={styles.equipmentBoxHeader}>
-              <Text style={styles.equipmentHeading}>
-                <AppIcon icon={{ set: "mci", name: "stethoscope" }} />{" "}{strings.equipmentReadinessHeading}
-              </Text>
-              <View style={styles.compliancePill}>
-                <Text style={styles.compliancePillText}>
-                  <AppIcon icon={{ set: "ion", name: "checkmark" }} size={10} />{" "}{strings.equipmentReadyStatus}
-                </Text>
+        {/* REGISTERED CLASSIFICATION: the server's ais125_type and KYC status only. No equipment "readiness" - nothing on
+            the server records it, so nothing here may claim it. */}
+        {ais125Info && profile && (
+          <View style={styles.ais125Card}>
+            <View style={styles.ais125HeaderRow}>
+              <View style={styles.ais125Emblem}>
+                <AppIcon icon={{ set: "mci", name: "ambulance" }} size={20} color={colors.slate700} style={styles.ais125EmblemIcon} />
+              </View>
+              <View style={styles.ais125TitleBox}>
+                <Text style={styles.ais125TierTitle}>{strings.ais125TierTitle}</Text>
+                <Text style={styles.ais125CardMainTitle}>{ais125Info.title}</Text>
+                <Text style={styles.ais125CardSubTitle}>{ais125Info.subtitle}</Text>
               </View>
             </View>
-            <Text style={styles.equipmentDetailsText}>
-              {ais125Info.equipmentReady}
-            </Text>
+            <View style={styles.kycRow}>
+              <View style={[styles.ais125BadgePill, profile.kycStatus === "approved" ? styles.kycPillApproved : styles.kycPillPending]}>
+                <Text style={styles.ais125BadgeText} numberOfLines={1}>{strings.kycStatus[profile.kycStatus] ?? profile.kycStatus}</Text>
+              </View>
+            </View>
           </View>
-
-        </View>
-
+        )}
 
       </ScrollView>
 
@@ -570,6 +552,7 @@ const styles = StyleSheet.create({
   },
   plateRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 8,
     marginTop: 2,
@@ -623,97 +606,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
   },
 
-  // Telemetry Bar
-  telemetryBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate950,
-    paddingHorizontal: spacing.base,
-    paddingVertical: 8,
-  },
-  telemetryWidget: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  telemetryIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: radii.sm,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  telemetryEmoji: {
-    fontSize: 14,
-  },
-  telemetryTextBox: {
-    flex: 1,
-  },
-  telemetryValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  telemetryValue: {
-    fontSize: 12,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.white,
-  },
-  telemetryValueCritical: {
-    color: colors.triageRed, // nearest existing token
-  },
-  telemetrySubValue: {
-    fontSize: 10,
-    color: colors.slate400,
-  },
-  telemetryMetaText: {
-    fontSize: 10,
-    color: colors.slate400,
-  },
-  telemetryDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    marginHorizontal: spacing.sm,
-  },
-  signalPulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: radii.full,
-    backgroundColor: colors.triageGreen, // nearest existing token
-  },
-
   // Critical Battery Banner
-  criticalBatteryBanner: {
-    flexDirection: "row",
-    backgroundColor: colors.warningLight,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.warning,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-    gap: 8,
-  },
-  criticalBatteryIcon: {
-    fontSize: 18,
-  },
-  criticalBatteryTextWrap: {
-    flex: 1,
-  },
-  criticalBatteryTitle: {
-    fontSize: 11,
-    color: colors.warning,
-    fontWeight: typography.fontWeights.bold,
-    lineHeight: 14,
-  },
-  criticalBatteryAction: {
-    fontSize: 10,
-    color: colors.slate900,
-    fontWeight: typography.fontWeights.extrabold,
-    marginTop: 2,
-  },
 
   // Scroll Area
   scrollView: {
@@ -774,25 +667,9 @@ const styles = StyleSheet.create({
   shiftStatusTextOffline: {
     color: colors.slate600,
   },
-  redisBadge: {
-    backgroundColor: colors.slate100,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-  },
-  redisBadgeText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
-  },
   shiftSubNotice: {
     fontSize: typography.fontSizes.xs,
     lineHeight: typography.lineHeights.xs,
-  },
-  shiftSubNoticeOnline: {
-    color: colors.slate700,
   },
   shiftSubNoticeOffline: {
     color: colors.slate600,
@@ -872,25 +749,6 @@ const styles = StyleSheet.create({
   toggleBtnSubOffline: {
     color: "rgba(255, 255, 255, 0.9)",
   },
-  redisTelemetryBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.slate50,
-    padding: spacing.sm,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  redisKeyText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
-  },
-  redisSyncText: {
-    fontSize: 10,
-    color: colors.slate600,
-  },
 
   // Service Area Map Card
   mapSectionCard: {
@@ -908,25 +766,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   mapTitleBox: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
   mapSectionTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
-  },
-  mapGeofenceBadge: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.info,
-    backgroundColor: colors.infoLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.info,
   },
   recenterIconBtn: {
     backgroundColor: colors.slate100,
@@ -943,6 +792,33 @@ const styles = StyleSheet.create({
   },
 
   // Simulated Map Canvas
+  mapWaiting: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
+  mapWaitingText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate600,
+  },
+  kycRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: spacing.sm,
+  },
+  kycPillApproved: {
+    backgroundColor: colors.successLight,
+    borderColor: colors.success,
+  },
+  kycPillPending: {
+    backgroundColor: colors.slate100,
+    borderColor: colors.slate300,
+  },
   mapCanvas: {
     height: 260,
     backgroundColor: colors.slate200,
@@ -952,93 +828,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.slate800, // nearest existing token
   },
-  geofenceOverlayPill: {
-    position: "absolute",
-    bottom: 8,
-    left: 8,
-    zIndex: 20,
-    elevation: 20,
-    backgroundColor: "rgba(15, 23, 42, 0.8)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-  geofenceOverlayText: {
-    color: semanticColors.status.statutoryBorder, // nearest existing token (no cyan in the design system)
-    fontSize: 9,
-    fontWeight: typography.fontWeights.bold,
-  },
-
-  // Coordinates HUD
-  coordinatesHud: {
-    backgroundColor: colors.slate900,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-  },
-  hudRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  hudCol: {
-    alignItems: "center",
-  },
-  hudLabel: {
-    fontSize: 9,
-    color: colors.slate400,
-    fontWeight: typography.fontWeights.semibold,
-  },
-  hudValue: {
-    fontSize: 11,
-    color: colors.white,
-    fontWeight: typography.fontWeights.bold,
-    marginTop: 2,
-  },
-  hudValueGreen: {
-    fontSize: 11,
-    color: colors.triageGreen, // nearest existing token
-    fontWeight: typography.fontWeights.bold,
-    marginTop: 2,
-  },
 
   // Hospital List
-  hospitalListWrap: {
-    marginTop: 2,
-    gap: 4,
-  },
-  hospitalListTitle: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
-  },
-  hospitalChipsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  hospitalChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate100,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  hospitalChipName: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.medium,
-    color: colors.slate900,
-  },
-  hospitalChipDist: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.emergencyDark,
-  },
 
   // Jurisdiction Section
   jurisdictionCard: {
@@ -1106,6 +897,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   jurStateBadge: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: typography.fontWeights.extrabold,
     color: colors.slate700,
@@ -1119,6 +911,7 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   jurChipName: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -1197,156 +990,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.extrabold,
     letterSpacing: 0.5,
   },
-  equipmentBox: {
-    backgroundColor: colors.slate50,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    gap: 6,
-  },
-  equipmentBoxHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  equipmentHeading: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  compliancePill: {
-    backgroundColor: colors.successLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.success,
-  },
-  compliancePillText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.success,
-  },
-  equipmentDetailsText: {
-    fontSize: 11,
-    color: colors.slate700,
-    lineHeight: 16,
-  },
-  tierSwitcherRow: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  tierQuickChip: {
-    flex: 1,
-    paddingVertical: 6,
-    borderRadius: radii.sm,
-    backgroundColor: colors.slate100,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    alignItems: "center",
-  },
-  tierQuickChipActive: {
-    backgroundColor: colors.slate900,
-    borderColor: colors.slate900,
-  },
-  tierQuickChipText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate700,
-  },
-  tierQuickChipTextActive: {
-    color: colors.white,
-  },
-
-  // Daily Statistics Section
-  statsCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    gap: spacing.md,
-    ...shadows.sm,
-  },
-  statsTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  statMetricBox: {
-    width: "48%",
-    backgroundColor: colors.slate50,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: 2,
-  },
-  statNumber: {
-    fontSize: typography.fontSizes.xl,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.slate900,
-  },
-  statNumberGreen: {
-    fontSize: typography.fontSizes.xl,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.success,
-  },
-  statLabel: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
-  },
-  statSub: {
-    fontSize: 10,
-    color: colors.slate600,
-  },
-  recentMissionCard: {
-    backgroundColor: colors.slate50,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: 4,
-  },
-  recentMissionTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  recentCareBadge: {
-    backgroundColor: colors.emergencyLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.emergencyBorder,
-  },
-  recentCareText: {
-    fontSize: 9,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.emergencyDark,
-  },
-  recentMissionFare: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.success,
-  },
-  recentMissionTitle: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate900,
-  },
-  recentMissionDetails: {
-    fontSize: 11,
-    color: colors.slate700,
-  },
 
   // Modal
   modalBackdrop: {
@@ -1410,6 +1053,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   offlineReasonText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate800,
   },

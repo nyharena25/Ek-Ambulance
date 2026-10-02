@@ -26,6 +26,9 @@ export interface LocationTranslation {
   locationPermissionDeniedBanner: string;
   locationUnavailableBanner: string;
   locationTimeoutBanner: string;
+  locationServicesOffBanner: string;
+  locatingText: string;
+  noPickupYet: string;
 }
 
 export const LANDMARK_PRESETS: LandmarkPreset[] = [
@@ -88,14 +91,18 @@ export const locationStrings: Record<SupportedLanguage, LocationTranslation> = {
     pinInstruction: "Drag the map to position pin at patient location",
     confirmPickupButton: "Confirm Pickup Location",
     confirmDisabledText: "Set the pickup point first",
-    coordinatesLabel: "GPS Telemetry",
+    coordinatesLabel: "GPS coordinates",
     nextStepNotice: "Next: Select Care Level (ALS / BLS / PTA)",
     locationPermissionDeniedBanner:
-      "Location permission denied. Select your pickup point manually on the map below.",
+      "Location permission denied. Allow location in Settings and tap Locate Me, or search a landmark above.",
     locationUnavailableBanner:
-      "Unable to fetch your current GPS position. Select your pickup point manually on the map below.",
+      "Your phone could not provide a GPS position. Tap Locate Me to try again, or search a landmark above.",
     locationTimeoutBanner:
-      "GPS fix is taking too long. Select your pickup point manually on the map below.",
+      "GPS fix is taking too long. Move near a window or outdoors and tap Locate Me, or search a landmark above.",
+    locationServicesOffBanner:
+      "Location services are turned off. Turn on location (GPS) and tap Locate Me, or search a landmark above.",
+    locatingText: "Finding your location…",
+    noPickupYet: "Pickup not set yet",
   },
   hi: {
     headerTitle: "पिकअप स्थान चुनें",
@@ -111,10 +118,14 @@ export const locationStrings: Record<SupportedLanguage, LocationTranslation> = {
     coordinatesLabel: "GPS निर्देशांक",
     nextStepNotice: "अगला चरण: एंबुलेंस श्रेणी का चयन (ALS / BLS / PTA)",
     locationPermissionDeniedBanner:
-      "स्थान अनुमति अस्वीकृत। कृपया नीचे नक्शे पर मैन्युअल रूप से पिकअप स्थान चुनें।",
+      "स्थान अनुमति अस्वीकृत। सेटिंग्स में स्थान की अनुमति दें और 'मेरा स्थान' दबाएं, या ऊपर लैंडमार्क खोजें।",
     locationUnavailableBanner:
-      "वर्तमान GPS स्थान प्राप्त करने में असमर्थ। कृपया नीचे नक्शे पर मैन्युअल रूप से पिकअप स्थान चुनें।",
+      "फ़ोन GPS स्थान नहीं दे सका। 'मेरा स्थान' दोबारा दबाएं, या ऊपर लैंडमार्क खोजें।",
     locationTimeoutBanner:
-      "GPS स्थान प्राप्त करने में अधिक समय लग रहा है। कृपया नीचे नक्शे पर मैन्युअल रूप से पिकअप स्थान चुनें।",
+      "GPS स्थान मिलने में अधिक समय लग रहा है। खिड़की के पास या बाहर जाकर 'मेरा स्थान' दबाएं, या ऊपर लैंडमार्क खोजें।",
+    locationServicesOffBanner:
+      "स्थान सेवाएँ (GPS) बंद हैं। GPS चालू करें और 'मेरा स्थान' दबाएं, या ऊपर लैंडमार्क खोजें।",
+    locatingText: "आपका स्थान खोजा जा रहा है…",
+    noPickupYet: "पिकअप स्थान अभी तय नहीं",
   },
 };

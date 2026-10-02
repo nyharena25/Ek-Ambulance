@@ -149,7 +149,7 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     btnDecline: "Decline / Busy",
     declineSheetTitle: "Decline Dispatch Offer?",
     declineSheetSubtitle:
-      "The mission will immediately be reassigned to the next closest ambulance on the Redis dispatch radar.",
+      "The emergency will be offered to other nearby ambulances.",
     declineReasonTraffic: "Too far away / Blocked in gridlock traffic",
     declineReasonMaintenance: "Vehicle mechanical issue / Low medical oxygen",
     declineReasonPatientOnboard: "Another emergency patient already onboard",
@@ -236,7 +236,7 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     btnDecline: "अस्वीकार / व्यस्त",
     declineSheetTitle: "डिस्पैच ऑफर अस्वीकार करें?",
     declineSheetSubtitle:
-      "यह मिशन तत्काल Redis डिस्पैच रडार पर उपस्थित अगली निकटतम एंबुलेंस को सौंप दिया जाएगा।",
+      "यह आपात कॉल पास की दूसरी एम्बुलेंस को भेजी जाएगी।",
     declineReasonTraffic: "बहुत दूर / भीषण ट्रैफिक जाम में फंसे हैं",
     declineReasonMaintenance: "वाहन यांत्रिक खराबी / मेडिकल ऑक्सीजन स्तर कम",
     declineReasonPatientOnboard: "एंबुलेंस में पहले से मरीज उपस्थित है",

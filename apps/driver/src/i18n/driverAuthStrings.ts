@@ -48,14 +48,14 @@ export interface DriverAuthTranslation {
 
 export const driverAuthStrings: Record<SupportedLanguage, DriverAuthTranslation> = {
   en: {
-    headerTitle: "Driver Verification",
+    headerTitle: "Driver Sign In",
     headerTagline: "Ek-Ambulance Driver Access",
     backButton: "Back",
-    secureAuthBadge: "AIS-125 Secure Auth",
+    secureAuthBadge: "Secure SMS sign-in",
 
     phoneStepTitle: "Enter Registered Mobile Number",
     phoneStepSubtitle:
-      "We will send an SMS with a 6-digit verification code to authenticate your driver account.",
+      "Use the number your ambulance operator registered for you. We will text you a 6-digit code. New drivers: ask your operator to create your driver account, then sign in here to submit your application.",
     phoneInputLabel: "Mobile Number",
     phoneInputPlaceholder: "98765 43210",
     invalidPhoneError:
@@ -105,14 +105,14 @@ export const driverAuthStrings: Record<SupportedLanguage, DriverAuthTranslation>
   },
 
   hi: {
-    headerTitle: "चालक सत्यापन",
+    headerTitle: "ड्राइवर साइन इन",
     headerTagline: "Ek-Ambulance चालक अभिगम",
     backButton: "पिछला",
-    secureAuthBadge: "AIS-125 सुरक्षित प्रमाणन",
+    secureAuthBadge: "सुरक्षित SMS साइन-इन",
 
     phoneStepTitle: "पंजीकृत मोबाइल नंबर दर्ज करें",
     phoneStepSubtitle:
-      "आपके चालक खाते को प्रमाणित करने हेतु हम 6-अंकीय सत्यापन कोड वाला SMS भेजेंगे।",
+      "वही नंबर डालें जो आपके एम्बुलेंस ऑपरेटर ने पंजीकृत किया है। हम 6-अंकीय कोड भेजेंगे। नए ड्राइवर: पहले ऑपरेटर से ड्राइवर खाता बनवाएँ, फिर यहाँ साइन इन करके आवेदन जमा करें।",
     phoneInputLabel: "मोबाइल नंबर",
     phoneInputPlaceholder: "98765 43210",
     invalidPhoneError:

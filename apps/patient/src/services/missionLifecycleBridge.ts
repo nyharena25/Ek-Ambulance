@@ -7,6 +7,7 @@ import {
   type ParsedLifecycleMessage,
   type PatientLifecycleMachineEvent,
 } from "@sahayak/domain";
+import { assignedDriverOf } from "../lib/missionApi.core.ts";
 
 /**
  * Translates the wire vocabulary into the domain machine's SERVER_* events.
@@ -24,10 +25,9 @@ export function translateLifecycleMessage(
   switch (message.event) {
     case "DRIVER_ACCEPTED": {
       const d = readDriverAccepted(data);
-      const hasDriver = d.driver.displayName || d.driver.vehicleRegistration || d.driver.ais125Type;
       return {
         type: "SERVER_MISSION_ASSIGNED",
-        payload: { missionId, driver: hasDriver ? d.driver : undefined, maskedCall: d.maskedCall, etaMinutes: d.etaMinutes },
+        payload: { missionId, driver: assignedDriverOf(data), maskedCall: d.maskedCall, etaMinutes: d.etaMinutes },
       };
     }
     case "DRIVER_ARRIVED":

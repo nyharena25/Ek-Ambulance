@@ -55,7 +55,7 @@ export const fareStrings: Record<SupportedLanguage, FareTranslation> = {
     emtParamedicValue: "₹0.00 (Statutory Included)",
     surgeMultiplierRow: "Emergency Surge Multiplier",
     surgeMultiplierValue: "1.0x (Zero Surge Guaranteed)",
-    totalFareRow: "Total Estimated Statutory Fare",
+    totalFareRow: "Total estimated fare",
 
     indicativeDisclaimer:
       "Statutory estimate is indicative. The authoritative fare is computed and locked server-side upon dispatch request.",

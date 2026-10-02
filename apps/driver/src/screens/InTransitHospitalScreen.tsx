@@ -19,12 +19,13 @@ import { CompleteMissionPayload, ConfirmArrivalHospitalPayload, GeoPoint } from 
 import { driverTransportStrings } from "../i18n/driverTransportStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
+import { useDriverProfileStore } from "../state/driverProfile.store";
 import { getServerAdapter } from "../state/driverLifecycle.store";
 
 import { distanceKm as distanceKmBetween } from "../hooks/hospitalSelection.core";
 import { AppIcon, DriverMap, NavigateInGoogleMapsButton } from "../components";
-import { IS_DEV } from "../config/env";
-// __DEV__ only: a release build reaching this screen without a real hospital selection falls back to the
+import { IS_TEST_RUNNER } from "../config/env";
+// The DEMO_* point is for the test runner only: any build on a phone reaching this screen without a real hospital selection falls back to the
 // driver's own current position (distance 0) rather than a fixed, confidently-wrong location.
 const DEMO_HOSPITAL: GeoPoint = { latitude: 28.5355, longitude: 77.391 };
 
@@ -69,7 +70,7 @@ export default function InTransitHospitalScreen({
   const gps = useDriverStandbyStore((st) => st.gps);
   const currentSpeed = Math.round(gps.speedKmh);
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
-  const hospitalTarget = hospitalCoordinates ?? (IS_DEV ? DEMO_HOSPITAL : driverPos);
+  const hospitalTarget = hospitalCoordinates ?? (IS_TEST_RUNNER ? DEMO_HOSPITAL : driverPos);
   const distanceKm = distanceKmBetween(driverPos, hospitalTarget);
   const [isCompletedAtHospital, setIsCompletedAtHospital] = useState(false);
   const [isSignOffModalOpen, setIsSignOffModalOpen] = useState(false);
@@ -89,6 +90,8 @@ export default function InTransitHospitalScreen({
   const isSignOffComplete = physicianName.trim() !== "" && medicalRegNo.trim() !== "" && department.trim() !== "";
 
   const strings = driverTransportStrings[language];
+
+  const crewName = useDriverProfileStore((st) => st.profile?.fullName);
 
   // Slider animation values
   const sliderWidth = SCREEN_WIDTH - spacing.base * 2;
@@ -395,9 +398,9 @@ export default function InTransitHospitalScreen({
                 </Text>
 
                 <View style={styles.emtProfileBox}>
-                  <Text style={styles.emtNameText}>{strings.emtNameLabel}</Text>
-                  <Text style={styles.emtRegText}>
-                    {strings.emtRegNumberLabel}
+                  {/* The signed-in driver's own profile name; no registration number is shown because the server does not provide one here. */}
+                  <Text style={styles.emtNameText}>
+                    {crewName ? `${strings.emtNameLabel}: ${crewName}` : strings.emtNameLabel}
                   </Text>
                   <Text style={styles.emtTimestampText}>
                     {strings.emtSignTimestampLabel(new Date().toLocaleTimeString())}
@@ -592,76 +595,6 @@ const styles = StyleSheet.create({
   },
 
   // ER Integration Alert Banner
-  erAlertBanner: {
-    backgroundColor: semanticColors.triage.green.textAccessible, // High-contrast clinical green
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 2,
-    borderBottomColor: semanticColors.triage.green.border,
-    gap: 4,
-  },
-  erAlertHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  integrationPulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radii.full,
-    backgroundColor: colors.triageGreen,
-  },
-  erAlertTitle: {
-    color: colors.white,
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.extrabold,
-    letterSpacing: 0.5,
-  },
-  erAlertSub: {
-    color: colors.triageGreenSurface, // nearest existing light-green token
-    fontSize: 10,
-    lineHeight: 14,
-  },
-  erStatusChipsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 2,
-  },
-  erStatusChip: {
-    backgroundColor: "rgba(0, 0, 0, 0.25)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-  },
-  erStatusChipText: {
-    color: colors.triageGreen, // nearest existing token
-    fontSize: 9,
-    fontWeight: typography.fontWeights.bold,
-  },
-  erStatusChipHighlight: {
-    backgroundColor: colors.white,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-  },
-  erStatusChipHighlightText: {
-    color: semanticColors.triage.green.textAccessible,
-    fontSize: 9,
-    fontWeight: typography.fontWeights.extrabold,
-  },
-  vitalsStreamBar: {
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.sm,
-    marginTop: 2,
-  },
-  vitalsStreamText: {
-    color: colors.triageGreenSurface, // nearest existing light-green token
-    fontSize: 10,
-    fontWeight: typography.fontWeights.semibold,
-  },
 
   // Navigation Overlay Card
   navOverlayCard: {
@@ -680,29 +613,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
   },
-  destinationIcon: {
-    fontSize: 20,
-  },
   destinationTextBox: {
     flex: 1,
   },
   destinationHeading: {
+    flexShrink: 1,
     fontSize: 10,
     color: colors.slate400,
     fontWeight: typography.fontWeights.bold,
     textTransform: "uppercase",
   },
   destinationHospitalName: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.extrabold,
     color: colors.white,
     lineHeight: typography.lineHeights.base,
-  },
-  destinationRampAccess: {
-    fontSize: typography.fontSizes.xs,
-    color: semanticColors.status.statutoryBorder, // nearest existing token (no cyan in the design system)
-    lineHeight: typography.lineHeights.xs,
-    marginTop: 2,
   },
   telemetryBar: {
     flexDirection: "row",
@@ -729,17 +655,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.slate400,
   },
-  corridorCenterBox: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 6,
-  },
-  corridorBadgeText: {
-    color: colors.triageGreen, // nearest existing token
-    fontSize: 9,
-    fontWeight: typography.fontWeights.extrabold,
-    textAlign: "center",
-  },
   etaCol: {
     alignItems: "flex-end",
   },
@@ -759,28 +674,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slate950, // nearest existing token
     position: "relative",
     overflow: "hidden",
-  },
-  floatingControls: {
-    position: "absolute",
-    bottom: 12,
-    left: spacing.base,
-    right: spacing.base,
-    alignItems: "center",
-    zIndex: 20,
-    elevation: 20,
-  },
-  telemetryLockPill: {
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.slate700,
-  },
-  telemetryLockText: {
-    color: colors.triageGreen, // nearest existing token
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
   },
 
   // Bottom Persistent Bar
@@ -924,6 +817,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   fieldLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.semibold,
     color: colors.slate700,
@@ -950,10 +844,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
-  },
-  emtRegText: {
-    fontSize: 11,
-    color: colors.slate700,
   },
   emtTimestampText: {
     fontSize: 10,
@@ -1013,16 +903,6 @@ const styles = StyleSheet.create({
   tariffLine: {
     fontSize: typography.fontSizes.xs,
     color: colors.slate700,
-  },
-  tariffTotalDivider: {
-    height: 1,
-    backgroundColor: colors.slate300,
-    marginVertical: 4,
-  },
-  tariffTotal: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.success,
   },
   dpdpNotice: {
     fontSize: 9,

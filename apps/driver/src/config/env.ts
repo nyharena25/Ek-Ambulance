@@ -3,11 +3,9 @@
  * property reads (not `process.env[name]`) - Expo's Babel plugin only
  * inlines statically-analyzable accesses like these into the native bundle.
  *
- * EXPO_PUBLIC_SUPABASE_URL is validated here but not yet read by
- * src/lib/supabaseClient.ts - that client deliberately routes through
- * EXPO_PUBLIC_GATEWAY_URL instead, same Kong-only routing the patient app
- * uses. Provisioned ahead of whatever eventually needs the raw project
- * URL, not wired into request routing.
+ * EXPO_PUBLIC_SUPABASE_URL is what src/lib/supabaseClient.ts talks to (Auth, REST, Storage): the hosted
+ * project's https URL, or a local `supabase start` URL when deliberately developing against the local stack.
+ * EXPO_PUBLIC_GATEWAY_URL (Kong) still carries /realtime/token.
  */
 export const ENV = {
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
@@ -16,9 +14,14 @@ export const ENV = {
   centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL,
 } as const;
 
-/** `__DEV__` doesn't exist under the plain node test runner, so this is the one shared check every
- *  dev-only fallback (mock data, demo IDs) should import rather than re-declaring `typeof __DEV__ ...`. */
-export const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
+/** The Supabase URL the app client uses. No localhost fallback: an unset var fails every auth call loudly instead of
+ *  silently aiming a phone at itself. */
+export const SUPABASE_URL = ENV.supabaseUrl || "https://supabase-url-not-set.invalid";
+
+/** True only under the plain node test runner, where the React Native `__DEV__` global does not exist. A development
+ *  build on a phone is NOT this: it must show the same real data as a release build, never demo identities,
+ *  coordinates or seeded forms. The one shared check for test-only fallbacks. */
+export const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
 
 const REQUIRED_ENV_KEYS = ["supabaseUrl", "supabaseAnonKey", "gatewayUrl", "centrifugoWsUrl"] as const;
 

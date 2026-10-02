@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Linking } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   MissionTrackingScreen,
@@ -22,8 +23,9 @@ import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAut
 import { useMissionSync } from "../../src/hooks/useMissionSync";
 import type { DriverMarkerHandle } from "../../src/components";
 import { useDrivingRoute } from "../../src/hooks/useDrivingRoute";
-import { DEFAULT_PICKUP, findHospital, formatCoordinates, nearestDispatchHub, parseCoordinate } from "../../src/services/mapGeo.core";
-import { confirmReceipt, requestErasure } from "../../src/lib/missionApi";
+import { DEFAULT_PICKUP, findHospital, formatCoordinates, parseCoordinate } from "../../src/services/mapGeo.core";
+import { confirmReceipt, fetchMissionCreatedAt, requestErasure } from "../../src/lib/missionApi";
+import { matchingStrings } from "../../src/i18n/matchingStrings";
 
 
 /**
@@ -140,15 +142,30 @@ export default function BookingMissionTrackingRoute() {
   // The hospital is whatever the driver actually selected (TRANSPORT_STARTED.destination); a route param is only a
   // dev/deep-link hint, and with neither there is no hospital to show (P10: nothing sets it today).
   const hospitalName = context.destination?.name ?? params.hospitalName;
+  // Only a real coordinate: the server's destination, or a deep-link name that matches a known hospital - never a fallback.
+  const knownHospital = hospitalName ? findHospital(hospitalName) : null;
   const hospitalCoordinate = context.destination
     ? { latitude: context.destination.latitude, longitude: context.destination.longitude }
-    : hospitalName
-      ? findHospital(hospitalName).coordinate
-      : pickup;
-  const dispatchHub = nearestDispatchHub(pickup);
+    : knownHospital?.matched
+      ? knownHospital.coordinate
+      : null;
   const isTransportLeg = missionState === "transporting";
-  const route = useDrivingRoute(isTransportLeg ? pickup : dispatchHub, isTransportLeg ? hospitalCoordinate : pickup);
-  const mapProps = { pickup, route, driverMarkerRef, driverStart: lastDriverRef.current ?? (isTransportLeg ? pickup : dispatchHub) };
+  // The patient app is not sent the ambulance's position before its first live ping, so no route or marker is drawn
+  // from a made-up start (a fixed hub) on the way to the pickup; the transport leg is pickup -> real hospital.
+  const route = useDrivingRoute(isTransportLeg ? pickup : null, isTransportLeg ? hospitalCoordinate : null);
+  const mapProps = { pickup, route, driverMarkerRef, driverStart: lastDriverRef.current ?? undefined };
+
+  // A search the server ended with no ambulance: say when it received the request (its own created_at), not a guess.
+  const noAmbulance = missionState === "cancelled" && context.cancellation?.reason === "no_ambulance_available";
+  const [requestedAtMs, setRequestedAtMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!noAmbulance || !missionId) return;
+    let alive = true;
+    void fetchMissionCreatedAt(missionId).then((ms) => alive && setRequestedAtMs(ms));
+    return () => {
+      alive = false;
+    };
+  }, [noAmbulance, missionId]);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -190,7 +207,16 @@ export default function BookingMissionTrackingRoute() {
         cancelledBy={context.cancellation?.cancelledBy ?? undefined}
         reason={context.cancellation?.reason ?? undefined}
         initialLanguage="en"
+        onCall108={() => void Linking.openURL("tel:108").catch(() => {})}
         onReturnHome={handleReturnHome}
+        request={{
+          requestedAt: requestedAtMs !== null ? new Date(requestedAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : undefined,
+          pickupAddress: pickupAddress || undefined,
+          ambulanceType: (() => {
+            const t = context.vehicleType || params.vehicleType; // only a type the request really carried
+            return t ? (matchingStrings.en.vehicleTypeName[t] ?? t) : undefined;
+          })(),
+        }}
       />
     );
   }
@@ -198,9 +224,11 @@ export default function BookingMissionTrackingRoute() {
   if (missionState === "transporting") {
     return (
       <TransportingScreen
+        vehicleRegistration={context.assignedDriver?.vehicleRegistration}
         missionId={missionId}
         vehicleType={vehicleType}
         hospitalName={hospitalName}
+        destinationCoordinate={hospitalCoordinate ?? undefined}
         wardStatus={context.wardStatus ?? params.wardStatus}
         hospitalArrived={context.hospitalArrived}
         connection={connection}

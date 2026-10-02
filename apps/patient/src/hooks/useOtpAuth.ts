@@ -25,7 +25,8 @@ export interface UseOtpAuthReturn {
   isLoading: boolean;
   error: AuthApiError | null;
   rateLimitCooldown: number | null;
-  requestOtp: (phone: string) => Promise<boolean>;
+  /** `createAccount`: Create Account may create the Supabase user; Sign In never does (unknown phone -> account_not_found). */
+  requestOtp: (phone: string, createAccount: boolean) => Promise<boolean>;
   verifyOtp: (phone: string, token: string) => Promise<VerifyOtpResponse | null>;
   clearError: () => void;
 }
@@ -55,7 +56,7 @@ export function useOtpAuth(): UseOtpAuthReturn {
     setError(null);
   }, []);
 
-  const requestOtp = useCallback(async (phone: string): Promise<boolean> => {
+  const requestOtp = useCallback(async (phone: string, createAccount: boolean): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
 
@@ -65,7 +66,7 @@ export function useOtpAuth(): UseOtpAuthReturn {
       // raw 10-digit number, kept here only for symmetry with verifyOtp.
       const { error: authError } = await supabase.auth.signInWithOtp({
         phone,
-        options: { channel: "sms", shouldCreateUser: true },
+        options: { channel: "sms", shouldCreateUser: createAccount },
       });
 
       setIsLoading(false);

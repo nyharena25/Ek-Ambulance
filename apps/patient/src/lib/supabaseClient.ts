@@ -1,22 +1,14 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
+import { SUPABASE_URL } from "../config/env.ts";
 
 /**
- * Persistent Supabase client for the patient app, per Task 4.1.
- *
- * Routed through the Kong API gateway, NOT a raw Supabase project URL -
- * this is an explicit non-goal in docs/prompts/patient-app/P03-otp-authentication-flow.md
- * ("Do not call the Supabase project URL directly; all requests must route
- * through the Kong API gateway"). Kong proxies the same GoTrue /auth/v1/*
- * paths useOtpAuth.ts already targets, so pointing the SDK's `supabaseUrl`
- * at the gateway satisfies both P03's routing constraint and this task's
- * ask for the real SDK (session auto-refresh, secure persistent storage) -
- * the two are not actually in conflict once the base URL is the gateway.
+ * Auth, REST and Storage go straight to the Supabase project over HTTPS (EXPO_PUBLIC_SUPABASE_URL, the hosted
+ * project). This used to be the Kong gateway (EXPO_PUBLIC_GATEWAY_URL), which only exists on the dev machine:
+ * 10.0.2.2/localhost/LAN addresses are unreachable from a real phone, so sign-in never reached Supabase. Kong still
+ * fronts /realtime/token (see the realtime services).
  */
-const GATEWAY_URL =
-  process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000"; // adb reverse tcp:8000 (pnpm adb:reverse) makes this reach the host
-
 /**
  * The project's anon (publishable) key comes from EXPO_PUBLIC_SUPABASE_ANON_KEY. Without it the
  * placeholder below is named rather than silently blank; every auth call then fails.
@@ -80,7 +72,7 @@ function createSecureStorageAdapter(): SupportedStorage {
 
 export const authStorage = createSecureStorageAdapter();
 
-export const supabase = createClient(GATEWAY_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: authStorage,
     autoRefreshToken: true,

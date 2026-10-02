@@ -27,6 +27,7 @@ import {
   EMTLevel,
 } from "../state/driverOnboarding.store";
 import { getServerAdapter } from "../state/driverLifecycle.store";
+import { documentUploadErrorMessage } from "../lib/kycSubmission.core";
 import { useDriverProfileStore } from "../state/driverProfile.store";
 
 import { AppIcon } from "../components";
@@ -161,6 +162,17 @@ export default function DriverOnboardingScreen({
     await uploadRealDocument(key, { uri: asset.uri, name: asset.name, mimeType: asset.mimeType ?? null });
   };
 
+  // A failed upload says why on its own slot (never only a silent "error" status).
+  const renderUploadError = (key: DocumentSlotKey) => {
+    const doc = documents[key];
+    if (doc?.status !== "error") return null;
+    return (
+      <Text style={styles.uploadErrorText} accessibilityRole="alert">
+        {documentUploadErrorMessage(doc.errorCode ?? "", doc.errorDetail)}
+      </Text>
+    );
+  };
+
   // Render Step 1: Commercial Driver's License
   const renderStep1 = () => (
     <View style={styles.stepContentContainer}>
@@ -235,6 +247,112 @@ export default function DriverOnboardingScreen({
         <Text style={styles.fieldHelper}>{strings.psvBadgeHelp}</Text>
       </View>
 
+      {/* AIS-125 CLASSIFICATION SELECTOR */}
+      <View style={styles.ais125Section}>
+        <View style={styles.ais125HeaderBar}>
+          <Text style={styles.ais125MainHeading}>{strings.ais125SelectorTitle}</Text>
+          <View style={styles.ais125StandardBadge}>
+            <Text style={styles.ais125StandardBadgeText}>{strings.ais125StandardBadge}</Text>
+          </View>
+        </View>
+        <Text style={styles.ais125MainSub}>{strings.ais125SelectorDescription}</Text>
+
+        {/* Categories Cards */}
+        {strings.ais125Categories.map((cat: AIS125TypeDetails) => {
+          const isSelected = formData.ais125VehicleType === cat.id;
+          return (
+            <Pressable
+              key={cat.id}
+              style={[
+                styles.ais125Card,
+                isSelected && styles.ais125CardSelected,
+              ]}
+              onPress={() => setAIS125VehicleType(cat.id)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
+            >
+              {/* Top Banner */}
+              <View style={styles.ais125CardTop}>
+                <View style={styles.ais125IconNameRow}>
+                  <AppIcon icon={cat.icon} size={28} color={colors.slate700} />
+                  <View style={styles.ais125TitleBox}>
+                    <Text
+                      style={[
+                        styles.ais125CardName,
+                        isSelected && styles.ais125CardNameSelected,
+                      ]}
+                    >
+                      {cat.name}
+                    </Text>
+                    <Text style={styles.ais125CardSub}>{cat.subtitle}</Text>
+                  </View>
+                </View>
+                <View
+                  style={[
+                    styles.radioOuter,
+                    isSelected && styles.radioOuterSelected,
+                  ]}
+                >
+                  {isSelected && <View style={styles.radioInner} />}
+                </View>
+              </View>
+
+              {/* Badge & Standard Tag */}
+              <View style={styles.ais125TagRow}>
+                <View
+                  style={[
+                    styles.tierBadge,
+                    isSelected ? styles.tierBadgeSelected : styles.tierBadgeDefault,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tierBadgeText,
+                      isSelected && styles.tierBadgeTextSelected,
+                    ]}
+                  >
+                    {cat.badge}
+                  </Text>
+                </View>
+                <Text style={styles.regulatoryTagText}>{cat.regulatoryStandard}</Text>
+              </View>
+
+              <Text style={styles.ais125Desc}>{cat.description}</Text>
+
+              {/* Staffing Requirement */}
+              <View style={styles.staffingNoticeBox}>
+                <Text style={styles.staffingLabel}><AppIcon icon={{ set: "ion", name: "people" }} />{" "}{strings.staffingLabel}:</Text>
+                <Text style={styles.staffingValue}>{cat.staffing}</Text>
+              </View>
+
+              {/* Mandatory Equipment Checklist */}
+              <View style={styles.equipmentContainer}>
+                <Text style={styles.equipmentHeading}>
+                  <AppIcon icon={{ set: "ion", name: "settings" }} />{" "}{strings.equipmentLabel}:
+                </Text>
+                <View style={styles.equipmentPillsWrap}>
+                  {cat.mandatoryEquipment.map((eq, i) => (
+                    <View key={i} style={styles.equipmentPill}>
+                      <Text style={styles.equipmentPillDot}>•</Text>
+                      <Text style={styles.equipmentPillText}>{eq}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              {/* Selection Confirmation Bar */}
+              {isSelected && (
+                <View style={styles.selectedConfirmedBar}>
+                  <Text style={styles.selectedConfirmedText}>
+                    <AppIcon icon={{ set: "ion", name: "checkmark" }} />{" "}{strings.selectedAIS125Summary(cat.code)}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+
       {/* DL Upload Card Preview */}
       <View style={styles.docUploadCard}>
         <View style={styles.docUploadCardHeader}>
@@ -262,6 +380,7 @@ export default function DriverOnboardingScreen({
           </View>
         </View>
         <Text style={styles.docUploadSub}>{strings.cdlUploadNotice}</Text>
+        {renderUploadError("commercial_dl")}
         {documents.commercial_dl?.status === "uploaded" ? (
           <View style={styles.uploadedFileRow}>
             <View style={styles.fileIconBox}>
@@ -464,6 +583,7 @@ export default function DriverOnboardingScreen({
             </Text>
           </View>
         </View>
+        {renderUploadError("emt_certificate")}
         {documents.emt_certificate?.status === "uploaded" ? (
           <View style={styles.uploadedFileRow}>
             <View style={styles.fileIconBox}>
@@ -595,112 +715,6 @@ export default function DriverOnboardingScreen({
         </View>
       </View>
 
-      {/* AIS-125 CLASSIFICATION SELECTOR */}
-      <View style={styles.ais125Section}>
-        <View style={styles.ais125HeaderBar}>
-          <Text style={styles.ais125MainHeading}>{strings.ais125SelectorTitle}</Text>
-          <View style={styles.ais125StandardBadge}>
-            <Text style={styles.ais125StandardBadgeText}>{strings.ais125StandardBadge}</Text>
-          </View>
-        </View>
-        <Text style={styles.ais125MainSub}>{strings.ais125SelectorDescription}</Text>
-
-        {/* Categories Cards */}
-        {strings.ais125Categories.map((cat: AIS125TypeDetails) => {
-          const isSelected = formData.ais125VehicleType === cat.id;
-          return (
-            <Pressable
-              key={cat.id}
-              style={[
-                styles.ais125Card,
-                isSelected && styles.ais125CardSelected,
-              ]}
-              onPress={() => setAIS125VehicleType(cat.id)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isSelected }}
-            >
-              {/* Top Banner */}
-              <View style={styles.ais125CardTop}>
-                <View style={styles.ais125IconNameRow}>
-                  <AppIcon icon={cat.icon} size={28} color={colors.slate700} />
-                  <View style={styles.ais125TitleBox}>
-                    <Text
-                      style={[
-                        styles.ais125CardName,
-                        isSelected && styles.ais125CardNameSelected,
-                      ]}
-                    >
-                      {cat.name}
-                    </Text>
-                    <Text style={styles.ais125CardSub}>{cat.subtitle}</Text>
-                  </View>
-                </View>
-                <View
-                  style={[
-                    styles.radioOuter,
-                    isSelected && styles.radioOuterSelected,
-                  ]}
-                >
-                  {isSelected && <View style={styles.radioInner} />}
-                </View>
-              </View>
-
-              {/* Badge & Standard Tag */}
-              <View style={styles.ais125TagRow}>
-                <View
-                  style={[
-                    styles.tierBadge,
-                    isSelected ? styles.tierBadgeSelected : styles.tierBadgeDefault,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.tierBadgeText,
-                      isSelected && styles.tierBadgeTextSelected,
-                    ]}
-                  >
-                    {cat.badge}
-                  </Text>
-                </View>
-                <Text style={styles.regulatoryTagText}>{cat.regulatoryStandard}</Text>
-              </View>
-
-              <Text style={styles.ais125Desc}>{cat.description}</Text>
-
-              {/* Staffing Requirement */}
-              <View style={styles.staffingNoticeBox}>
-                <Text style={styles.staffingLabel}><AppIcon icon={{ set: "ion", name: "people" }} />{" "}{strings.staffingLabel}:</Text>
-                <Text style={styles.staffingValue}>{cat.staffing}</Text>
-              </View>
-
-              {/* Mandatory Equipment Checklist */}
-              <View style={styles.equipmentContainer}>
-                <Text style={styles.equipmentHeading}>
-                  <AppIcon icon={{ set: "ion", name: "settings" }} />{" "}{strings.equipmentLabel}:
-                </Text>
-                <View style={styles.equipmentPillsWrap}>
-                  {cat.mandatoryEquipment.map((eq, i) => (
-                    <View key={i} style={styles.equipmentPill}>
-                      <Text style={styles.equipmentPillDot}>•</Text>
-                      <Text style={styles.equipmentPillText}>{eq}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Selection Confirmation Bar */}
-              {isSelected && (
-                <View style={styles.selectedConfirmedBar}>
-                  <Text style={styles.selectedConfirmedText}>
-                    <AppIcon icon={{ set: "ion", name: "checkmark" }} />{" "}{strings.selectedAIS125Summary(cat.code)}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
-
       {/* RC Document Upload */}
       <View style={styles.docUploadCard}>
         <View style={styles.docUploadCardHeader}>
@@ -727,6 +741,7 @@ export default function DriverOnboardingScreen({
             </Text>
           </View>
         </View>
+        {renderUploadError("vehicle_rc")}
         {documents.vehicle_rc?.status === "uploaded" ? (
           <View style={styles.uploadedFileRow}>
             <View style={styles.fileIconBox}>
@@ -863,6 +878,7 @@ export default function DriverOnboardingScreen({
               </View>
             </View>
 
+            {renderUploadError(slot.key)}
             {/* Uploaded state details or upload trigger */}
             {isUploaded ? (
               <View style={styles.uploadedFileRow}>
@@ -1385,6 +1401,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.slate200,
   },
   statutoryBadgeText: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: typography.fontWeights.extrabold,
     color: colors.info,
@@ -1479,12 +1496,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   errorAlertTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,
     marginBottom: 4,
   },
   errorAlertDetail: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate900,
     lineHeight: typography.lineHeights.xs,
@@ -1555,6 +1574,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fieldLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
     color: colors.slate900,
@@ -1834,6 +1854,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   ais125CardName: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -1843,6 +1864,7 @@ const styles = StyleSheet.create({
     color: colors.emergencyDark,
   },
   ais125CardSub: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     lineHeight: typography.lineHeights.xs,
@@ -1983,6 +2005,12 @@ const styles = StyleSheet.create({
     color: colors.slate600,
     lineHeight: typography.lineHeights.xs,
   },
+  uploadErrorText: {
+    marginTop: 6,
+    fontSize: typography.fontSizes.xs,
+    color: colors.emergencyDark,
+    lineHeight: typography.lineHeights.xs,
+  },
   statusChip: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -2004,6 +2032,7 @@ const styles = StyleSheet.create({
     borderColor: colors.success,
   },
   statusChipText: {
+    flexShrink: 1,
     fontSize: 11,
     fontWeight: typography.fontWeights.bold,
   },
@@ -2081,6 +2110,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fileRemoveBtnText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,
@@ -2097,6 +2127,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fileReuploadBtnText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.semibold,
     color: colors.slate800,
@@ -2186,6 +2217,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   slotTitleText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -2200,6 +2232,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
   requiredBadgeText: {
+    flexShrink: 1,
     color: colors.emergencyDark,
     fontSize: 9,
     fontWeight: typography.fontWeights.extrabold,
@@ -2271,6 +2304,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   backButtonText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate800,
@@ -2286,6 +2320,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   continueButtonText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
@@ -2305,6 +2340,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   submitButtonText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
@@ -2431,11 +2467,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   successDetailLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,
   },
   successDetailValue: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     color: colors.slate900,
     fontWeight: typography.fontWeights.bold,
@@ -2450,6 +2488,7 @@ const styles = StyleSheet.create({
     borderColor: colors.emergencyBorder,
   },
   successCategoryPillText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,

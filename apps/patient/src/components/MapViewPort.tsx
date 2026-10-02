@@ -23,8 +23,8 @@ export interface MapViewPortProps {
   /** Fit the whole route into view once it arrives (transport leg) instead of holding the default zoom. */
   fitRoute?: boolean;
   driverMarkerRef?: Ref<DriverMarkerHandle>;
-  /** Where the ambulance marker first appears; afterwards moveTo() owns its position. */
-  driverStart: GeoPoint;
+  /** The ambulance's last real position, if one is known; otherwise the marker appears with the first live ping. */
+  driverStart?: GeoPoint;
   speedLabel?: string;
   /** Fixed content that must not move with the map (status pills, ETA banner). */
   overlays?: ReactNode;
@@ -105,7 +105,7 @@ export function MapViewPort({
   useEffect(() => {
     // First paint: put the driver marker where it starts. Every ping after this goes through
     // driverMarkerRef.moveTo below, bypassing React entirely.
-    if (ready) mapRef.current?.moveMarker({ id: "driver", coordinate: driverStartRef.current, html: driverPinHtml(), anchor: [18, 18] });
+    if (ready && driverStartRef.current) mapRef.current?.moveMarker({ id: "driver", coordinate: driverStartRef.current, html: driverPinHtml(), anchor: [18, 18] });
   }, [ready]);
 
   useImperativeHandle(

@@ -3,12 +3,15 @@ import { AuthApiError as SupabaseAuthApiError } from "@supabase/supabase-js";
 import {
   isValidIndianMobile,
   toE164IndianPhone,
+  normalizeIndianMobileInput,
   extractCooldownSeconds,
   mapAuthError,
   networkErrorToApiError,
   hasDriverRole,
   verifiedDriverSession,
   authRedirectTarget,
+  driverKycGate,
+  type DriverKycGate,
 } from "./otpAuth.core.ts";
 
 console.log("=================================================");
@@ -23,6 +26,11 @@ assert.strictEqual(isValidIndianMobile("98765432"), false, "Invalid: too short (
 assert.strictEqual(isValidIndianMobile("987654321012"), false, "Invalid: too long (12 digits)");
 assert.strictEqual(isValidIndianMobile("+919876543210"), false, "Invalid: must be raw 10-digit, not +91-prefixed");
 assert.strictEqual(toE164IndianPhone("9876543210"), "+919876543210", "E.164 formatting adds +91 prefix");
+for (const typed of ["9876543210", "98765 43210", "+91 98765 43210", "+919876543210", "919876543210", "09876543210", "+91-98765-43210"]) {
+  assert.strictEqual(toE164IndianPhone(normalizeIndianMobileInput(typed)), "+919876543210", `"${typed}" normalizes to +919876543210`);
+}
+assert.strictEqual(normalizeIndianMobileInput("98765432101"), "9876543210", "an extra typed digit is dropped, not shifted in");
+assert.strictEqual(normalizeIndianMobileInput("9198765432"), "9198765432", "a 10-digit number starting 91 is left alone");
 console.log("✓ Valid and invalid +91 formats classified correctly.\n");
 
 console.log("Test 2: Validating OTP resend cooldown extraction from GoTrue rate-limit messages...");
@@ -86,15 +94,50 @@ assert.strictEqual(verifiedDriverSession(null), null);
 console.log("✓ Verified driver session.\n");
 
 console.log("Test: route gate...");
-assert.strictEqual(authRedirectTarget("loading", undefined), null, "never redirect while the stored session is read");
-assert.strictEqual(authRedirectTarget("loading", "(shift)"), null);
-assert.strictEqual(authRedirectTarget("signedOut", undefined), "/(auth)/phone-entry", "cold start without a session");
-assert.strictEqual(authRedirectTarget("signedOut", "(shift)"), "/(auth)/phone-entry", "expired/signed-out session leaves the shift");
-assert.strictEqual(authRedirectTarget("signedOut", "mission"), "/(auth)/phone-entry", "deep link to a mission needs a session");
-assert.strictEqual(authRedirectTarget("signedOut", "(auth)"), null, "sign-in screens stay reachable (wrong-role error stays visible)");
-assert.strictEqual(authRedirectTarget("signedIn", undefined), "/(shift)/standby", "restored session opens the shift");
-assert.strictEqual(authRedirectTarget("signedIn", "(auth)"), null, "onboarding (in (auth)) stays reachable when signed in");
-assert.strictEqual(authRedirectTarget("signedIn", "(shift)"), null);
+const R = (status: "loading" | "signedIn" | "signedOut", path: string, kyc: DriverKycGate = "approved") =>
+  authRedirectTarget(status, path ? path.split("/") : [], kyc);
+assert.strictEqual(R("loading", ""), null, "never redirect while the stored session is read");
+assert.strictEqual(R("loading", "(shift)/standby"), null);
+assert.strictEqual(R("signedOut", ""), "/(auth)/phone-entry", "cold start without a session");
+assert.strictEqual(R("signedOut", "(shift)/standby"), "/(auth)/phone-entry", "expired/signed-out session leaves the shift");
+assert.strictEqual(R("signedOut", "mission/[id]"), "/(auth)/phone-entry", "deep link to a mission needs a session");
+assert.strictEqual(R("signedOut", "(auth)/phone-entry"), null, "sign-in screens stay reachable (wrong-role error stays visible)");
+
+// Approved: the shift.
+assert.strictEqual(R("signedIn", ""), "/(shift)/standby", "restored approved session opens the shift");
+assert.strictEqual(R("signedIn", "(auth)/otp-verify"), "/(shift)/standby");
+assert.strictEqual(R("signedIn", "(auth)/verification"), "/(shift)/standby", "approval moves the driver off the waiting screen");
+assert.strictEqual(R("signedIn", "(auth)/onboarding"), null, "onboarding shows the approved status");
+assert.strictEqual(R("signedIn", "(shift)/booking"), null);
+
+// KYC not known yet / unreadable: wait on the index route, never the shift.
+for (const kyc of ["unknown", "error"] as const) {
+  assert.strictEqual(R("signedIn", "", kyc), null, `${kyc}: index waits`);
+  assert.strictEqual(R("signedIn", "(shift)/standby", kyc), "/", `${kyc}: never the shift before the server says approved`);
+  assert.strictEqual(R("signedIn", "(auth)/otp-verify", kyc), null);
+}
+
+// Not approved: authenticated, but never operational.
+for (const path of ["", "(shift)/standby", "(shift)/booking", "(shift)/offer", "(shift)/profile", "(auth)/phone-entry"]) {
+  assert.strictEqual(R("signedIn", path, "application"), "/(auth)/onboarding", `application at /${path}`);
+  assert.strictEqual(R("signedIn", path, "pending"), "/(auth)/verification", `pending at /${path}`);
+}
+assert.strictEqual(R("signedIn", "(auth)/verification", "pending"), null, "already there");
+assert.strictEqual(R("signedIn", "(auth)/verification", "application"), "/(auth)/onboarding", "rejected after review: back to the form");
+assert.strictEqual(R("signedIn", "(auth)/onboarding", "application"), null, "already there");
+assert.strictEqual(R("signedIn", "(auth)/onboarding", "pending"), "/(auth)/verification", "a submitted application is a status, not a form");
+assert.strictEqual(R("signedIn", "mission/[id]", "pending"), null, "a live mission screen is never interrupted");
+
+// The gate's input: the server's KYC state.
+const P = (kycStatus: string) => ({ status: "ready" as const, errorCode: null, profile: { kycStatus } });
+assert.strictEqual(driverKycGate(P("approved")), "approved");
+assert.strictEqual(driverKycGate(P("pending_verification")), "pending");
+assert.strictEqual(driverKycGate(P("draft")), "application");
+assert.strictEqual(driverKycGate(P("rejected")), "application", "rejected: correct and resubmit through onboarding");
+assert.strictEqual(driverKycGate({ status: "idle", errorCode: null, profile: null }), "unknown");
+assert.strictEqual(driverKycGate({ status: "loading", errorCode: null, profile: null }), "unknown");
+assert.strictEqual(driverKycGate({ status: "error", errorCode: "network", profile: null }), "error", "unreadable is not approved");
+assert.strictEqual(driverKycGate({ status: "error", errorCode: "driver_profile_missing", profile: null }), "application", "no drivers row yet");
 console.log("✓ Route gate.\n");
 
 console.log("=================================================");

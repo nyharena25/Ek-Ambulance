@@ -55,6 +55,18 @@ export interface DriverProfileTranslation {
   signOutConfirmBody: string;
   signOutLocked: string;
   signOutFailed: string;
+  missingTitle: string;
+  missingBody: string;
+  completeApplication: string;
+  statusSection: string;
+  roleLabel: string;
+  roleDriver: string;
+  kycLabel: string;
+  kycStatus: Record<string, string>;
+  kycRejectedReason: string;
+  availabilityLabel: string;
+  online: string;
+  offline: string;
 }
 
 export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTranslation> = {
@@ -121,6 +133,18 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
     signOutConfirmBody: "You will go offline and need to sign in with your registered phone number again.",
     signOutLocked: "Sign-out is available once the current offer or mission has ended.",
     signOutFailed: "Could not sign out. Check your connection and try again.",
+    missingTitle: "Finish setting up your driver profile",
+    missingBody: "Your account is a driver account, but your application has not been submitted yet. Submit it with your licence and vehicle documents to start receiving emergencies.",
+    completeApplication: "Complete driver application",
+    statusSection: "Status",
+    roleLabel: "Account",
+    roleDriver: "Ambulance driver",
+    kycLabel: "Verification (KYC)",
+    kycStatus: { draft: "Not submitted", pending_verification: "Under review", approved: "Approved", rejected: "Rejected" },
+    kycRejectedReason: "Reason",
+    availabilityLabel: "Dispatch availability",
+    online: "Online - available for dispatch",
+    offline: "Offline",
   },
   hi: {
     title: "प्रोफ़ाइल",
@@ -185,5 +209,17 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
     signOutConfirmBody: "आप ऑफ़लाइन हो जाएंगे और पंजीकृत फ़ोन नंबर से दोबारा साइन इन करना होगा।",
     signOutLocked: "वर्तमान ऑफ़र या मिशन समाप्त होने के बाद साइन आउट उपलब्ध होगा।",
     signOutFailed: "साइन आउट नहीं हो सका। कनेक्शन जाँचकर फिर कोशिश करें।",
+    missingTitle: "अपनी ड्राइवर प्रोफ़ाइल पूरी करें",
+    missingBody: "आपका खाता ड्राइवर खाता है, लेकिन आपका आवेदन अभी जमा नहीं हुआ है। आपात कॉल पाने के लिए लाइसेंस और वाहन दस्तावेज़ों के साथ इसे जमा करें।",
+    completeApplication: "ड्राइवर आवेदन पूरा करें",
+    statusSection: "स्थिति",
+    roleLabel: "खाता",
+    roleDriver: "एम्बुलेंस ड्राइवर",
+    kycLabel: "सत्यापन (KYC)",
+    kycStatus: { draft: "जमा नहीं हुआ", pending_verification: "समीक्षा में", approved: "स्वीकृत", rejected: "अस्वीकृत" },
+    kycRejectedReason: "कारण",
+    availabilityLabel: "डिस्पैच उपलब्धता",
+    online: "ऑनलाइन - डिस्पैच के लिए उपलब्ध",
+    offline: "ऑफ़लाइन",
   },
 };

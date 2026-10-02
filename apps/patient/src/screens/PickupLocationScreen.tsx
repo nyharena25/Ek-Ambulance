@@ -9,6 +9,7 @@ import {
   Animated,
   Keyboard,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -33,35 +34,35 @@ export interface PickupLocationScreenProps {
   }) => void;
   onBack?: () => void;
   initialLanguage?: SupportedLanguage;
-  initialLocation?: GeoPoint;
 }
 
 const PICKUP_ZOOM = 16;
-
-// Default coordinates: AIIMS New Delhi (Main Emergency Ward)
-const DEFAULT_COORDINATES: GeoPoint = {
-  latitude: 28.5672,
-  longitude: 77.2100,
-};
+// A recent last-known fix shows the patient where they are at once; a fresh fix then refines it.
+const LAST_KNOWN_MAX_AGE_MS = 120_000;
+const LAST_KNOWN_MAX_ACCURACY_M = 200;
+// getCurrentPositionAsync has no built-in client-side timeout - without this race a device with no fix (indoors, GPS
+// off) would leave the patient staring at a screen that never resolves either way.
+const GPS_TIMEOUT_MS = 15_000;
 
 export default function PickupLocationScreen({
   onConfirmPickup,
   onBack,
   initialLanguage = "en",
-  initialLocation = DEFAULT_COORDINATES,
 }: PickupLocationScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = locationStrings[language];
   const insets = useSafeAreaInsets();
 
-  // Map center coordinates. The initial centre is only a camera position: nothing can be confirmed until the patient
-  // sets a pickup (GPS fix, drag, landmark). The service area is decided by the server on booking (R-12), not here.
-  const [coordinates, setCoordinates] = useState<GeoPoint>(initialLocation);
-  const [pickupSet, setPickupSet] = useState(false);
-  const canConfirm = isValidPickup(pickupSet ? coordinates : null);
+  // The pickup: null until a real source sets it (device GPS fix, map drag, landmark the patient picked). There is no
+  // default position - the map itself mounts on the first real point. The service area is decided by the server (R-12).
+  const [coordinates, setCoordinates] = useState<GeoPoint | null>(null);
+  const canConfirm = isValidPickup(coordinates);
+  const [locating, setLocating] = useState(true);
+  // Set once the patient places the pin themselves: a late GPS fix must not move it away again.
+  const userPicked = useRef(false);
 
   // Address: real reverse-geocoded text, or the formatted coordinates until/unless geocoding succeeds.
-  const [currentAddress, setCurrentAddress] = useState(() => formatCoordinates(initialLocation));
+  const [currentAddress, setCurrentAddress] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const searchInputRef = useRef<TextInput>(null);
   const dragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,7 +85,6 @@ export default function PickupLocationScreen({
 
   const updateCoordinates = useCallback((newCoords: GeoPoint, label?: string) => {
     setCoordinates(newCoords);
-    setPickupSet(true);
     if (label) {
       setCurrentAddress(label);
       setAddressLine2("");
@@ -103,32 +103,47 @@ export default function PickupLocationScreen({
     }
   }, []);
 
-  // GPS "Locate Me" (also runs on mount): real fix -> camera + address. A denied
-  // permission, a failed fix, or a fix that never arrives in time each show a distinct non-blocking banner;
-  // landmark search and pin drag stay available in all three cases.
+  // GPS "Locate Me" (also runs on mount): the device's own fix -> pickup + camera + address. Permission denied,
+  // location services off, no fix, and a fix that never arrives in time each show a distinct non-blocking banner;
+  // landmark search stays available in every case. Never a default or simulated position.
   const handleLocateMe = useCallback(async () => {
     setLocationErrorMessage(null);
+    setLocating(true);
+    userPicked.current = false;
+    let located = false;
+    const apply = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
+      if (userPicked.current) return;
+      located = true;
+      updateCoordinates({ latitude, longitude });
+      void resolveAddress({ latitude, longitude });
+      mapRef.current?.flyTo({ latitude, longitude }, PICKUP_ZOOM, 600);
+    };
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         setLocationErrorMessage(strings.locationPermissionDeniedBanner);
         return;
       }
-      // getCurrentPositionAsync has no built-in client-side timeout - without this race a device with no
-      // fix (indoors, GPS off) would leave the patient staring at a screen that never resolves either way.
-      const GPS_TIMEOUT_MS = 12_000;
+      if (!(await Location.hasServicesEnabledAsync())) {
+        setLocationErrorMessage(strings.locationServicesOffBanner);
+        return;
+      }
+      const last = await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS, requiredAccuracy: LAST_KNOWN_MAX_ACCURACY_M });
+      if (last) apply(last.coords);
       const position = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("gps_timeout")), GPS_TIMEOUT_MS)),
       ]);
-      const { latitude, longitude } = position.coords;
-      updateCoordinates({ latitude, longitude });
-      void resolveAddress({ latitude, longitude });
-      mapRef.current?.flyTo({ latitude, longitude }, PICKUP_ZOOM, 600);
+      apply(position.coords);
     } catch (err) {
-      setLocationErrorMessage(
-        err instanceof Error && err.message === "gps_timeout" ? strings.locationTimeoutBanner : strings.locationUnavailableBanner
-      );
+      // A recent fix is already shown: a refinement that failed is not an error for the patient.
+      if (!located) {
+        setLocationErrorMessage(
+          err instanceof Error && err.message === "gps_timeout" ? strings.locationTimeoutBanner : strings.locationUnavailableBanner
+        );
+      }
+    } finally {
+      setLocating(false);
     }
   }, [strings, updateCoordinates, resolveAddress]);
 
@@ -148,6 +163,7 @@ export default function PickupLocationScreen({
     setPinLifted(false);
     if (!isUserGesture) return;
     if (dragTimer.current) clearTimeout(dragTimer.current);
+    userPicked.current = true;
     dragTimer.current = setTimeout(() => {
       updateCoordinates(point);
       void resolveAddress(point);
@@ -168,6 +184,8 @@ export default function PickupLocationScreen({
   // Handle Landmark Selection from Search List
   const handleSelectLandmark = (item: LandmarkPreset) => {
     closeSearch();
+    userPicked.current = true;
+    setLocationErrorMessage(null);
     const targetPoint: GeoPoint = {
       latitude: item.latitude,
       longitude: item.longitude,
@@ -182,7 +200,7 @@ export default function PickupLocationScreen({
   // Handle Confirmation
   const handleConfirm = () => {
     if (!canConfirm) return;
-    if (onConfirmPickup) {
+    if (onConfirmPickup && coordinates) {
       onConfirmPickup({
         point: coordinates,
         address: addressLine2 ? `${currentAddress}, ${addressLine2}` : currentAddress,
@@ -308,10 +326,19 @@ export default function PickupLocationScreen({
 
       {/* INTERACTIVE MAP CANVAS WITH CENTER-PIN MARKER */}
       <View style={styles.mapContainer}>
-        {showMap ? (
+        {!coordinates ? (
+          <View style={styles.mapUnavailable} accessibilityRole="summary">
+            {locating ? (
+              <ActivityIndicator color={colors.slate600} />
+            ) : (
+              <AppIcon icon={{ set: "mci", name: "crosshairs-question" }} size={28} color={colors.slate500} />
+            )}
+            <Text style={styles.mapUnavailableText}>{locating ? strings.locatingText : strings.noPickupYet}</Text>
+          </View>
+        ) : showMap ? (
           <OsmWebMap
             ref={mapRef}
-            center={initialLocation}
+            center={coordinates}
             zoom={PICKUP_ZOOM}
             tileUrlTemplate={OSM_TILE_URL}
             onDragStart={() => setPinLifted(true)}
@@ -362,7 +389,8 @@ export default function PickupLocationScreen({
           </View>
         )}
 
-        {/* FIXED CENTER-PIN MARKER (GEOMETRICALLY CENTERED) */}
+        {/* FIXED CENTER-PIN MARKER (GEOMETRICALLY CENTERED): only over a real point */}
+        {coordinates && (
         <View style={styles.centerPinWrapper} pointerEvents="none">
           {/* Animated Elevating Pin */}
           <Animated.View
@@ -397,6 +425,7 @@ export default function PickupLocationScreen({
           {/* Ground Pulse Shadow */}
           <View style={styles.pinGroundShadow} />
         </View>
+        )}
 
         {/* GPS "LOCATE ME" FLOATING ACTION BUTTON */}
         <Pressable
@@ -414,9 +443,11 @@ export default function PickupLocationScreen({
         </Pressable>
 
         {/* Drag Hint Overlay */}
-        <View style={styles.dragHintContainer} pointerEvents="none">
-          <Text style={styles.dragHintText}>{strings.pinInstruction}</Text>
-        </View>
+        {coordinates && showMap && (
+          <View style={styles.dragHintContainer} pointerEvents="none">
+            <Text style={styles.dragHintText}>{strings.pinInstruction}</Text>
+          </View>
+        )}
       </View>
 
       {/* GPS FALLBACK BANNER: permission denied or position fetch failed -
@@ -436,11 +467,13 @@ export default function PickupLocationScreen({
           </View>
           <View style={styles.addressTextGroup}>
             <Text style={styles.addressMainText} numberOfLines={1}>
-              {currentAddress}
+              {coordinates ? currentAddress : locating ? strings.locatingText : strings.noPickupYet}
             </Text>
-            <Text style={styles.addressCoordsText} numberOfLines={1}>
-              {addressLine2 || `${strings.coordinatesLabel}: ${formatCoordinates(coordinates)}`}
-            </Text>
+            {coordinates && (
+              <Text style={styles.addressCoordsText} numberOfLines={1}>
+                {addressLine2 || `${strings.coordinatesLabel}: ${formatCoordinates(coordinates)}`}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -510,11 +543,13 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   headerTagline: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,
@@ -624,12 +659,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   dropdownTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate600,
     textTransform: "uppercase",
   },
   dropdownCloseText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.emergencyDark,

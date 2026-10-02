@@ -15,11 +15,10 @@ export default function OtpVerifyRoute() {
     <DriverOtpVerifyScreen
       phone={phone}
       onVerified={() => {
-        // Session is already persisted by supabaseClient's secure-store
-        // adapter; role is verified inside useOtpAuth.verifyOtp before this
-        // fires, so it's safe to proceed straight to the shift dashboard.
-        // A driver who still needs to onboard uses standby's own onboarding entry point.
-        router.replace("/(shift)/standby");
+        // Authenticated (session persisted, driver role checked in useOtpAuth.verifyOtp) is not yet authorized: the
+        // index route waits for the server's KYC state and the root route gate sends the driver to the shift,
+        // the application form or the verification screen from it.
+        router.replace("/");
       }}
       onChangeNumber={() => router.back()}
     />

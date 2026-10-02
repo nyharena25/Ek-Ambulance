@@ -143,7 +143,7 @@ export const driverOnSceneStrings: Record<SupportedLanguage, DriverOnSceneTransl
     bypassToggleLabel: "Immediate Departure Bypass (Load & Go Protocol)",
     bypassToggleSub: "Enable if patient condition demands rapid surgical transport; vitals deferred to en-route phase",
     bypassActiveNoticeTitle: "Emergency Load & Go Bypass Active",
-    bypassActiveNoticeDesc: "Patient requires immediate trauma surgery/resuscitation. Pre-transport vitals requirement waived; continuous telemetry will be transmitted en-route.",
+    bypassActiveNoticeDesc: "Patient needs immediate transport. Vitals before departure are not required; record them en route.",
 
     // Ranked Trauma Centres
     traumaCentresTitle: "Ranked Nearest Emergency Trauma Centres",
@@ -169,12 +169,12 @@ export const driverOnSceneStrings: Record<SupportedLanguage, DriverOnSceneTransl
     btnStartTransportDisabledWarning: "Select a destination trauma centre to start transport",
 
     // Handoff Modal
-    handoffModalTitle: "Trauma Ward Pre-Alert Dispatched!",
-    handoffModalSubtitle: "Destination emergency department has acknowledged pre-arrival telemetry.",
+    handoffModalTitle: "Patient on board",
+    handoffModalSubtitle: "Confirm the destination hospital before you leave.",
     bedReservedConfirmation: (hospital, bedNumber) =>
       `Reserved Bay: ${bedNumber} at ${hospital}`,
     traumaTeamAlertedNotice:
-      "Level 1 Trauma resuscitation team has been alerted with patient clinical profile and estimated arrival time.",
+      "The hospital is not notified by the app. Call ahead if the patient is critical.",
     proceedToTransportRoute: "Launch Turn-by-Turn Hospital Navigation",
   },
 
@@ -221,7 +221,7 @@ export const driverOnSceneStrings: Record<SupportedLanguage, DriverOnSceneTransl
     bypassToggleLabel: "तत्काल प्रस्थान बाईपास (लोड एंड गो प्रोटोकॉल)",
     bypassToggleSub: "यदि मरीज को तत्काल सर्जरी की आवश्यकता है तो सक्रिय करें; वाइटल्स रास्ते में दर्ज किए जाएंगे",
     bypassActiveNoticeTitle: "तत्काल लोड एंड गो बाईपास सक्रिय",
-    bypassActiveNoticeDesc: "मरीज को तत्काल ट्रॉमा सर्जरी की आवश्यकता है। घटनास्थल पर वाइटल्स की औपचारिकता बाईपास कर दी गई है; रास्ते में टेलीमेट्री भेजी जाएगी।",
+    bypassActiveNoticeDesc: "मरीज़ को तुरंत ले जाना है। निकलने से पहले वाइटल्स ज़रूरी नहीं; रास्ते में दर्ज करें।",
 
     // Ranked Trauma Centres
     traumaCentresTitle: "निकटतम आपातकालीन ट्रॉमा सेंटर (वरीयता अनुसार)",
@@ -247,12 +247,12 @@ export const driverOnSceneStrings: Record<SupportedLanguage, DriverOnSceneTransl
     btnStartTransportDisabledWarning: "प्रस्थान शुरू करने हेतु गंतव्य ट्रॉमा सेंटर का चयन करें",
 
     // Handoff Modal
-    handoffModalTitle: "ट्रॉमा वार्ड प्री-अराइवल अलर्ट प्रेषित!",
-    handoffModalSubtitle: "गंतव्य अस्पताल आपातकालीन विभाग ने प्री-अराइवल टेलीमेट्री स्वीकार कर ली है।",
+    handoffModalTitle: "मरीज़ एम्बुलेंस में",
+    handoffModalSubtitle: "निकलने से पहले गंतव्य अस्पताल की पुष्टि करें।",
     bedReservedConfirmation: (hospital, bedNumber) =>
       `आरक्षित बे: ${bedNumber} - ${hospital}`,
     traumaTeamAlertedNotice:
-      "लेवल 1 ट्रॉमा टीम को मरीज के क्लीनिकल प्रोफाइल एवं अनुमानित आगमन समय की पूर्व सूचना दे दी गई है।",
+      "ऐप अस्पताल को सूचना नहीं भेजता। मरीज़ गंभीर हो तो पहले फ़ोन करें।",
     proceedToTransportRoute: "अस्पताल नेविगेशन प्रारंभ करें",
   },
 };

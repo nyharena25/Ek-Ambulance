@@ -2,6 +2,7 @@ import { SupportedLanguage } from "./onboardingStrings";
 
 export interface AuthTranslation {
   headerTitle: string;
+  createAccountHeader: string;
   headerTagline: string;
   backButton: string;
   secureAuthBadge: string;
@@ -46,11 +47,15 @@ export interface AuthTranslation {
   rateLimitError: string;
   networkError: string;
   genericError: string;
+  /** Sign In with a phone that has no account (nothing is created). */
+  accountNotFoundError: string;
+  createAccountAction: string;
 }
 
 export const authStrings: Record<SupportedLanguage, AuthTranslation> = {
   en: {
-    headerTitle: "Phone Verification",
+    headerTitle: "Sign in",
+    createAccountHeader: "Create account",
     secureAuthBadge: "AIS-125 Secure Auth",
     headerTagline: "Ek-Ambulance Patient Access",
     backButton: "Back",
@@ -113,9 +118,12 @@ export const authStrings: Record<SupportedLanguage, AuthTranslation> = {
       "Too many requests. Please wait for the cooldown timer before requesting another code.",
     networkError: "Network connection unavailable. Please try again.",
     genericError: "Authentication failed. Please try again.",
+    accountNotFoundError: "No account found for this number. Create an account first - no account was created.",
+    createAccountAction: "Create an account with this number",
   },
   hi: {
-    headerTitle: "फ़ोन सत्यापन",
+    headerTitle: "साइन इन",
+    createAccountHeader: "खाता बनाएँ",
     secureAuthBadge: "AIS-125 सुरक्षित प्रमाणीकरण",
     headerTagline: "एक-एंबुलेंस मरीज सेवा",
     backButton: "वापस",
@@ -176,5 +184,7 @@ export const authStrings: Record<SupportedLanguage, AuthTranslation> = {
       "बहुत अधिक अनुरोध। नया कोड प्राप्त करने के लिए कृपया प्रतीक्षा करें।",
     networkError: "नेटवर्क कनेक्शन उपलब्ध नहीं है। कृपया पुनः प्रयास करें।",
     genericError: "सत्यापन असफल रहा। कृपया पुनः प्रयास करें।",
+    accountNotFoundError: "इस नंबर से कोई खाता नहीं मिला। पहले खाता बनाएँ - कोई खाता नहीं बनाया गया।",
+    createAccountAction: "इस नंबर से खाता बनाएँ",
   },
 };

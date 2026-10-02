@@ -6,6 +6,7 @@ export default function AuthLayout() {
       <Stack.Screen name="phone-entry" />
       <Stack.Screen name="otp-verify" />
       <Stack.Screen name="onboarding" />
+      <Stack.Screen name="verification" />
     </Stack>
   );
 }

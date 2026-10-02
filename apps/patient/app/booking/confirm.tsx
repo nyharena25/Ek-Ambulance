@@ -29,7 +29,7 @@ import { authStorage } from "../../src/lib/supabaseClient";
 import { savePersistedMission } from "../../src/services/missionSession.core";
 
 import { AppIcon } from "../../src/components";
-import { DEFAULT_PICKUP, formatCoordinates, nearestDispatchHub } from "../../src/services/mapGeo.core";
+import { formatCoordinates, nearestDispatchHub } from "../../src/services/mapGeo.core";
 export default function BookingConfirmScreen() {
   const router = useRouter();
   const send = usePatientLifecycleStore((s) => s.send);
@@ -62,17 +62,16 @@ export default function BookingConfirmScreen() {
 
   // A missing or non-finite lat/lon means this screen was reached without a real pickup location (e.g. a
   // stale deep link past PickupLocationScreen's real geolocation flow). It must never be silently replaced
-  // by a hardcoded address before a real ambulance is dispatched - __DEV__ keeps a stand-in only so the
-  // screen still previews when opened directly outside the normal navigation flow.
+  // by a hardcoded address before a real ambulance is dispatched, on any build (dev builds on a phone included).
   const hasRealPickup =
     params.lat !== undefined && params.lon !== undefined && Number.isFinite(Number(params.lat)) && Number.isFinite(Number(params.lon));
-  const pickupLat = hasRealPickup ? Number(params.lat) : __DEV__ ? DEFAULT_PICKUP.latitude : NaN;
-  const pickupLon = hasRealPickup ? Number(params.lon) : __DEV__ ? DEFAULT_PICKUP.longitude : NaN;
+  const pickupLat = hasRealPickup ? Number(params.lat) : NaN;
+  const pickupLon = hasRealPickup ? Number(params.lon) : NaN;
   const pickupAddress = params.address || (hasRealPickup ? formatCoordinates({ latitude: pickupLat, longitude: pickupLon }) : "");
 
   const [routedDistanceKm, setRoutedDistanceKm] = useState(DEFAULT_DISPATCH_DISTANCE_KM);
   useEffect(() => {
-    if (!hasRealPickup && !__DEV__) return;
+    if (!hasRealPickup) return;
     let cancelled = false;
     const pickup = { latitude: pickupLat, longitude: pickupLon };
     void getDrivingRoute(nearestDispatchHub(pickup), pickup).then((r) => {
@@ -84,14 +83,14 @@ export default function BookingConfirmScreen() {
   }, [pickupLat, pickupLon, hasRealPickup]);
 
   // Surface the missing-location error the moment the screen is reached, not only after a tap - the fare
-  // sheet below is never shown without a real pickup point (release builds).
+  // sheet below is never shown without a real pickup point.
   useEffect(() => {
-    if (!hasRealPickup && !__DEV__) setSubmitError(strings.pickupLocationMissing);
+    if (!hasRealPickup) setSubmitError(strings.pickupLocationMissing);
   }, [hasRealPickup]);
 
   const handleConfirmAndRequest = async (fareDetails: ItemizedStatutoryFare) => {
     if (submitting) return;
-    if (!hasRealPickup && !__DEV__) {
+    if (!hasRealPickup) {
       setSubmitError(strings.pickupLocationMissing);
       return;
     }
@@ -220,9 +219,6 @@ export default function BookingConfirmScreen() {
             <Text style={styles.cardMainText}>
               {vehicleType.replace(/_/g, " ")}
             </Text>
-            <Text style={styles.cardSubText}>
-              Certified Life-Support • Telemetry Active
-            </Text>
           </View>
         </View>
       </View>
@@ -238,11 +234,11 @@ export default function BookingConfirmScreen() {
 
       {/* EXPANDABLE STATUTORY FARE BOTTOM SHEET: withheld without a real pickup point - a fare quote and
           "Confirm & Request" action must never be offered against a location the app made up. */}
-      {(hasRealPickup || __DEV__) && (
+      {hasRealPickup && (
         <StatutoryFareBottomSheet
           vehicleType={vehicleType}
           distanceKm={routedDistanceKm}
-          initialExpanded={true}
+          initialExpanded={false}
           initialLanguage={language}
           onConfirmAndRequest={handleConfirmAndRequest}
         />
@@ -284,11 +280,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topBarTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   topBarTagline: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
   },

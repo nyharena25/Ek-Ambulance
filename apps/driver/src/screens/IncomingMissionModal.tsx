@@ -662,12 +662,14 @@ const styles = StyleSheet.create({
     fontSize: 26,
   },
   bannerTitle: {
+    flexShrink: 1,
     color: colors.white,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.extrabold,
     letterSpacing: 0.8,
   },
   bannerWaveTag: {
+    flexShrink: 1,
     color: "rgba(255, 255, 255, 0.9)",
     fontSize: 10,
     fontWeight: typography.fontWeights.bold,
@@ -822,6 +824,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   triagePillText: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: typography.fontWeights.extrabold,
     letterSpacing: 0.5,
@@ -950,6 +953,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   navMetricLabel: {
+    flexShrink: 1,
     fontSize: 10,
     color: colors.slate400,
     fontWeight: typography.fontWeights.medium,

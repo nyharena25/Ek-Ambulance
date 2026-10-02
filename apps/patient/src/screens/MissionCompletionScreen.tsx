@@ -876,6 +876,7 @@ const styles = StyleSheet.create({
     borderColor: colors.success,
   },
   statutoryIncludedText: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: "800",
     color: colors.success,
@@ -889,6 +890,7 @@ const styles = StyleSheet.create({
     borderColor: colors.info,
   },
   zeroSurgeText: {
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: "800",
     color: colors.info,
@@ -905,6 +907,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   totalLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -1109,6 +1112,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
   categoryBadgeText: {
+    flexShrink: 1,
     fontSize: 8,
     fontWeight: "800",
     color: colors.slate700,
@@ -1144,11 +1148,13 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   deletionToggleLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   deletionToggleSubtitle: {
+    flexShrink: 1,
     fontSize: 10,
     color: colors.slate600,
     marginTop: 2,

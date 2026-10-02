@@ -49,10 +49,11 @@ function memoryStorage(): SupportedStorage {
 const client = (storage: SupportedStorage): SupabaseClient =>
   createClient(URL_, ANON, { auth: { storage, autoRefreshToken: false, persistSession: true, detectSessionInUrl: false } });
 
-// Same calls and options as apps/*/src/hooks/useOtpAuth.ts. A resend inside Supabase's max_frequency window is refused
-// with 429; like the apps' cooldown UI, wait the server-stated seconds (parsed by the app's own mapAuthError) and retry once.
-async function requestOtp(c: SupabaseClient, phone: string) {
-  const send = () => c.auth.signInWithOtp({ phone, options: { channel: "sms", shouldCreateUser: true } });
+// Same calls and options as apps/*/src/hooks/useOtpAuth.ts: Create Account (and the driver app) may create the user,
+// the patient's Sign In never does. A resend inside Supabase's max_frequency window is refused with 429; like the apps'
+// cooldown UI, wait the server-stated seconds (parsed by the app's own mapAuthError) and retry once.
+async function requestOtp(c: SupabaseClient, phone: string, createAccount = true) {
+  const send = () => c.auth.signInWithOtp({ phone, options: { channel: "sms", shouldCreateUser: createAccount } });
   const first = await send();
   if (!first.error) return first;
   const mapped = mapAuthError(first.error, false);
@@ -100,6 +101,48 @@ try {
   created.patientUserId = session.user.id;
   assert.ok(isUuid(session.user.id) && session.access_token && session.refresh_token, "UUID user + tokens (patientAuth realAccessToken rule)");
   console.log(`✓ user ${session.user.id}\n`);
+
+  console.log("3a. C: Create Account with a number that had no account creates a new user...");
+  if (admin && !preexisting.has(session.user.id)) console.log(`✓ new user ${session.user.id} (the number had no account before this run)\n`);
+  else console.log("  SKIPPED — the patient test number already had an account; C needs a Test Phone Number with no account\n");
+
+  console.log("3b. B: Sign In with a number that has NO account is refused and creates nothing...");
+  if (admin) {
+    // A number confirmed absent right before: GoTrue refuses it before any SMS (probed: 422 otp_disabled).
+    const unknown = `+9160000${String(Math.floor(Math.random() * 1e5)).padStart(5, "0")}`;
+    assert.strictEqual(await findUserIdByPhone(admin, unknown), null, "probe number must have no account");
+    const refused = await requestOtp(client(memoryStorage()), unknown, false);
+    assert.ok(refused.error, "Sign In must not start an OTP for an unknown number");
+    assert.strictEqual(mapAuthError(refused.error, false).error, "account_not_found");
+    assert.strictEqual(await findUserIdByPhone(admin, unknown), null, "no account was created");
+    console.log(`✓ ${refused.error.status} ${refused.error.code} -> account_not_found; no user created\n`);
+  } else console.log("  SKIPPED — needs SUPABASE_SERVICE_ROLE_KEY to prove the probe number has no account\n");
+
+  console.log("3c. A + D + E: Sign In (never creating) reaches the same account; sign out -> sign in again: same user, profile, consent, missions...");
+  const owned = async (c: SupabaseClient) => {
+    const consents = await c.from("consent_records").select("user_id").eq("user_id", session.user.id);
+    const missions = await c.from("missions").select("id,patient_id").not("status", "in", "(completed,cancelled)").order("id");
+    assert.strictEqual(consents.error, null, consents.error?.message);
+    assert.strictEqual(missions.error, null, missions.error?.message);
+    assert.ok(missions.data!.every((m) => m.patient_id === session.user.id), "every visible active mission is this patient's");
+    return { consents: consents.data!.length, missions: missions.data!.map((m) => m.id) };
+  };
+  const before = await owned(patient);
+  const signInApp = client(memoryStorage());
+  assert.strictEqual((await requestOtp(signInApp, PATIENT_PHONE, false)).error, null, "Sign In accepted for an existing account");
+  const a = await verifyOtp(signInApp, PATIENT_PHONE, OTP);
+  assert.strictEqual(a.data.session?.user.id, session.user.id, "A: existing phone + Sign In -> same user id");
+  // Local scope: only this device's session ends (the main session is reused by step 6).
+  await signInApp.auth.signOut({ scope: "local" });
+  assert.strictEqual((await signInApp.auth.getSession()).data.session, null, "signed out");
+  assert.strictEqual((await requestOtp(signInApp, PATIENT_PHONE, false)).error, null, "a new sign-in starts with a new OTP");
+  const d = await verifyOtp(signInApp, PATIENT_PHONE, OTP);
+  assert.strictEqual(d.data.session?.user.id, session.user.id, "D: sign out -> sign in -> same user id");
+  const sameProfile = await signInApp.from("profiles").select("id,role").eq("id", session.user.id).single();
+  assert.deepStrictEqual(sameProfile.data, { id: session.user.id, role: "patient" }, "same patient profile");
+  assert.deepStrictEqual(await owned(signInApp), before, "E: consent records and active missions are still this account's");
+  await signInApp.auth.signOut({ scope: "local" });
+  console.log(`✓ same user ${session.user.id}; ${before.consents} consent record(s), ${before.missions.length} active mission(s) unchanged\n`);
 
   console.log("4. Profile provisioned server-side (handle_new_user) and readable under RLS...");
   const profile = await patient.from("profiles").select("id,role").eq("id", session.user.id).single();
@@ -187,7 +230,7 @@ try {
   await driverApp.auth.signOut();
   const gone = (await driverApp.auth.getSession()).data.session;
   assert.strictEqual(verifiedDriverSession(gone), null);
-  assert.strictEqual(authRedirectTarget("signedOut", "(shift)"), "/(auth)/phone-entry", "shift screens send the signed-out driver to phone entry");
+  assert.strictEqual(authRedirectTarget("signedOut", ["(shift)", "standby"], "unknown"), "/(auth)/phone-entry", "shift screens send the signed-out driver to phone entry");
   const drvAfter = await driverApp.rpc("upsert_driver_application", { p_fields: {} });
   assert.ok(drvAfter.error, "driver RPCs refuse a signed-out client");
   console.log("✓ driver signed out\n");

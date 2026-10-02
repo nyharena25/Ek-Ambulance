@@ -60,7 +60,7 @@ export default ({ config }: ConfigContext): ExpoConfig => withoutDevMenuFab({
     gatewayUrl: process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000",
     centrifugoWsUrl: process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL || "ws://localhost:8001/connection/websocket",
     eas: {
-      projectId: "ek-ambulance-patient"
+      projectId: "064a6365-dc6f-463a-8252-f9ad35617d6c"
     }
   }
 });

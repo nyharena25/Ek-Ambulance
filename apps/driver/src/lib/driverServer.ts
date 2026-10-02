@@ -10,7 +10,7 @@ import {
   type ServerCall,
 } from "./driverServer.core";
 import type { QueuedTelemetryPing } from "../types/driverConnection.types";
-import { buildKycDocumentPath, extensionForMimeType, type ApplicationFieldsResult } from "./kycSubmission.core";
+import { buildKycDocumentPath, extensionForMimeType, type ApplicationFields, type DraftApplicationFields } from "./kycSubmission.core";
 import type { DocumentSlotKey } from "../state/driverOnboarding.store";
 
 /**
@@ -199,9 +199,9 @@ export async function fetchHospitals(): Promise<HospitalRow[]> {
 // KYC (5.4, mission_api.sql). `apps/driver/src/lib/kycSubmission.core.ts` holds the pure field/path mapping.
 // ---------------------------------------------------------------------------
 
-/** License, EMT and vehicle-tier fields (drivers row). Server-validated (PT422 application_incomplete on a
+/** License, EMT and vehicle-tier fields (drivers row), or the Step 1 subset that creates the draft before the first upload. Server-validated (PT422 application_incomplete on a
  *  missing required field); the RPC upserts by id, so a second call before submission just updates the draft. */
-export async function submitDriverApplication(fields: ApplicationFieldsResult["fields"]): Promise<ApiResult<{ kycStatus: string }>> {
+export async function submitDriverApplication(fields: ApplicationFields | DraftApplicationFields): Promise<ApiResult<{ kycStatus: string }>> {
   try {
     const { data, error } = await supabase.rpc("upsert_driver_application", { p_fields: fields });
     if (error) return { ok: false, error: mapRpcError(error) };

@@ -29,11 +29,11 @@ export interface MissionTrackingScreenProps {
   onBack?: () => void;
   /** Mission pickup (lat/lon route params); the map centres on it. */
   pickup?: GeoPoint;
-  /** OSRM route hub -> pickup, fetched once by booking/[id].tsx. */
+  /** Road route to the pickup, when one is known (never from a made-up ambulance position). */
   route?: MapRoute | null;
   /** Live pings move the marker through this handle, so no screen re-renders per ping. */
   driverMarkerRef?: Ref<DriverMarkerHandle>;
-  /** First ambulance position (dispatch hub) until the first ping glides it. */
+  /** The ambulance's last real position; without one the marker waits for the first live ping. */
   driverStart?: GeoPoint;
   /** Safe-for-text live speed, throttled upstream to at most one update
    *  every ~2s - see useMissionChannel's throttledTelemetry. */
@@ -80,7 +80,7 @@ export default function MissionTrackingScreen({
   pickup = DEFAULT_PICKUP,
   route,
   driverMarkerRef,
-  driverStart = pickup,
+  driverStart,
   liveSpeedKmh,
   driverHasArrived = false,
   assignedDriver,
@@ -215,6 +215,56 @@ export default function MissionTrackingScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* AMBULANCE MATCHED: everything here comes from the server's DRIVER_ACCEPTED / DRIVER_ARRIVED events
+            (context.assignedDriver, driverHasArrived) or the booked vehicle type; a field the server did not send is
+            left out, never filled in. */}
+        <View style={styles.heroCard} accessibilityRole="summary">
+          <Text style={styles.heroStatus}>{driverHasArrived ? strings.arrivedTitle : strings.matchedTitle}</Text>
+          <Text style={styles.heroType} numberOfLines={2}>
+            {strings.vehicleTypeName[assignedDriver?.ais125Type ?? vehicleType] ?? vehicleType}
+          </Text>
+          {etaMinutes !== undefined && !driverHasArrived && (
+            <View style={styles.heroEtaRow}>
+              <Text style={styles.heroEtaLabel}>{strings.etaLabel}</Text>
+              <Text style={styles.heroEtaValue}>{strings.etaOnlyLabel(etaMinutes)}</Text>
+            </View>
+          )}
+          {assignedDriver?.vehicleRegistration && (
+            <View style={styles.heroRow}>
+              <Text style={styles.heroLabel}>{strings.vehicleLabel}</Text>
+              <View style={styles.hsrpPlate}>
+                <View style={styles.hsrpIndStrip}>
+                  <Text style={styles.hsrpIndText}>IND</Text>
+                </View>
+                <Text style={styles.hsrpNumberText} numberOfLines={1}>{assignedDriver.vehicleRegistration}</Text>
+              </View>
+            </View>
+          )}
+          {(assignedDriver?.makeModel || assignedDriver?.color) && (
+            <Text style={styles.heroDetail} numberOfLines={2}>{[assignedDriver.makeModel, assignedDriver.color].filter(Boolean).join(" · ")}</Text>
+          )}
+          {assignedDriver?.displayName && (
+            <View style={styles.heroRow}>
+              <Text style={styles.heroLabel}>{strings.driverLabel}</Text>
+              <Text style={styles.heroValue} numberOfLines={1}>{assignedDriver.displayName}</Text>
+            </View>
+          )}
+          {assignedDriver?.crewCount !== undefined && <Text style={styles.heroDetail}>{strings.crewSize(assignedDriver.crewCount)}</Text>}
+          {/* Only when the server provisioned a relay number for this mission. */}
+          {(maskedCall || onCallDriver) && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={strings.callDriverButton}
+              accessibilityHint={strings.callDriverSubtitle}
+              style={styles.heroCallBtn}
+              onPress={handleCallDriver}
+            >
+              <AppIcon icon={{ set: "ion", name: "call" }} size={20} color={colors.white} />
+              <Text style={styles.heroCallText}>{strings.callDriverButton}</Text>
+            </Pressable>
+          )}
+        </View>
+
         {/* ===================================================================
             TOP HALF: INTERACTIVE MAP VIEWPORT
            =================================================================== */}
@@ -330,113 +380,6 @@ export default function MissionTrackingScreen({
                 {strings.activeStatusBanner}
               </Text>
             </View>
-          </View>
-
-          {/* 2. DRIVER PROFILE & CREDENTIALS CARD */}
-          {assignedDriver?.displayName && (
-            <View style={styles.card}>
-              <Text style={styles.cardSectionLabel}>
-                {strings.driverSectionTitle}
-              </Text>
-              <View style={styles.driverProfileRow}>
-                <View style={styles.driverAvatarBadge}>
-                  <AppIcon icon={{ set: "ion", name: "man" }} size={26} color={colors.slate700} style={styles.driverAvatarEmoji} />
-                </View>
-
-                <View style={styles.driverInfoColumn}>
-                  <View style={styles.driverNameRow}>
-                    <Text style={styles.driverNameText}>{assignedDriver.displayName}</Text>
-                    <View style={styles.verifiedBadge}>
-                      <Text style={styles.verifiedBadgeText}>{strings.verifiedBadgeShort}</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* 3. AMBULANCE LICENSE PLATE & AIS-125 CARE TIER */}
-          <View style={styles.card}>
-            <Text style={styles.cardSectionLabel}>
-              {strings.vehicleSectionTitle}
-            </Text>
-
-            <View style={styles.vehicleRow}>
-              {/* Indian High-Security Registration Plate (HSRP) */}
-              {assignedDriver?.vehicleRegistration && (
-                <View style={styles.hsrpPlate}>
-                  <View style={styles.hsrpIndStrip}>
-                    <Text style={styles.hsrpIndText}>IND</Text>
-                  </View>
-                  <Text style={styles.hsrpNumberText}>{assignedDriver.vehicleRegistration}</Text>
-                </View>
-              )}
-
-              {/* AIS-125 Tier Tag */}
-              <View style={styles.careTierPill}>
-                <Text style={styles.careTierPillText}>
-                  {vehicleType.replace(/_/g, " ")}
-                </Text>
-              </View>
-            </View>
-
-            {/* What the crew entered on their Profile, so the patient can recognise the ambulance when it arrives */}
-            {(assignedDriver?.makeModel || assignedDriver?.color) && (
-              <Text style={styles.driverNameText}>{[assignedDriver.makeModel, assignedDriver.color].filter(Boolean).join(" · ")}</Text>
-            )}
-            {assignedDriver?.crewCount !== undefined && <Text style={styles.equipmentItemText}>{strings.crewSize(assignedDriver.crewCount)}</Text>}
-
-            {/* Equipment Badges */}
-            <View style={styles.equipmentGrid}>
-              <View style={styles.equipmentItem}>
-                <Text style={styles.equipmentItemText}>
-                  {strings.equipmentVentilator}
-                </Text>
-              </View>
-              <View style={styles.equipmentItem}>
-                <Text style={styles.equipmentItemText}>
-                  {strings.equipmentDefibrillator}
-                </Text>
-              </View>
-              <View style={styles.equipmentItem}>
-                <Text style={styles.equipmentItemText}>
-                  {strings.equipmentOxygen}
-                </Text>
-              </View>
-              <View style={styles.equipmentItem}>
-                <Text style={styles.equipmentItemText}>
-                  {strings.equipmentParamedic}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* 4. COMMUNICATION ACTIONS (MASKED PHONE) - the emergency chat trigger that used to sit here sent
-              nothing to anyone (no RPC, no realtime publish); removed per D-10 rather than left as a UI
-              affordance implying a message reaches the crew. */}
-          <View style={styles.actionButtonsRow}>
-            {/* One-Touch Masked Phone Call Button: only when the server provisioned a relay number */}
-            {(maskedCall || onCallDriver) && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={strings.callDriverButton}
-              accessibilityHint="Calls the driver via a privacy-masked phone relay"
-              style={styles.callDriverBtn}
-              onPress={handleCallDriver}
-            >
-              <View style={styles.btnIconWrapper}>
-                <AppIcon icon={{ set: "ion", name: "call" }} size={18} color={colors.slate700} style={styles.btnIcon} />
-              </View>
-              <View style={styles.btnTextGroup}>
-                <Text style={styles.btnMainTitle}>
-                  {strings.callDriverButton}
-                </Text>
-                <Text style={styles.btnSubtitle}>
-                  {strings.callDriverSubtitle}
-                </Text>
-              </View>
-            </Pressable>
-            )}
           </View>
 
           {/* 5. EXPANDABLE PREPARATION GUIDE (FIRST-AID STEPS) */}
@@ -576,11 +519,13 @@ const styles = StyleSheet.create({
     color: colors.slate900,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   headerMissionId: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,
@@ -614,6 +559,79 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: spacing["3xl"],
+  },
+  heroCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.base,
+    marginBottom: spacing.base,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    backgroundColor: colors.white,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    ...shadows.sm,
+  },
+  heroStatus: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.success,
+  },
+  heroType: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  heroEtaRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  heroEtaLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate600,
+  },
+  heroEtaValue: {
+    fontSize: typography.fontSizes["2xl"],
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.slate900,
+  },
+  heroRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  heroLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate600,
+    minWidth: 56,
+  },
+  heroValue: {
+    flexShrink: 1,
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.slate900,
+  },
+  heroDetail: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate700,
+  },
+  heroCallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    minHeight: 56,
+    marginTop: spacing.xs,
+    borderRadius: radii.full,
+    backgroundColor: colors.success,
+  },
+  heroCallText: {
+    color: colors.white,
+    fontSize: typography.fontSizes.base,
+    fontWeight: typography.fontWeights.bold,
   },
 
 
@@ -679,14 +697,10 @@ const styles = StyleSheet.create({
     borderColor: colors.success,
   },
   trafficStatusBadgeText: {
+    flexShrink: 1,
     fontSize: 9,
     fontWeight: "800",
     color: colors.success,
-  },
-  trafficCorridorNoticeText: {
-    fontSize: 11,
-    color: colors.slate700,
-    marginTop: 2,
   },
 
   // ===========================================================================
@@ -696,34 +710,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.base,
     gap: spacing.base,
-  },
-  toastBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.successLight,
-    borderWidth: 1.5,
-    borderColor: colors.success,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-  },
-  toastIcon: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: colors.success,
-    marginRight: spacing.sm,
-  },
-  toastTextGroup: {
-    flex: 1,
-  },
-  toastTitle: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.success,
-  },
-  toastContent: {
-    fontSize: 11,
-    color: colors.slate800,
-    marginTop: 1,
   },
 
   // Mission State Progress Tracker
@@ -824,97 +810,8 @@ const styles = StyleSheet.create({
   },
 
   // Driver Card
-  card: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    ...shadows.sm,
-  },
-  cardSectionLabel: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.slate600,
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
-  },
-  driverProfileRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  driverAvatarBadge: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.slate100,
-    borderWidth: 2,
-    borderColor: colors.slate300,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.md,
-    position: "relative",
-  },
-  driverAvatarEmoji: {
-    fontSize: 26,
-  },
-  driverOnlineDot: {
-    position: "absolute",
-    bottom: 2,
-    right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.success,
-    borderWidth: 2,
-    borderColor: colors.white,
-  },
-  driverInfoColumn: {
-    flex: 1,
-  },
-  driverNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  driverNameText: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  verifiedBadge: {
-    backgroundColor: colors.successLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.success,
-  },
-  verifiedBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.success,
-  },
-  driverRoleText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.medium,
-    color: colors.slate700,
-    marginTop: 2,
-  },
-  driverRatingText: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.warning,
-    marginTop: 2,
-  },
 
   // Ambulance Specs
-  vehicleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.sm,
-  },
   hsrpPlate: {
     flexDirection: "row",
     alignItems: "center",
@@ -944,113 +841,8 @@ const styles = StyleSheet.create({
     color: colors.slate900,
     letterSpacing: 1,
   },
-  careTierPill: {
-    backgroundColor: colors.emergencyLight,
-    borderWidth: 1.5,
-    borderColor: colors.emergency,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.md,
-  },
-  careTierPillText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: colors.emergencyDark,
-  },
-  equipmentGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: spacing.xs,
-  },
-  equipmentItem: {
-    backgroundColor: colors.slate100,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate200,
-  },
-  equipmentItemText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate800,
-  },
 
   // Action Buttons
-  actionButtonsRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  callDriverBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.emergency,
-    borderRadius: radii.xl,
-    padding: spacing.md,
-    ...shadows.sm,
-    minHeight: 64,
-  },
-  btnIconWrapper: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.white,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.sm,
-  },
-  btnIcon: {
-    fontSize: 18,
-  },
-  btnTextGroup: {
-    flex: 1,
-  },
-  btnMainTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.white,
-  },
-  btnSubtitle: {
-    fontSize: 10,
-    color: colors.emergencyLight,
-    marginTop: 1,
-  },
-  chatTriggerBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.md,
-    borderWidth: 2,
-    borderColor: colors.slate800,
-    ...shadows.sm,
-    minHeight: 64,
-  },
-  btnIconWrapperChat: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.slate100,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.sm,
-  },
-  btnIconChat: {
-    fontSize: 18,
-  },
-  btnMainTitleChat: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.slate900,
-  },
-  btnSubtitleChat: {
-    fontSize: 10,
-    color: colors.slate600,
-    marginTop: 1,
-  },
 
   // Preparation Guide
   guideCard: {
@@ -1203,81 +995,4 @@ const styles = StyleSheet.create({
   },
 
   // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-    justifyContent: "flex-end",
-  },
-  chatModalCard: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radii["2xl"],
-    borderTopRightRadius: radii["2xl"],
-    padding: spacing.xl,
-    ...shadows.lg,
-  },
-  modalDragBar: {
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.slate300,
-    alignSelf: "center",
-    marginBottom: spacing.base,
-  },
-  chatModalHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.base,
-  },
-  chatModalIconBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: radii.md,
-    backgroundColor: colors.slate100,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.md,
-  },
-  chatModalHeaderIcon: {
-    fontSize: 22,
-  },
-  chatModalTitleGroup: {
-    flex: 1,
-  },
-  chatModalTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  chatModalDescription: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate600,
-    marginTop: 2,
-  },
-  presetsList: {
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  presetButton: {
-    backgroundColor: colors.slate50,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-  },
-  presetButtonText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.slate800,
-  },
-  closeModalBtn: {
-    backgroundColor: colors.slate100,
-    borderRadius: radii.lg,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-  },
-  closeModalBtnText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate700,
-  },
 });

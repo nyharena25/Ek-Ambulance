@@ -7,6 +7,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nzwbwuhbtqhhjwnopwmm.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56d2J3dWhidHFoaGp3bm9wd21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNzAwMDUsImV4cCI6MjEwNTc0NjAwNX0.mBk0Shpa0YLEGqDXdb5eKMTPBZOct6qDEx5k_ZRH698",
         "EXPO_PUBLIC_GATEWAY_URL": "http://localhost:8000",
         "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "ws://localhost:8001/connection/websocket"
       },
@@ -17,6 +19,8 @@
     "preview": {
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nzwbwuhbtqhhjwnopwmm.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56d2J3dWhidHFoaGp3bm9wd21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNzAwMDUsImV4cCI6MjEwNTc0NjAwNX0.mBk0Shpa0YLEGqDXdb5eKMTPBZOct6qDEx5k_ZRH698",
         "EXPO_PUBLIC_GATEWAY_URL": "https://staging-api.sahayak.in",
         "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "wss://staging-realtime.sahayak.in/connection/websocket"
       }
@@ -24,6 +28,8 @@
     "pbl": {
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nzwbwuhbtqhhjwnopwmm.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56d2J3dWhidHFoaGp3bm9wd21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNzAwMDUsImV4cCI6MjEwNTc0NjAwNX0.mBk0Shpa0YLEGqDXdb5eKMTPBZOct6qDEx5k_ZRH698",
         "EXPO_PUBLIC_GATEWAY_URL": "https://pbl-host-not-set.invalid",
         "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "wss://pbl-host-not-set.invalid/connection/websocket"
       },
@@ -34,6 +40,8 @@
     "production": {
       "distribution": "store",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://nzwbwuhbtqhhjwnopwmm.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56d2J3dWhidHFoaGp3bm9wd21tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNzAwMDUsImV4cCI6MjEwNTc0NjAwNX0.mBk0Shpa0YLEGqDXdb5eKMTPBZOct6qDEx5k_ZRH698",
         "EXPO_PUBLIC_GATEWAY_URL": "https://api.sahayak.in",
         "EXPO_PUBLIC_CENTRIFUGO_WS_URL": "wss://realtime.sahayak.in/connection/websocket"
       }

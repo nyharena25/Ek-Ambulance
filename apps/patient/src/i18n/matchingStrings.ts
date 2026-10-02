@@ -59,6 +59,12 @@ export interface MatchingTranslation {
 
   // Immediate Cancel
   cancelButtonText: string;
+  receivedTitle: string;
+  findingTitle: string;
+  findingSubtitle: string;
+  searchingFor: (elapsed: string) => string;
+  requestedAtLabel: string;
+  vehicleTypeName: Record<string, string>;
   cancelModalTitle: string;
   cancelModalDescription: string;
   cancelReasonTitle: string;
@@ -79,7 +85,7 @@ export interface MatchingTranslation {
 export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
   en: {
     screenTitle: "Searching for Ambulance",
-    stateMachineState: "Active Dispatch • XState: Matching",
+    stateMachineState: "Request received",
     languageToggleLabel: "Language switch",
     englishLabel: "EN",
     hindiLabel: "हिन्दी",
@@ -122,11 +128,17 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
       `Nearby ambulances must accept within ${seconds}s before radius escalation`,
     secondsRemaining: (formatted: string) => `${formatted} remaining`,
 
-    requestedVehicleLabel: "AIS-125 VEHICLE SPECIFICATION",
+    requestedVehicleLabel: "AMBULANCE TYPE",
     pickupLocationLabel: "PICKUP LOCATION",
-    lifeSupportTelemetry: "Regulated Non-Surge Tariff • Telemetry Active",
+    lifeSupportTelemetry: "Regulated fare - no surge pricing",
 
-    cancelButtonText: "Immediate Cancel",
+    cancelButtonText: "Cancel request",
+    receivedTitle: "Your request has been received",
+    findingTitle: "Finding an ambulance",
+    findingSubtitle: "Nearby ambulances of the type you chose are being asked to accept. You will see the ambulance here as soon as one accepts.",
+    searchingFor: (elapsed) => `Searching for ${elapsed}`,
+    requestedAtLabel: "Requested at",
+    vehicleTypeName: { TYPE_D_ALS: "Type D · Advanced Life Support", TYPE_C_BLS: "Type C · Basic Life Support", TYPE_B_PTA: "Type B · Patient Transport", TYPE_A_MFR: "Type A · First Responder" },
     cancelModalTitle: "Cancel Emergency Dispatch?",
     cancelModalDescription:
       "Emergency ambulances are actively reviewing your dispatch call. Cancelling now may delay critical medical intervention.",
@@ -138,14 +150,14 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
     confirmCancelButton: "Yes, Cancel Dispatch",
     keepSearchingButton: "No, Keep Searching",
 
-    fallbackPillTitle: "Emergency 108 Call Fallback",
+    fallbackPillTitle: "Call 108 national helpline",
     fallbackPillSubtitle: "Tap for Free Govt. Emergency Ambulance",
     calling108Alert: "Calling 108 Emergency Helpline...",
     callBadgeLabel: "CALL 108",
   },
   hi: {
     screenTitle: "एंबुलेंस की खोज जारी है",
-    stateMachineState: "सक्रिय प्रेषण • XState: मैचिंग",
+    stateMachineState: "अनुरोध प्राप्त हुआ",
     languageToggleLabel: "भाषा चयन",
     englishLabel: "EN",
     hindiLabel: "हिन्दी",
@@ -188,11 +200,17 @@ export const matchingStrings: Record<SupportedLanguage, MatchingTranslation> = {
       `दायरा विस्तार से पूर्व चालकों के पास स्वीकार करने हेतु ${seconds} सेकंड शेष`,
     secondsRemaining: (formatted: string) => `${formatted} शेष`,
 
-    requestedVehicleLabel: "AIS-125 एंबुलेंस श्रेणी",
+    requestedVehicleLabel: "एम्बुलेंस प्रकार",
     pickupLocationLabel: "पिकअप स्थान",
-    lifeSupportTelemetry: "शासकीय नियंत्रित किराया • टेलीमेट्री सक्रिय",
+    lifeSupportTelemetry: "नियंत्रित किराया - कोई सर्ज मूल्य नहीं",
 
-    cancelButtonText: "तत्काल अनुरोध रद्द करें",
+    cancelButtonText: "अनुरोध रद्द करें",
+    receivedTitle: "आपका अनुरोध प्राप्त हो गया है",
+    findingTitle: "एम्बुलेंस खोजी जा रही है",
+    findingSubtitle: "आपके चुने प्रकार की पास की एम्बुलेंस से स्वीकार करने को कहा जा रहा है। कोई स्वीकार करते ही एम्बुलेंस यहाँ दिखेगी।",
+    searchingFor: (elapsed) => `${elapsed} से खोज जारी`,
+    requestedAtLabel: "अनुरोध का समय",
+    vehicleTypeName: { TYPE_D_ALS: "टाइप D · एडवांस्ड लाइफ़ सपोर्ट", TYPE_C_BLS: "टाइप C · बेसिक लाइफ़ सपोर्ट", TYPE_B_PTA: "टाइप B · मरीज़ परिवहन", TYPE_A_MFR: "टाइप A · फ़र्स्ट रिस्पॉन्डर" },
     cancelModalTitle: "क्या आपातकालीन प्रेषण रद्द करें?",
     cancelModalDescription:
       "एंबुलेंस दल वर्तमान में आपके अनुरोध की समीक्षा कर रहे हैं। रद्द करने से आपातकालीन सहायता में देरी हो सकती है।",

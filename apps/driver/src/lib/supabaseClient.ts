@@ -1,14 +1,16 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
+import { SUPABASE_URL } from "../config/env.ts";
 
-// Routed through the Kong API gateway, never the raw Supabase project URL -
-// Kong proxies GoTrue's /auth/v1/* paths, same contract useOtpAuth.ts targets.
-const GATEWAY_URL =
-  process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000"; // adb reverse tcp:8000 (pnpm adb:reverse) makes this reach the host
+/**
+ * Auth, REST and Storage go straight to the Supabase project over HTTPS (EXPO_PUBLIC_SUPABASE_URL, the hosted
+ * project). This used to be the Kong gateway (EXPO_PUBLIC_GATEWAY_URL), which only exists on the dev machine:
+ * 10.0.2.2/localhost/LAN addresses are unreachable from a real phone, so sign-in never reached Supabase. Kong still
+ * fronts /realtime/token (see the realtime services).
+ */
 
-// No anon key provisioned yet for Kong's GoTrue proxy - named placeholder,
-// not silently blank.
+// The project's anon (publishable) key; a named placeholder when unset, not silently blank.
 const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "unconfigured-anon-key";
 
@@ -55,7 +57,7 @@ function createSecureStorageAdapter(): SupportedStorage {
 
 export const authStorage = createSecureStorageAdapter();
 
-export const supabase = createClient(GATEWAY_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: authStorage,
     autoRefreshToken: true,

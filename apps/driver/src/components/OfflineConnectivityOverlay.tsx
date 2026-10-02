@@ -502,12 +502,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   drawerTitleText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.lg,
     lineHeight: typography.lineHeights.lg,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
   },
   drawerSubtitleText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     lineHeight: typography.lineHeights.xs,
     color: colors.slate600,
@@ -598,6 +600,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   queueStatsTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -611,6 +614,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   queueLiveBadgeText: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.info,
@@ -632,10 +636,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   metaLabel: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     color: colors.slate600,
   },
   metaValue: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.semibold,
     color: colors.slate800,

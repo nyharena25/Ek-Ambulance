@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useRootNavigationState, useRouter } from "expo-router";
 import { usePatientAuthStore, realAccessToken } from "../state/patientAuth.store";
 import { usePatientLifecycleStore } from "../state/patientLifecycle.store";
-import { fetchActiveMission } from "../lib/missionApi";
+import { fetchActiveMission, fetchAssignedDriver } from "../lib/missionApi";
 import { authStorage } from "../lib/supabaseClient";
 import { savePersistedMission } from "../services/missionSession.core";
 
@@ -25,11 +25,12 @@ export function useResumeActiveMission(): void {
       const result = await fetchActiveMission();
       if (!result.ok || !result.data) return;
       const s = result.data;
+      const driver = s.status === "requesting" ? undefined : await fetchAssignedDriver(s.missionId);
       // Re-check: the patient may have started a new booking while the lookup was in flight.
       if (usePatientLifecycleStore.getState().currentState !== "idle") return;
       usePatientLifecycleStore.getState().send({
         type: "HYDRATE",
-        payload: { missionId: s.missionId, status: s.status, vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, pickup: s.pickup, fareDetails: s.fareDetails },
+        payload: { missionId: s.missionId, status: s.status, vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, pickup: s.pickup, fareDetails: s.fareDetails, driver },
       });
       await savePersistedMission(authStorage, { missionId: s.missionId, lastSeq: s.stateVersion });
       const lat = s.pickup ? String(s.pickup.latitude) : undefined;

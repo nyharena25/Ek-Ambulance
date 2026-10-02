@@ -40,3 +40,7 @@ export {
   default as InTransitHospitalScreen,
   type InTransitHospitalScreenProps,
 } from "./InTransitHospitalScreen";
+export {
+  default as DriverVerificationScreen,
+  confirmDriverSignOut,
+} from "./DriverVerificationScreen";

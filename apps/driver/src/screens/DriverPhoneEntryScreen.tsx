@@ -14,7 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { driverAuthStrings } from "../i18n/driverAuthStrings";
-import { useOtpAuth, toE164IndianPhone } from "../hooks/useOtpAuth";
+import { useOtpAuth } from "../hooks/useOtpAuth";
+import { normalizeIndianMobileInput, toE164IndianPhone } from "../hooks/otpAuth.core";
 import { AppIcon } from "../components";
 
 export interface DriverPhoneEntryScreenProps {
@@ -49,7 +50,7 @@ export default function DriverPhoneEntryScreen({
   const handlePhoneChange = (text: string) => {
     clearError();
     setPhoneError(null);
-    setRawPhone(text.replace(/\D/g, "").slice(0, 10));
+    setRawPhone(normalizeIndianMobileInput(text));
   };
 
   const handleRequestOtp = async () => {
@@ -167,7 +168,7 @@ export default function DriverPhoneEntryScreen({
                 placeholder={strings.phoneInputPlaceholder}
                 placeholderTextColor={colors.slate400}
                 keyboardType="number-pad"
-                maxLength={11}
+                maxLength={16}
                 value={formatPhoneDisplay(rawPhone)}
                 onChangeText={handlePhoneChange}
                 autoFocus
@@ -285,6 +286,7 @@ const styles = StyleSheet.create({
   backArrow: { fontSize: 20, fontWeight: "700", color: colors.slate900 },
   headerTitleGroup: { flex: 1 },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.base,
     lineHeight: typography.lineHeights.base,
     fontWeight: typography.fontWeights.bold,

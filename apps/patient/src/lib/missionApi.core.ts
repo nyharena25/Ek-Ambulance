@@ -1,7 +1,9 @@
 import {
   isMissionStatus,
   parseLifecycleMessage,
+  readDriverAccepted,
   type AIS125VehicleType,
+  type AssignedDriverInfo,
   type GeoPoint,
   type ItemizedStatutoryFare,
   type Jurisdiction,
@@ -176,6 +178,12 @@ export function parseMissionRow(row: unknown): MissionSnapshot | null {
     pickupAddress: typeof r.pickup_address === "string" ? r.pickup_address : undefined,
     fareDetails: typeof r.fare_details === "object" && r.fare_details !== null ? (r.fare_details as ItemizedStatutoryFare) : undefined,
   };
+}
+
+/** The crew a DRIVER_ACCEPTED event names, exactly as the live event carried it; undefined when it names nobody. */
+export function assignedDriverOf(data: Record<string, unknown>): AssignedDriverInfo | undefined {
+  const { driver } = readDriverAccepted(data);
+  return driver.displayName || driver.vehicleRegistration || driver.ais125Type ? driver : undefined;
 }
 
 /** A `mission_events` row read through RLS, shaped as the wire message it was published as (so one translator serves both). */

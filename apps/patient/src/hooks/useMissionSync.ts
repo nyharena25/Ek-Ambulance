@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ParsedLifecycleMessage } from "@sahayak/domain";
 import { usePatientLifecycleStore } from "../state/patientLifecycle.store";
 import { authStorage } from "../lib/supabaseClient";
-import { fetchEventsAfter, fetchMissionSnapshot } from "../lib/missionApi";
+import { fetchAssignedDriver, fetchEventsAfter, fetchMissionSnapshot } from "../lib/missionApi";
 import { createMissionSync, type MissionSync } from "../services/missionSync.core";
 import { clearPersistedMission, loadPersistedMission, savePersistedMission } from "../services/missionSession.core";
 import { translateLifecycleMessage } from "../services/missionLifecycleBridge";
@@ -37,11 +37,13 @@ export function useMissionSync({ missionId, authToken, onTelemetryReceived }: Us
       const sync = createMissionSync({
         lastSeq: persisted?.missionId === missionId ? persisted.lastSeq : null,
         apply: (message) => send(translateLifecycleMessage(message, missionId)),
-        hydrate: (s) =>
+        hydrate: async (s) => {
+          const driver = s.status === "requesting" ? undefined : await fetchAssignedDriver(missionId);
           send({
             type: "HYDRATE",
-            payload: { missionId, status: s.status, vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, pickup: s.pickup, fareDetails: s.fareDetails },
-          }),
+            payload: { missionId, status: s.status, vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, pickup: s.pickup, fareDetails: s.fareDetails, driver },
+          });
+        },
         fetchEventsAfter: (seq) => fetchEventsAfter(missionId, seq),
         fetchSnapshot: () => fetchMissionSnapshot(missionId),
         persist: (lastSeq) => void savePersistedMission(authStorage, { missionId, lastSeq }),

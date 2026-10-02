@@ -17,7 +17,7 @@ import {
  * offers an edit the server will refuse (invariant 3: read from the lifecycle machine, not a flag).
  */
 
-const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
+const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
 
 export type SaveResult = { ok: true } | { ok: false; code: string };
 
@@ -66,8 +66,8 @@ export const useDriverProfileStore = create<DriverProfileState>((set, get) => ({
   load: async () => {
     const server = getServerAdapter();
     if (!server) {
-      // Local development: the seeded profile, built on first use from the stores the mock login fills.
-      if (!get().profile && IS_DEV) get().seedDev({ phone: "+919876543210", jurisdiction: useDriverStandbyStore.getState().currentJurisdiction });
+      // Test runner only: the seeded profile the store tests build on. A phone with no session shows no profile.
+      if (!get().profile && IS_TEST_RUNNER) get().seedDev({ phone: "+919876543210", jurisdiction: useDriverStandbyStore.getState().currentJurisdiction });
       set({ status: "ready", errorCode: null });
       return;
     }
@@ -90,7 +90,7 @@ export const useDriverProfileStore = create<DriverProfileState>((set, get) => ({
       syncStandby(result.data);
       return { ok: true };
     }
-    if (!IS_DEV) return { ok: false, code: "no_session" };
+    if (!IS_TEST_RUNNER) return { ok: false, code: "no_session" };
     const next = applyPatch(current, patch, hospitalName);
     set({ profile: next });
     syncStandby(next);

@@ -22,6 +22,8 @@ export interface MissionCancelledScreenProps {
   initialLanguage?: SupportedLanguage;
   onCall108?: () => void;
   onReturnHome?: () => void;
+  /** What the server received (no_ambulance_available): request time from missions.created_at, pickup, type. Each optional. */
+  request?: { requestedAt?: string; pickupAddress?: string; ambulanceType?: string };
 }
 
 /**
@@ -44,6 +46,7 @@ export default function MissionCancelledScreen({
   initialLanguage = "en",
   onCall108,
   onReturnHome,
+  request,
 }: MissionCancelledScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = cancellationStrings[language];
@@ -100,8 +103,16 @@ export default function MissionCancelledScreen({
             <Text style={styles.cancelledBadgeText}>{strings.cancelledBadge}</Text>
           </View>
           {missionId ? <Text style={styles.missionIdText}>{strings.missionIdLabel(missionId)}</Text> : null}
-          <Text style={styles.cancelledTitle}>{strings.cancelledTitle}</Text>
+          <Text style={styles.cancelledTitle}>{reason === "no_ambulance_available" ? strings.noAmbulanceTitle : strings.cancelledTitle}</Text>
           <Text style={styles.cancelledDescription}>{strings.cancelledDescriptionFor(cancelledBy, reason)}</Text>
+          {reason === "no_ambulance_available" && request && (request.requestedAt || request.pickupAddress || request.ambulanceType) ? (
+            <View style={styles.requestBox}>
+              <Text style={styles.requestTitle}>{strings.requestReceivedTitle}</Text>
+              {request.requestedAt ? <Text style={styles.requestRow}>{strings.requestedAtLabel}: {request.requestedAt}</Text> : null}
+              {request.pickupAddress ? <Text style={styles.requestRow} numberOfLines={2}>{strings.pickupLabel}: {request.pickupAddress}</Text> : null}
+              {request.ambulanceType ? <Text style={styles.requestRow}>{strings.ambulanceTypeLabel}: {request.ambulanceType}</Text> : null}
+            </View>
+          ) : null}
         </View>
 
         {/* STATUTORY FALLBACK GUIDANCE WITH DIRECT 108 DIALER */}
@@ -155,6 +166,7 @@ const styles = StyleSheet.create({
     borderColor: colors.slate200,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
     color: colors.slate900,
@@ -212,6 +224,22 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.extrabold,
     color: colors.white,
+  },
+  requestBox: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.slate200,
+    gap: 2,
+  },
+  requestTitle: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.slate900,
+  },
+  requestRow: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate700,
   },
   missionIdText: {
     fontSize: typography.fontSizes.xs,

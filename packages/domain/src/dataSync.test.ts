@@ -307,8 +307,16 @@ function bookedPatient() {
   assert.strictEqual(cold.getSnapshot().value, "tracking", "cold launch resumes an active mission");
   assert.strictEqual(cold.getSnapshot().context.driverHasArrived, true, "on_scene => arrived step");
   assert.strictEqual(cold.getSnapshot().context.vehicleType, "TYPE_D_ALS");
+  assert.strictEqual(cold.getSnapshot().context.assignedDriver, null, "no crew read: none shown, never invented");
+  const crew = { displayName: "Ravi K.", vehicleRegistration: "DL01AB1234", ais125Type: "TYPE_D_ALS" };
+  cold.send({ type: "HYDRATE", payload: { missionId: M, status: "on_scene", driver: crew } });
+  assert.deepStrictEqual(cold.getSnapshot().context.assignedDriver, crew, "reopened app shows the stored crew");
+  assert.strictEqual(cold.getSnapshot().context.etaMinutes, null, "ETA is never restored from the acceptance");
+  cold.send({ type: "HYDRATE", payload: { missionId: M, status: "en_route" } });
+  assert.deepStrictEqual(cold.getSnapshot().context.assignedDriver, crew, "a later snapshot without a crew read keeps it");
   cold.send({ type: "HYDRATE", payload: { missionId: M, status: "requesting" } });
   assert.strictEqual(cold.getSnapshot().value, "requesting", "the authoritative snapshot may also move backwards (missed DRIVER_RELEASED)");
+  assert.strictEqual(cold.getSnapshot().context.assignedDriver, null, "released: nobody is assigned any more");
   cold.send({ type: "HYDRATE", payload: { missionId: M, status: "cancelled" } });
   assert.strictEqual(cold.getSnapshot().value, "cancelled");
   cold.send({ type: "HYDRATE", payload: { missionId: M, status: "en_route" } });

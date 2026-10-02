@@ -58,3 +58,8 @@ export {
 
 
 
+
+export {
+  default as PatientProfileScreen,
+  type PatientProfileScreenProps,
+} from "./PatientProfileScreen";

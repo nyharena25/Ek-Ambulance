@@ -15,6 +15,7 @@ import {
   mapRpcError,
   newIdempotencyKey,
   parseCreateMissionResult,
+  assignedDriverOf,
   parseEventRow,
   parseMissionRow,
   parsePoint,
@@ -42,7 +43,7 @@ function harness(over: Partial<MissionSyncDeps> = {}) {
   const deps: MissionSyncDeps = {
     lastSeq: 1,
     apply: (m) => applied.push([m.event, m.seq]),
-    hydrate: (s) => hydrated.push(s),
+    hydrate: (s) => void hydrated.push(s),
     fetchEventsAfter: async () => {
       calls.events += 1;
       return [];
@@ -292,5 +293,39 @@ assert.deepStrictEqual(contiguousFrom([], 2), []);
 assert.strictEqual(contiguousFrom([msg("DRIVER_ARRIVED", 4)], 2), null, "a hole is not replayable");
 assert.ok(contiguousFrom([msg("DRIVER_ARRIVED", 3), msg("TRANSPORT_STARTED", 4)], 2));
 console.log("✓ row parsing\n");
+
+console.log("Test: the crew is recovered from the stored DRIVER_ACCEPTED row (reopened app, no realtime replay)...");
+{
+  const stored = parseEventRow({
+    id: "0b6f4c3e-0000-4000-8000-000000000004", seq: 2, event_type: "DRIVER_ACCEPTED", to_status: "en_route", created_at: "2026-09-24T08:29:40.101Z",
+    metadata: { driver: { displayName: "Ravi K.", vehicleRegistration: "DL01AB1234", makeModel: "Force Traveller", color: "White", crewCount: 2, ais125Type: "TYPE_C_BLS" } },
+  });
+  assert.deepStrictEqual(assignedDriverOf(stored!.data ?? {}), {
+    displayName: "Ravi K.", vehicleRegistration: "DL01AB1234", ais125Type: "TYPE_C_BLS", makeModel: "Force Traveller", color: "White", crewCount: 2,
+  });
+  assert.strictEqual(assignedDriverOf({}), undefined, "an event naming nobody recovers nobody - never a placeholder crew");
+  assert.strictEqual(assignedDriverOf({ driver: { color: "White" } }), undefined, "a colour alone does not identify an ambulance");
+}
+console.log("✓ crew recovery\n");
+
+console.log("Test: an async hydrate (crew read) keeps live messages after it, in order...");
+{
+  let release!: () => void;
+  const order: string[] = [];
+  const h2 = harness({
+    lastSeq: null,
+    fetchSnapshot: async () => ({ missionId: M, status: "en_route", stateVersion: 2 }),
+    hydrate: () => new Promise<void>((r) => (release = () => { order.push("HYDRATE"); r(); })),
+    apply: (m) => void order.push(m.event),
+  });
+  const done = h2.sync.reconcile("snapshot");
+  await tick();
+  h2.sync.handle(msg("DRIVER_ARRIVED", 3));
+  assert.deepStrictEqual(order, [], "held while the hydrate is in flight");
+  release();
+  await done;
+  assert.deepStrictEqual(order, ["HYDRATE", "DRIVER_ARRIVED"], "hydrate first, then the newer live event");
+}
+console.log("✓ async hydrate ordering\n");
 
 console.log("PATIENT MISSION SYNC TESTS PASSED (100% GREEN)");

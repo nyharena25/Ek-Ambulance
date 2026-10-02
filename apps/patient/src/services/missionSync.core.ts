@@ -19,7 +19,8 @@ export interface MissionSyncDeps {
   /** Feeds one already-ordered message to the patient machine. */
   apply: (message: ParsedLifecycleMessage) => void;
   /** Jumps the machine to the server's view (`HYDRATE`). */
-  hydrate: (snapshot: MissionSnapshot) => void;
+  /** May be async (it reads the assigned crew); messages arriving meanwhile are held, so order is kept. */
+  hydrate: (snapshot: MissionSnapshot) => void | Promise<void>;
   /** Events after `seq` in order, or null when they could not be read. */
   fetchEventsAfter: (seq: number) => Promise<ParsedLifecycleMessage[] | null>;
   fetchSnapshot: () => Promise<MissionSnapshot | null>;
@@ -93,7 +94,7 @@ export function createMissionSync(deps: MissionSyncDeps): MissionSync {
         if (!replayed) {
           const snapshot = await deps.fetchSnapshot();
           if (snapshot) {
-            deps.hydrate(snapshot);
+            await deps.hydrate(snapshot);
             advance(snapshot.stateVersion);
           }
         }

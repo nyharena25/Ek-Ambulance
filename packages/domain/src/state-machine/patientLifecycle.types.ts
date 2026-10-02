@@ -61,6 +61,8 @@ export interface PatientHydratePayload {
   jurisdiction?: Jurisdiction;
   pickup?: GeoPoint;
   fareDetails?: ItemizedStatutoryFare;
+  /** The crew from the mission's stored DRIVER_ACCEPTED event, so a reopened app shows who is coming. */
+  driver?: AssignedDriverInfo;
 }
 
 /**

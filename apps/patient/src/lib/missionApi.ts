@@ -1,9 +1,10 @@
-import type { ParsedLifecycleMessage } from "@sahayak/domain";
+import type { AssignedDriverInfo, ParsedLifecycleMessage } from "@sahayak/domain";
 import { supabase } from "./supabaseClient";
 import {
   buildCreateMissionParams,
   mapRpcError,
   parseCreateMissionResult,
+  assignedDriverOf,
   parseEventRow,
   parseMissionRow,
   type ApiResult,
@@ -90,6 +91,27 @@ export async function fetchActiveMission(): Promise<ApiResult<MissionSnapshot | 
 export async function fetchMissionSnapshot(missionId: string): Promise<MissionSnapshot | null> {
   const { data, error } = await supabase.from("missions").select(MISSION_COLUMNS).eq("id", missionId).maybeSingle();
   return error || !data ? null : parseMissionRow(data);
+}
+
+/**
+ * Who accepted, from the mission's own stored DRIVER_ACCEPTED event (RLS: the patient's own mission) - the same record and
+ * parser as the live event, so a reopened app shows the crew without replaying the realtime message. The latest one wins
+ * (a released mission can be accepted again). Undefined when none can be read.
+ */
+export async function fetchAssignedDriver(missionId: string): Promise<AssignedDriverInfo | undefined> {
+  try {
+    const { data, error } = await supabase
+      .from("mission_events")
+      .select("id,seq,event_type,to_status,metadata,created_at")
+      .eq("mission_id", missionId)
+      .eq("event_type", "DRIVER_ACCEPTED")
+      .order("seq", { ascending: false })
+      .limit(1);
+    const message = error || !data?.[0] ? null : parseEventRow(data[0]);
+    return message ? assignedDriverOf(message.data ?? {}) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Events after `seq`, in order; null if any row could not be read or is unknown to this build (caller falls back to the snapshot). */

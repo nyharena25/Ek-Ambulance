@@ -4,10 +4,10 @@ import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
 import { useDriverLifecycleStore, getServerAdapter } from "./driverLifecycle.store.ts";
 import { isProfileLocked } from "./driverAvailability.core.ts";
 
-// Synthetic demo identity for LOCAL DEVELOPMENT ONLY. With a verified session the real user id is used and the server
-// (set_driver_presence -> `not_verified`) is the verification gate. `IS_DEV` is true under the node test runner, where
+// Synthetic demo identity for the NODE TEST RUNNER ONLY (never a phone, dev build included). With a verified session the real user id is used and the server
+// (set_driver_presence -> `not_verified`) is the verification gate. `IS_TEST_RUNNER` is true under the node test runner, where
 // `__DEV__` does not exist, so the existing tests keep their seeded state.
-const IS_DEV = typeof __DEV__ === "undefined" || __DEV__;
+const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
 const DEMO_DRIVER_ID = "DRV-DEMO-0001";
 const DEMO_AMBULANCE_ID = "AMB-DEMO-0001";
 const DEMO_AIS125_CERT_PATH = "storage/certs/demo-driver-kyc.pdf";
@@ -115,12 +115,12 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   // match this store's own demo default (isOnline: true) - without this,
   // SERVER_OFFER_RECEIVED would silently no-op against a machine stuck in
   // "offline" (illegal transitions are rejected by design, not a bug).
-  // Development only: a release build starts offline and the driver must go online (which the server has to accept), instead
+  // Test runner only: every build on a phone starts offline and the driver must go online (which the server has to accept), instead
   // of being "online" and dispatchable under a demo identity before authentication or KYC (D4).
-  if (IS_DEV) sendGoOnline("TYPE_D_ALS", NOIDA_COORDS);
+  if (IS_TEST_RUNNER) sendGoOnline("TYPE_D_ALS", NOIDA_COORDS);
 
   return {
-  isOnline: IS_DEV,
+  isOnline: IS_TEST_RUNNER,
   isTogglingPresence: false,
   shiftStartedAt: "07:30 AM",
   language: "en",
@@ -160,12 +160,12 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
           set({ isTogglingPresence: false, presenceErrorCode: result.error.code });
           return;
         }
-      } else if (!IS_DEV) {
+      } else if (!IS_TEST_RUNNER) {
         // A release build with no session must refuse going online, not silently simulate success.
         set({ isTogglingPresence: false, presenceErrorCode: "no_session" });
         return;
       } else {
-        // Local development: the former simulated GEOADD delay.
+        // Test runner only: no server to ask.
         await new Promise((res) => setTimeout(res, 600));
       }
       sendGoOnline(registeredAis125Type, gps);

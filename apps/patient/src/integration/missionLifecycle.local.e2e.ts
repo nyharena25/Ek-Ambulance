@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { registerHooks } from "node:module";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isUuid, readMissionCompleted, type DispatchOffer, type DriverLifecycleMachineEvent, type ParsedLifecycleMessage } from "@sahayak/domain";
-import { buildCreateMissionParams, mapRpcError, parseCreateMissionResult } from "../lib/missionApi.core.ts";
+import { assignedDriverOf, buildCreateMissionParams, mapRpcError, parseCreateMissionResult, parseEventRow } from "../lib/missionApi.core.ts";
 
 /**
  * G4.5-A + G4.6-A: the real mission lifecycle against the LOCAL Supabase stack and the local data plane (Kong -> strict
@@ -76,7 +76,7 @@ const HANDOFF = {
 };
 const TERMINAL = new Set(["completed", "cancelled"]);
 
-type Actor = { name: string; id: string; db: SupabaseClient; token: string };
+type Actor = { name: string; id: string; db: SupabaseClient; token: string; email: string; password: string };
 const users: Record<string, string> = {};
 const uploaded: string[] = [];
 const teardowns: Array<() => void> = [];
@@ -100,7 +100,7 @@ async function user(label: string, role?: "driver" | "staff"): Promise<Actor> {
   const signIn = await db.auth.signInWithPassword({ email, password });
   assert.ifError(signIn.error);
   sessions.push(db);
-  return { name: label, id: data.user!.id, db, token: signIn.data.session!.access_token };
+  return { name: label, id: data.user!.id, db, token: signIn.data.session!.access_token, email, password };
 }
 
 /** Resolves with the first value `arm` delivers, or rejects after `timeoutMs` naming the failure class. */
@@ -431,6 +431,27 @@ try {
   const m2 = await book("M2");
   const M2 = m2.missionId;
   await accept("M2", m2.offer);
+  {
+    // The same account signing in again (a reopened app) still owns the active mission, read the app's way
+    // (fetchActiveMission's RLS query), and recovers the crew from the stored DRIVER_ACCEPTED row (fetchAssignedDriver).
+    const again = createClient(URL_, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
+    const signedIn = await again.auth.signInWithPassword({ email: patient.email, password: patient.password });
+    assert.ifError(signedIn.error);
+    assert.strictEqual(signedIn.data.user!.id, patient.id, "same account");
+    const active = await again.from("missions").select("id,patient_id").not("status", "in", "(completed,cancelled)");
+    assert.deepStrictEqual(active.data, [{ id: M2, patient_id: patient.id }], "the active mission is still this patient's after signing in again");
+    const accepted = await again
+      .from("mission_events")
+      .select("id,seq,event_type,to_status,metadata,created_at")
+      .eq("mission_id", M2)
+      .eq("event_type", "DRIVER_ACCEPTED")
+      .order("seq", { ascending: false })
+      .limit(1);
+    const crew = assignedDriverOf(parseEventRow(accepted.data?.[0])?.data ?? {});
+    assert.ok(crew?.vehicleRegistration && crew.ais125Type, `crew recovered without the realtime replay: ${JSON.stringify(crew)}`);
+    await again.auth.signOut({ scope: "local" });
+    console.log(`  re-sign-in: same patient, active mission ${M2} still owned; crew recovered (${crew.vehicleRegistration}, ${crew.ais125Type})`);
+  }
   const driverHeard = new Map<number, { cancelledBy?: string; at: number }>();
   let onDriverCancel: (() => void) | null = null;
   await waitFor<void>("E CHANNEL_AUTH_FAILURE (driver mission watch)", 10_000, (ok) => {

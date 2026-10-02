@@ -111,7 +111,7 @@ export const driverNavigationStrings: Record<SupportedLanguage, DriverNavigation
     // Irreversible Arrival Slider
     sliderPromptArrival: "Slide to Confirm Arrival on Scene",
     sliderReleaseToConfirm: "Release to confirm on-scene arrival",
-    sliderConfirmedArrival: "ARRIVED ON SCENE (XState: onScene)",
+    sliderConfirmedArrival: "ARRIVED ON SCENE",
     sliderAccidentalTapNotice: "Firm continuous swipe required to avoid accidental taps while driving",
     serverConfirmingNotice: "Broadcasting timestamp & GPS arrival to central dispatch...",
 
@@ -228,7 +228,7 @@ export const driverNavigationStrings: Record<SupportedLanguage, DriverNavigation
     // Irreversible Arrival Slider
     sliderPromptArrival: "दृश्य स्थल पर आगमन पुष्टि हेतु स्लाइड करें",
     sliderReleaseToConfirm: "आगमन पुष्टि करने हेतु छोड़ें",
-    sliderConfirmedArrival: "दृश्य स्थल पर आगमन सत्यापित (XState: onScene)",
+    sliderConfirmedArrival: "घटनास्थल पर पहुँच गए",
     sliderAccidentalTapNotice: "ड्राइविंग के दौरान आकस्मिक स्पर्श रोकने हेतु स्लाइडर को दृढ़ता से पूरा खींचें",
     serverConfirmingNotice: "सेंट्रल डिस्पैच को जीपीएस लोकेशन व समय प्रसारित हो रहा है...",
 

@@ -44,7 +44,7 @@ export const driverOfflineStrings: Record<SupportedLanguage, DriverOfflineTransl
   en: {
     bannerTitle: "Low Connectivity: Operating in SMS/Store-and-Forward Fallback",
     bannerSubtitle: "Pings are stored safely and will sync automatically once network returns.",
-    statusDisconnected: "Centrifugo WebSocket Offline",
+    statusDisconnected: "Live connection offline",
     statusReconnecting: "Reconnecting to Grid...",
     statusRestored: "Connectivity Restored",
     pingsQueuedBadge: (count: number) => `${count} Pings Saved`,
@@ -54,13 +54,13 @@ export const driverOfflineStrings: Record<SupportedLanguage, DriverOfflineTransl
     upGridNoticeTitle: "Rural Dead Zone Protocol Active",
     upGridNoticeBody:
       "Operating in low/no cellular reception zone (UP Highway / Gramin Belt). Driver navigation, trip logs, and GPS pings are preserved in device storage. Critical milestones can be relayed via SMS carrier fallback.",
-    queueStatusTitle: "Local Telemetry Queue",
-    queueStatusCount: (count: number) => `${count} telemetry points queued locally`,
+    queueStatusTitle: "Saved location updates",
+    queueStatusCount: (count: number) => `${count} location updates waiting to send`,
     lastSyncLabel: "Last Central Sync",
     lastSyncNever: "None during this mission",
     lastSyncMinutesAgo: (mins: number) => `${mins} min ago`,
 
-    smsFallbackSectionTitle: "Carrier SMS Telemetry Fallback",
+    smsFallbackSectionTitle: "SMS fallback",
     smsFallbackDescription:
       "When GPRS/4G drops completely in rural tehsils, transmit an encrypted location ping directly to the UP 108 Dispatch Control Desk via carrier SMS.",
     btnSendSmsPing: "Send Emergency SMS Ping",
@@ -80,7 +80,7 @@ export const driverOfflineStrings: Record<SupportedLanguage, DriverOfflineTransl
   hi: {
     bannerTitle: "कम कनेक्टिविटी: एसएमएस / स्टोर-एंड-फ़ॉरवर्ड फ़ॉलबैक में संचालित",
     bannerSubtitle: "पिंग स्थानीय रूप से सुरक्षित हैं और नेटवर्क लौटने पर स्वतः सिंक होंगे।",
-    statusDisconnected: "सेंट्रीफ्यूगो वेबसॉकेट ऑफलाइन",
+    statusDisconnected: "लाइव कनेक्शन ऑफ़लाइन",
     statusReconnecting: "ग्रिड से पुनः जुड़ रहा है...",
     statusRestored: "कनेक्टिविटी बहाल",
     pingsQueuedBadge: (count: number) => `${count} पिंग सुरक्षित`,
@@ -90,13 +90,13 @@ export const driverOfflineStrings: Record<SupportedLanguage, DriverOfflineTransl
     upGridNoticeTitle: "ग्रामीण डेड ज़ोन प्रोटोकॉल सक्रिय",
     upGridNoticeBody:
       "कम अथवा शून्य मोबाइल नेटवर्क क्षेत्र (उत्तर प्रदेश राजमार्ग / ग्रामीण क्षेत्र) में संचालन। नेविगेशन, ट्रिप लॉग एवं जीपीएस पिंग डिवाइस स्टोरेज में सुरक्षित हैं। महत्वपूर्ण अपडेट एसएमएस द्वारा भेजे जा सकते हैं।",
-    queueStatusTitle: "स्थानीय टेलीमेट्री कतार",
-    queueStatusCount: (count: number) => `${count} टेलीमेट्री पॉइंट स्थानीय रूप से कतारबद्ध`,
+    queueStatusTitle: "सहेजे गए लोकेशन अपडेट",
+    queueStatusCount: (count: number) => `${count} लोकेशन अपडेट भेजे जाने बाकी`,
     lastSyncLabel: "अंतिम केंद्रीय सिंक",
     lastSyncNever: "इस मिशन के दौरान अभी तक नहीं",
     lastSyncMinutesAgo: (mins: number) => `${mins} मिनट पहले`,
 
-    smsFallbackSectionTitle: "कैरियर एसएमएस टेलीमेट्री फ़ॉलबैक",
+    smsFallbackSectionTitle: "SMS विकल्प",
     smsFallbackDescription:
       "जब ग्रामीण तहसीलों में जीपीआरएस/4G पूरी तरह बंद हो जाए, तब कैरियर एसएमएस द्वारा यूपी 108 नियंत्रण कक्ष को सीधा स्थान पिंग भेजें।",
     btnSendSmsPing: "आपातकालीन एसएमएस पिंग भेजें",

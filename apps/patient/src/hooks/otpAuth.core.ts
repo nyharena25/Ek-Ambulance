@@ -27,6 +27,15 @@ export function toE164IndianPhone(rawNumber: string): string {
   return `+91${rawNumber}`;
 }
 
+/** Phone-field text -> the raw 10-digit number. Autofill and paste bring "+91 98765 43210" or "098765 43210"; keeping
+ *  the first 10 digits of those would keep the country/trunk prefix and drop the end of the number. */
+export function normalizeIndianMobileInput(text: string): string {
+  const digits = text.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits.slice(0, 10);
+}
+
 /**
  * Extracts cooldown seconds from GoTrue rate-limit descriptions such as:
  * "For security purposes, you can only request this after 33 seconds."
@@ -71,6 +80,12 @@ export function mapAuthError(error: AuthError, isVerifyStep: boolean): AuthApiEr
   // newer GoTrue) - normalize both to "invalid_otp" so the UI's existing
   // literal-string check keeps working regardless of which the gateway's
   // GoTrue instance actually returns.
+  // Sign In asks GoTrue not to create a user (shouldCreateUser: false); for a phone with no account it answers
+  // 422 otp_disabled "Signups not allowed for otp" (confirmed against the hosted project) and sends no SMS.
+  if (!isVerifyStep && (error.code === "otp_disabled" || /signups not allowed/i.test(error.message))) {
+    return { error: "account_not_found", error_description: error.message, isRateLimited: false };
+  }
+
   const isInvalidOtpCode = error.code === "invalid_otp" || error.code === "otp_expired";
   const normalizedCode =
     isVerifyStep && (isInvalidOtpCode || (!error.code && error.status === 401))
