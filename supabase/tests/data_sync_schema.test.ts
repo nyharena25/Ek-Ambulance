@@ -305,4 +305,23 @@ assert.strictEqual(fn(sourced).replace(sourceLine, ""), fn(read("20260924000003_
 assert.doesNotMatch(sourced, /grant |revoke /i, "create or replace keeps the existing grant");
 console.log("✓ final fare source\n");
 
+console.log("Test 18: staff driver activity - staff-gated, read-only, helper internal, no private fields...");
+const activity = read("20261002000000_staff_driver_activity.sql");
+for (const fn of ["staff_driver_activity", "staff_driver_missions"]) {
+  const body = activity.match(new RegExp(`function public\\.${fn}\\([\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, "i"))?.[1] ?? assert.fail(`missing ${fn}`);
+  assert.match(body, /^\s*declare[\s\S]*?begin\s+perform public\._require_staff\(\);/i, `${fn} checks staff first`);
+}
+for (const def of activity.split(/create (?:or replace )?function /i).slice(1)) {
+  const header = def.slice(0, def.search(/\bas \$\$/i));
+  assert.match(header, /set search_path = ''/i, `${def.match(/^public\.(\w+)/)![1]}: search_path pinned`);
+}
+assert.doesNotMatch(activity.match(/function public\._driver_assignments[\s\S]*?\$\$/i)![0], /security definer/i, "the history helper runs with its caller's rights");
+assert.match(activity, /revoke execute on function public\._driver_assignments\([^;]*from public, anon, authenticated;/i, "default PUBLIC execute revoked");
+assert.doesNotMatch(activity, /grant execute on function public\._driver_assignments[^;]*to authenticated/i, "helper not client-callable");
+assert.doesNotMatch(activity, /grant execute[^;]*to anon/i);
+assert.doesNotMatch(activity, /\b(insert into|update public\.|delete from)\b/i, "read-only: no writes");
+assert.doesNotMatch(activity, /patient_id|triage|cancel_note|'note'|'vitals'|'handoff'|full_name|phone/i, "no patient identity, clinical or free-text fields returned");
+assert.doesNotMatch(activity, /compute_statutory_fare|telemetry_logs/, "fare and distance are read as billed, never recomputed");
+console.log("✓ staff driver activity\n");
+
 console.log("DATA & SYNC SCHEMA VALIDATION TESTS PASSED (100% GREEN)");

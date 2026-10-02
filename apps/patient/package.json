@@ -11,7 +11,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types src/config/env.test.ts && node --experimental-strip-types src/services/missionChannel.service.test.ts && node --experimental-strip-types src/services/missionSync.test.ts &&node --experimental-strip-types src/services/openRouterTriage.test.ts && node --experimental-strip-types src/services/mapGeo.core.test.ts && node --experimental-strip-types src/services/geocoding.core.test.ts && node --experimental-strip-types src/hooks/otpAuth.core.test.ts && node --experimental-strip-types src/integration/goldenPath.test.ts && node --experimental-strip-types src/integration/crossClientMission.test.ts && node --experimental-strip-types src/integration/serverJurisdiction.test.ts"
+    "test": "node --experimental-strip-types src/config/env.test.ts && node --experimental-strip-types src/services/missionChannel.service.test.ts && node --experimental-strip-types src/services/missionSync.test.ts &&node --experimental-strip-types src/services/openRouterTriage.test.ts && node --experimental-strip-types src/services/mapGeo.core.test.ts && node --experimental-strip-types src/services/geocoding.core.test.ts && node --experimental-strip-types src/hooks/otpAuth.core.test.ts && node --experimental-strip-types src/services/missionSession.core.test.ts && node --experimental-strip-types src/integration/goldenPath.test.ts && node --experimental-strip-types src/integration/crossClientMission.test.ts && node --experimental-strip-types src/integration/serverJurisdiction.test.ts"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",

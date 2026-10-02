@@ -13,7 +13,7 @@ export default function RootLayout() {
 
   // Auth gate: without a real Supabase session only Welcome (index) and the (auth) screens are reachable. A signed-out,
   // expired or never-signed-in patient anywhere else goes back to Welcome; nothing redirects while the stored session is
-  // still being read. Signing back in re-runs useResumeActiveMission, so a live request is picked up again.
+  // still being read. Signing back in re-runs useResumeActiveMission (once per account), so a live request is picked up again.
   const signedIn = usePatientAuthStore((s) => realAccessToken(s.session) !== null);
   const isInitializing = usePatientAuthStore((s) => s.isInitializing);
   const firstSegment = useSegments()[0] as string | undefined;

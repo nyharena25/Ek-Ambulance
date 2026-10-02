@@ -55,3 +55,27 @@ export async function clearPersistedMission(storage: KeyValueStorage): Promise<v
 export function canSignOut(state: PatientLifecycleState): boolean {
   return state === "idle" || state === "triaged" || state === "receiptConfirmed" || state === "cancelled";
 }
+
+/**
+ * Sign-out, in order: refuse while a mission is in flight (the account owns it), end the Supabase session, then clear
+ * app state only - the SDK owns the session keys - so no mission context or resume baseline carries to the next
+ * account. A failed signOut leaves everything as it was.
+ */
+export async function signOutPatient(deps: {
+  state: PatientLifecycleState;
+  signOut: () => Promise<{ error: unknown }>;
+  storage: KeyValueStorage;
+  resetLifecycle: () => void;
+}): Promise<{ ok: true } | { ok: false; code: "mission_in_progress" | "sign_out_failed" }> {
+  if (!canSignOut(deps.state)) return { ok: false, code: "mission_in_progress" };
+  const { error } = await deps.signOut();
+  if (error) return { ok: false, code: "sign_out_failed" };
+  await clearPersistedMission(deps.storage);
+  deps.resetLifecycle();
+  return { ok: true };
+}
+
+/** Screen that resumes a non-terminal mission found on launch / sign-in: still searching, or a driver is assigned. */
+export function resumeRoute(status: string): "/booking/matching" | "/booking/[id]" {
+  return status === "requesting" ? "/booking/matching" : "/booking/[id]";
+}

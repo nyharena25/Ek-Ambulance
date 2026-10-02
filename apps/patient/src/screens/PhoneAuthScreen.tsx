@@ -9,15 +9,21 @@ import {
   Platform,
   StatusBar,
   KeyboardAvoidingView,
-  NativeSyntheticEvent,
-  TextInputKeyPressEventData,
+  BackHandler,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
-import { authStrings } from "../i18n/authStrings";
+import { authStrings, type AuthTranslation } from "../i18n/authStrings";
 import { useOtpAuth, VerifyOtpResponse } from "../hooks/useOtpAuth";
-import { normalizeIndianMobileInput, toE164IndianPhone } from "../hooks/otpAuth.core";
+import {
+  authMessageKey,
+  normalizeIndianMobileInput,
+  phoneInputIssue,
+  toE164IndianPhone,
+  type AuthMessageKey,
+} from "../hooks/otpAuth.core";
 
 import { AppIcon } from "../components";
 export interface PhoneAuthScreenProps {
@@ -26,11 +32,30 @@ export interface PhoneAuthScreenProps {
   initialLanguage?: SupportedLanguage;
   /** Both use Supabase phone OTP. Sign In never creates an account (shouldCreateUser: false); Create Account may. */
   mode?: "signin" | "signup";
-  /** Raw 10-digit number to start with (carried over from Sign In's "account not found"). */
+  /** Raw 10-digit number to start with (carried over from a switch between Sign In and Create Account). */
   initialPhone?: string;
-  /** Sign In found no account for this number: switch to Create Account, keeping the number. */
-  onCreateAccount?: (rawPhone: string) => void;
+  /** Switch to Create Account, keeping the number (and language). */
+  onCreateAccount?: (rawPhone: string, language: SupportedLanguage) => void;
+  /** Switch to Sign In, keeping the number (and language). */
+  onSignIn?: (rawPhone: string, language: SupportedLanguage) => void;
 }
+
+const OTP_LENGTH = 6;
+const RESEND_SECONDS = 30;
+
+const messageFor = (key: AuthMessageKey, s: AuthTranslation): string =>
+  ({
+    rateLimit: s.rateLimitError,
+    network: s.networkError,
+    invalidOtp: s.invalidOtpError,
+    accountNotFound: s.accountNotFoundError,
+    signupUnavailable: s.signupUnavailableError,
+    smsSendFailed: s.smsSendFailedError,
+    invalidPhone: s.invalidPhoneError,
+    generic: s.genericError,
+  })[key];
+
+const formatPhoneDisplay = (raw: string) => (raw.length > 5 ? `${raw.slice(0, 5)} ${raw.slice(5)}` : raw);
 
 export default function PhoneAuthScreen({
   onSuccess,
@@ -39,374 +64,214 @@ export default function PhoneAuthScreen({
   mode = "signin",
   initialPhone = "",
   onCreateAccount,
+  onSignIn,
 }: PhoneAuthScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = authStrings[language];
 
-  // Auth flow step: "phone" -> "otp"
   const [step, setStep] = useState<"phone" | "otp">("phone");
-
-  // Step 1: Indian Phone Number State
   const [rawPhone, setRawPhone] = useState(() => normalizeIndianMobileInput(initialPhone));
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [otp, setOtp] = useState("");
+  const [otpFocused, setOtpFocused] = useState(false);
+  const otpRef = useRef<TextInput | null>(null);
+  // Fields stay editable while a request runs (toggling `editable` blurs the input and drops the Android keyboard);
+  // this ref keeps a second submit out instead, so a skipped duplicate is never mistaken for a rejected code.
+  const submitting = useRef(false);
+  // Success is terminal here: the route navigates away; nothing may be re-submitted in the meantime.
+  const [verified, setVerified] = useState(false);
 
-  // Step 2: 6-Digit OTP State
-  const [otpDigits, setOtpDigits] = useState<string[]>([
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-  ]);
-  const [focusedOtpIndex, setFocusedOtpIndex] = useState<number | null>(null);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+  // Resend / rate-limit countdown.
+  const [countdown, setCountdown] = useState(0);
 
-  // Resend Countdown Timer State
-  const [countdown, setCountdown] = useState(30);
-  const [isTimerActive, setIsTimerActive] = useState(false);
-
-  // DPDP Act 2023 Statutory Consent Checkboxes
-  // Consent must be an affirmative act (DPDP): the boxes start unticked.
+  // DPDP Act 2023 consent: an affirmative act, so the boxes start unticked and are required.
   const [consentGeolocation, setConsentGeolocation] = useState(false);
   const [consentMedical, setConsentMedical] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
 
-  // Backend Supabase GoTrue Hook
-  const {
-    isLoading,
-    error: apiError,
-    rateLimitCooldown,
-    requestOtp,
-    verifyOtp,
-    clearError,
-  } = useOtpAuth();
+  const { isLoading, error: apiError, requestOtp, verifyOtp, clearError } = useOtpAuth();
 
-  // Handle Resend Countdown Interval
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (isTimerActive && countdown > 0) {
-      interval = setInterval(() => {
-        setCountdown((prev) => prev - 1);
-      }, 1000);
-    } else if (countdown <= 0) {
-      setIsTimerActive(false);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isTimerActive, countdown]);
+    if (countdown <= 0) return;
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
-  // Sync API rate limit cooldown if provided by gateway
+  // The server's own cooldown wins over the local one (re-armed on every rate-limit answer).
   useEffect(() => {
-    if (rateLimitCooldown && rateLimitCooldown > 0) {
-      setCountdown(rateLimitCooldown);
-      setIsTimerActive(true);
-    }
-  }, [rateLimitCooldown]);
+    if (apiError?.isRateLimited) setCountdown(apiError.cooldownSeconds ?? RESEND_SECONDS);
+  }, [apiError]);
 
-  // Validate 10-digit Indian Mobile number (starts with 6, 7, 8, or 9)
-  const validateIndianPhone = (number: string): boolean => {
-    const clean = number.replace(/\D/g, "");
-    return /^[6-9]\d{9}$/.test(clean);
+  const backToPhone = () => {
+    if (isLoading || verified) return;
+    clearError();
+    setOtp("");
+    setStep("phone");
   };
 
-  // Format 10-digit phone for display: "98765 43210"
-  const formatPhoneDisplay = (text: string) => {
-    const cleaned = text.replace(/\D/g, "").slice(0, 10);
-    if (cleaned.length > 5) {
-      return `${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
-    }
-    return cleaned;
-  };
+  // Android back on the code step returns to the number, it does not leave sign-in.
+  useEffect(() => {
+    if (step !== "otp") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      backToPhone();
+      return true;
+    });
+    return () => sub.remove();
+  });
 
   const handlePhoneChange = (text: string) => {
     clearError();
-    setPhoneError(null);
-    setRawPhone(normalizeIndianMobileInput(text));
+    const next = normalizeIndianMobileInput(text);
+    setRawPhone(next);
+    // Say so as soon as the number cannot be a mobile; "incomplete" waits for a submit.
+    setPhoneError(phoneInputIssue(next) === "invalid_start" ? strings.invalidStartError : null);
   };
 
-  // Trigger Step 1 -> Request OTP
+  const consentMissing = () => {
+    if (consentGeolocation && consentMedical) return false;
+    setConsentError(!consentGeolocation ? strings.consentGeolocationError : strings.consentMedicalError);
+    return true;
+  };
+
   const handleRequestOtp = async () => {
+    if (isLoading) return;
     clearError();
+    setConsentError(null);
+    const issue = phoneInputIssue(rawPhone);
+    if (issue) {
+      setPhoneError(issue === "invalid_start" ? strings.invalidStartError : strings.incompletePhoneError);
+      return;
+    }
     setPhoneError(null);
-    setConsentError(null);
+    if (consentMissing()) return;
 
-    if (!validateIndianPhone(rawPhone)) {
-      setPhoneError(strings.invalidPhoneError);
-      return;
-    }
-
-    if (!consentGeolocation || !consentMedical) {
-      setConsentError(
-        !consentGeolocation
-          ? strings.consentGeolocationError
-          : strings.consentMedicalError
-      );
-      return;
-    }
-
-    const fullPhone = toE164IndianPhone(rawPhone);
-    const success = await requestOtp(fullPhone, mode === "signup");
-
-    if (success) {
+    if (await requestOtp(toE164IndianPhone(rawPhone), mode === "signup")) {
       setStep("otp");
-      setCountdown(30);
-      setIsTimerActive(true);
-      // Auto-focus first OTP input cell on next frame
-      setTimeout(() => {
-        inputRefs.current[0]?.focus();
-      }, 150);
+      setOtp("");
+      setCountdown(RESEND_SECONDS);
+      setTimeout(() => otpRef.current?.focus(), 150);
     }
   };
 
-  // Resend OTP Action
   const handleResendOtp = async () => {
-    if (isTimerActive || isLoading) return;
+    if (countdown > 0 || isLoading || verified) return;
     clearError();
-    const fullPhone = toE164IndianPhone(rawPhone);
-    const success = await requestOtp(fullPhone, mode === "signup");
-    if (success) {
-      setCountdown(30);
-      setIsTimerActive(true);
-      setOtpDigits(["", "", "", "", "", ""]);
-      inputRefs.current[0]?.focus();
+    if (await requestOtp(toE164IndianPhone(rawPhone), mode === "signup")) {
+      setCountdown(RESEND_SECONDS);
+      setOtp("");
+      otpRef.current?.focus();
     }
   };
 
-  // Handle OTP Digit Input & Auto-Advance
-  const handleOtpChange = (text: string, index: number) => {
-    clearError();
-    const cleanDigits = text.replace(/\D/g, "");
-
-    // Handle full paste of 6 digits
-    if (cleanDigits.length >= 6) {
-      const pasted = cleanDigits.slice(0, 6).split("");
-      setOtpDigits(pasted);
-      inputRefs.current[5]?.focus();
-      return;
-    }
-
-    // Single digit input
-    const singleDigit = cleanDigits.slice(-1);
-    const updated = [...otpDigits];
-    updated[index] = singleDigit;
-    setOtpDigits(updated);
-
-    // Auto-advance to next input cell
-    if (singleDigit && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  // Handle Backspace Key Press for Auto-Retreat
-  const handleOtpKeyPress = (
-    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
-    index: number
-  ) => {
-    if (e.nativeEvent.key === "Backspace") {
-      if (!otpDigits[index] && index > 0) {
-        // Current cell is empty, clear previous cell and retreat focus
-        const updated = [...otpDigits];
-        updated[index - 1] = "";
-        setOtpDigits(updated);
-        inputRefs.current[index - 1]?.focus();
-      } else {
-        // Clear current cell
-        const updated = [...otpDigits];
-        updated[index] = "";
-        setOtpDigits(updated);
-      }
-    }
-  };
-
-  // Trigger Step 2 -> Verify OTP
-  const handleVerifyOtp = async () => {
-    clearError();
-    setConsentError(null);
-
-    const fullCode = otpDigits.join("");
-    if (fullCode.length !== 6) {
-      return;
-    }
-
-    if (!consentGeolocation || !consentMedical) {
-      setConsentError(
-        !consentGeolocation
-          ? strings.consentGeolocationError
-          : strings.consentMedicalError
-      );
-      return;
-    }
-
-    const fullPhone = toE164IndianPhone(rawPhone);
-    const response = await verifyOtp(fullPhone, fullCode);
-
+  const submitOtp = async (code: string) => {
+    if (code.length !== OTP_LENGTH || submitting.current || verified) return;
+    if (consentMissing()) return;
+    submitting.current = true;
+    const response = await verifyOtp(toE164IndianPhone(rawPhone), code);
+    submitting.current = false;
     if (response) {
-      if (onSuccess) {
-        onSuccess(response);
-      }
+      setVerified(true);
+      onSuccess?.(response);
+    } else {
+      // A rejected code is cleared so the same code is not sent again; the field stays focused for the next one.
+      setOtp("");
+      otpRef.current?.focus();
     }
   };
 
-  // Change phone number (return to step 1)
-  const handleChangePhone = () => {
+  // One field for the whole code: SMS autofill and paste deliver all six digits at once; it auto-submits when complete.
+  const handleOtpChange = (text: string) => {
+    if (submitting.current || verified) return;
     clearError();
-    setStep("phone");
-    setOtpDigits(["", "", "", "", "", ""]);
+    const code = text.replace(/\D/g, "").slice(0, OTP_LENGTH);
+    setOtp(code);
+    if (code.length === OTP_LENGTH) void submitOtp(code);
   };
 
-  const isPhoneValid = validateIndianPhone(rawPhone);
-  const isOtpComplete = otpDigits.join("").length === 6;
-  const isConsentGranted = consentGeolocation && consentMedical;
+  const messageKey = apiError ? authMessageKey(apiError, mode) : null;
+  const bannerText = phoneError || consentError || (messageKey ? messageFor(messageKey, strings) : null);
+  const phoneCooldown = step === "phone" && countdown > 0 && apiError?.isRateLimited === true;
+  const switchMode = mode === "signin" ? onCreateAccount : onSignIn;
+  const hindi = language === "hi";
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
-      {/* TOP HEADER: Navigation, Security Brand & Persistent Bilingual Toggle */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           {onBack && (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={strings.backButton}
+              accessibilityLabel={step === "otp" ? strings.changePhoneButton : strings.backButton}
               style={styles.backButton}
-              onPress={onBack}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={step === "otp" ? backToPhone : onBack}
+              hitSlop={8}
             >
-              <AppIcon icon={{ set: "ion", name: "arrow-back" }} size={20} style={styles.backArrow} />
+              <AppIcon icon={{ set: "ion", name: "arrow-back" }} size={22} style={styles.backArrow} />
             </Pressable>
           )}
           <View style={styles.headerTitleGroup}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{mode === "signup" ? strings.createAccountHeader : strings.headerTitle}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
+              {mode === "signup" ? strings.createAccountHeader : strings.headerTitle}
+            </Text>
             <Text style={styles.headerTagline}>{strings.headerTagline}</Text>
           </View>
         </View>
 
-        {/* Persistent Bilingual Language Toggle */}
-        <View
-          style={styles.languageToggleContainer}
-          accessible={true}
-          accessibilityRole="radiogroup"
-        >
-          <Pressable
-            accessibilityRole="radio"
-            accessibilityState={{ selected: language === "en" }}
-            accessibilityLabel="Switch to English"
-            style={[
-              styles.langButton,
-              language === "en" && styles.langButtonActive,
-            ]}
-            onPress={() => setLanguage("en")}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 3 }}
-          >
-            <Text
-              style={[
-                styles.langButtonText,
-                language === "en" && styles.langButtonTextActive,
-              ]}
-            >
-              EN
-            </Text>
-          </Pressable>
-
-          <View style={styles.langDivider} />
-
-          <Pressable
-            accessibilityRole="radio"
-            accessibilityState={{ selected: language === "hi" }}
-            accessibilityLabel="हिन्दी में बदलें"
-            style={[
-              styles.langButton,
-              language === "hi" && styles.langButtonActive,
-            ]}
-            onPress={() => setLanguage("hi")}
-            hitSlop={{ top: 6, bottom: 6, left: 3, right: 6 }}
-          >
-            <Text
-              style={[
-                styles.langButtonText,
-                language === "hi" && styles.langButtonTextActive,
-              ]}
-            >
-              हिन्दी
-            </Text>
-          </Pressable>
+        {/* Not `accessible`: grouping would hide the two radios from TalkBack / VoiceOver. */}
+        <View style={styles.languageToggleContainer} accessibilityRole="radiogroup">
+          {(["en", "hi"] as const).map((lang, i) => (
+            <View key={lang} style={styles.langRow}>
+              {i > 0 && <View style={styles.langDivider} />}
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: language === lang }}
+                accessibilityLabel={lang === "en" ? "English" : "हिन्दी"}
+                style={[styles.langButton, language === lang && styles.langButtonActive]}
+                onPress={() => setLanguage(lang)}
+                hitSlop={6}
+              >
+                <Text style={[styles.langButtonText, language === lang && styles.langButtonTextActive]}>
+                  {lang === "en" ? "EN" : "हिन्दी"}
+                </Text>
+              </Pressable>
+            </View>
+          ))}
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flexOne}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* STEP INDICATOR HEADER */}
           <View style={styles.stepHeader}>
-            <View style={styles.securityShieldBadge}>
-              <AppIcon icon={{ set: "ion", name: "shield-checkmark" }} size={12} color={colors.slate700} style={styles.shieldIcon} />
-              <Text style={styles.shieldText}>{strings.secureAuthBadge}</Text>
-            </View>
-
-            <Text
-              style={[
-                styles.screenHeading,
-                language === "hi" && styles.hindiHeading,
-              ]}
-              accessibilityRole="header"
-            >
+            <Text style={[styles.screenHeading, hindi && styles.hindiHeading]} accessibilityRole="header">
               {step === "phone" ? strings.phoneStepTitle : strings.otpStepTitle}
             </Text>
-
-            <Text
-              style={[
-                styles.screenSubtitle,
-                language === "hi" && styles.hindiBody,
-              ]}
-            >
+            <Text style={[styles.screenSubtitle, hindi && styles.hindiBody]}>
               {step === "phone" ? (
                 strings.phoneStepSubtitle
               ) : (
                 <>
                   {strings.otpStepSubtitle}{" "}
-                  <Text style={styles.phoneHighlight}>
-                    +91 {formatPhoneDisplay(rawPhone)}
-                  </Text>
+                  <Text style={styles.phoneHighlight}>+91 {formatPhoneDisplay(rawPhone)}</Text>
                 </>
               )}
             </Text>
           </View>
 
-          {/* ERROR ALERT BANNER */}
-          {(apiError || phoneError || consentError) && (
-            <View
-              style={styles.errorAlertContainer}
-              accessible={true}
-              accessibilityRole="alert"
-            >
-              <AppIcon icon={{ set: "ion", name: "warning" }} size={18} color={colors.slate700} style={styles.errorAlertIcon} />
-              <Text style={styles.errorAlertText}>
-                {phoneError ||
-                  consentError ||
-                  (apiError?.isRateLimited
-                    ? strings.rateLimitError
-                    : apiError?.error === "network_error"
-                    ? strings.networkError
-                    : apiError?.error === "invalid_otp"
-                    ? strings.invalidOtpError
-                    : apiError?.error === "account_not_found" && mode === "signin"
-                    ? strings.accountNotFoundError
-                    : apiError?.error_description || strings.genericError)}
-              </Text>
-              {apiError?.error === "account_not_found" && mode === "signin" && onCreateAccount ? (
+          {bannerText && (
+            <View style={styles.errorAlertContainer} accessibilityRole="alert" accessibilityLiveRegion="polite">
+              <AppIcon icon={{ set: "ion", name: "warning" }} size={18} color={colors.emergencyDark} style={styles.errorAlertIcon} />
+              <Text style={[styles.errorAlertText, hindi && styles.hindiBody]}>{bannerText}</Text>
+              {messageKey === "accountNotFound" && onCreateAccount ? (
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => onCreateAccount(rawPhone)}
+                  onPress={() => onCreateAccount(rawPhone, language)}
                   style={styles.accountNotFoundButton}
                 >
                   <Text style={styles.accountNotFoundButtonText}>{strings.createAccountAction}</Text>
@@ -415,122 +280,104 @@ export default function PhoneAuthScreen({
             </View>
           )}
 
-          {/* ================= STEP 1: INDIAN PHONE INPUT ================= */}
           {step === "phone" && (
             <View style={styles.inputSection}>
-              <Text style={styles.fieldLabel}>{strings.phoneInputLabel}</Text>
+              {/* Which flow this is, in words a patient can act on, with the way across (number kept). */}
+              <View style={styles.modeNote}>
+                <Text style={[styles.modeNoteText, hindi && styles.hindiBody]}>
+                  {mode === "signin" ? strings.modeSignInNote : strings.modeSignUpNote}
+                </Text>
+                {switchMode && (
+                  <Pressable accessibilityRole="button" onPress={() => switchMode(rawPhone, language)} hitSlop={8} style={styles.modeSwitch}>
+                    <Text style={styles.modeSwitchText}>{mode === "signin" ? strings.switchToSignUp : strings.switchToSignIn}</Text>
+                  </Pressable>
+                )}
+              </View>
 
+              <Text style={styles.fieldLabel} nativeID="phoneLabel">{strings.phoneInputLabel}</Text>
               <View style={styles.phoneInputRow}>
-                {/* Fixed +91 Country Code Badge with Indian Flag */}
-                <View
-                  style={styles.countryCodeBadge}
-                  accessible={true}
-                  accessibilityLabel="India country code +91"
-                >
+                <View style={styles.countryCodeBadge} accessible accessibilityLabel="India, country code +91">
                   <Text style={styles.flagIcon}>🇮🇳</Text>
                   <Text style={styles.countryCodeText}>+91</Text>
                 </View>
-
-                {/* 10-digit Mobile Number Field */}
                 <TextInput
-                  style={[
-                    styles.phoneTextInput,
-                    phoneError ? styles.inputBorderError : null,
-                  ]}
+                  style={[styles.phoneTextInput, phoneError ? styles.inputBorderError : null]}
                   placeholder={strings.phoneInputPlaceholder}
                   placeholderTextColor={colors.slate400}
                   keyboardType="number-pad"
-                  maxLength={16} // room for an autofilled/pasted "+91 98765 43210"; normalized on change
+                  textContentType="telephoneNumber"
+                  autoComplete="tel"
+                  maxLength={17} // room for an autofilled/pasted "+91 98765 43210"; normalized on change
                   value={formatPhoneDisplay(rawPhone)}
                   onChangeText={handlePhoneChange}
-                  autoFocus={true}
-                  accessibilityLabel={strings.phoneInputLabel}
-                  accessibilityHint="Enter your 10 digit Indian phone number"
+                  onSubmitEditing={handleRequestOtp}
+                  returnKeyType="done"
+                  autoFocus
+                  accessibilityLabel={`${strings.phoneInputLabel}, +91`}
+                  accessibilityLabelledBy="phoneLabel"
+                  accessibilityHint={strings.phoneHelper}
                 />
               </View>
-
-              <Text style={styles.phoneHelperText}>
-                Supported operators: Airtel, Jio, Vi, BSNL
-              </Text>
+              <Text style={styles.phoneHelperText}>{strings.phoneHelper}</Text>
             </View>
           )}
 
-          {/* ================= STEP 2: AUTO-ADVANCING 6-DIGIT OTP ================= */}
           {step === "otp" && (
             <View style={styles.otpSection}>
               <View style={styles.otpHeaderRow}>
                 <Text style={styles.fieldLabel}>{strings.otpInputLabel}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={strings.changePhoneButton}
-                  onPress={handleChangePhone}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.changePhoneText}>
-                    {strings.changePhoneButton}
-                  </Text>
+                <Pressable accessibilityRole="button" onPress={backToPhone} hitSlop={8} style={styles.inlineAction}>
+                  <Text style={styles.changePhoneText}>{strings.changePhoneButton}</Text>
                 </Pressable>
               </View>
 
-              {/* 6 Individual Auto-Advancing Cells */}
-              <View
-                style={styles.otpInputRow}
-                accessible={true}
-                accessibilityRole="none"
-              >
-                {otpDigits.map((digit, index) => {
-                  const isFocused = focusedOtpIndex === index;
-                  const isFilled = digit.length > 0;
-                  return (
-                    <TextInput
-                      key={index}
-                      ref={(ref) => {
-                        inputRefs.current[index] = ref;
-                      }}
-                      style={[
-                        styles.otpCell,
-                        isFilled && styles.otpCellFilled,
-                        isFocused && styles.otpCellFocused,
-                        apiError ? styles.otpCellError : null,
-                      ]}
-                      value={digit}
-                      onChangeText={(text) => handleOtpChange(text, index)}
-                      onKeyPress={(e) => handleOtpKeyPress(e, index)}
-                      onFocus={() => setFocusedOtpIndex(index)}
-                      onBlur={() => setFocusedOtpIndex(null)}
-                      keyboardType="number-pad"
-                      maxLength={6} // allows paste detection
-                      selectTextOnFocus={true}
-                      textContentType="oneTimeCode"
-                      autoComplete="sms-otp"
-                      accessible={true}
-                      accessibilityLabel={`Digit ${index + 1} of 6`}
-                    />
-                  );
-                })}
-              </View>
-
-              {/* Resend Countdown Timer Row */}
-              <View style={styles.resendRow}>
-                {isTimerActive ? (
-                  <View style={styles.timerBadge}>
-                    <Text style={styles.timerIcon}>⏱️</Text>
-                    <Text style={styles.timerText}>
-                      {strings.resendCountdown(countdown)}
-                    </Text>
+              {/* One real input under six drawn cells: tapping a cell focuses it; screen readers see one labelled field. */}
+              <Pressable style={styles.otpInputRow} onPress={() => otpRef.current?.focus()} accessible={false}>
+                {Array.from({ length: OTP_LENGTH }, (_, i) => (
+                  <View
+                    key={i}
+                    importantForAccessibility="no-hide-descendants"
+                    accessibilityElementsHidden
+                    style={[
+                      styles.otpCell,
+                      otp[i] ? styles.otpCellFilled : null,
+                      otpFocused && i === Math.min(otp.length, OTP_LENGTH - 1) ? styles.otpCellFocused : null,
+                      apiError ? styles.otpCellError : null,
+                    ]}
+                  >
+                    <Text style={styles.otpCellText}>{otp[i] ?? ""}</Text>
                   </View>
+                ))}
+                <TextInput
+                  ref={otpRef}
+                  style={styles.otpHiddenInput}
+                  value={otp}
+                  onChangeText={handleOtpChange}
+                  onFocus={() => setOtpFocused(true)}
+                  onBlur={() => setOtpFocused(false)}
+                  keyboardType="number-pad"
+                  maxLength={OTP_LENGTH}
+                  textContentType="oneTimeCode"
+                  autoComplete="sms-otp"
+                  caretHidden
+                  accessibilityLabel={strings.otpInputLabel}
+                  accessibilityHint={strings.otpInputHint}
+                />
+              </Pressable>
+
+              <View style={styles.resendRow}>
+                {countdown > 0 ? (
+                  <Text style={styles.timerText} accessibilityLiveRegion="none">{strings.resendCountdown(countdown)}</Text>
                 ) : (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={strings.resendButton}
-                    accessibilityHint="Resends 6-digit OTP code to your phone"
-                    disabled={isLoading}
+                    accessibilityState={{ disabled: isLoading || verified }}
+                    disabled={isLoading || verified}
                     onPress={handleResendOtp}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    hitSlop={8}
+                    style={styles.inlineAction}
                   >
-                    <Text style={styles.resendActiveButtonText}>
-                      {isLoading ? strings.resendingOtp : strings.resendButton}
-                    </Text>
+                    <Text style={styles.resendActiveButtonText}>{isLoading ? strings.resendingOtp : strings.resendButton}</Text>
                   </Pressable>
                 )}
               </View>
@@ -655,45 +502,50 @@ export default function PhoneAuthScreen({
           </View>
         </ScrollView>
 
-        {/* BOTTOM FIXED ACTION DOCK */}
         <View style={styles.actionDock}>
           {step === "phone" ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={strings.requestOtpButton}
-              accessibilityHint="Sends an SMS with a 6-digit OTP code to your phone"
-              disabled={!isPhoneValid || !isConsentGranted || isLoading}
+              accessibilityState={{ disabled: isLoading || phoneCooldown, busy: isLoading }}
+              disabled={isLoading || phoneCooldown}
               style={({ pressed }) => [
                 styles.primarySubmitButton,
-                (!isPhoneValid || !isConsentGranted || isLoading) &&
-                  styles.primarySubmitButtonDisabled,
+                (isLoading || phoneCooldown) && styles.primarySubmitButtonDisabled,
                 pressed && styles.primarySubmitButtonPressed,
               ]}
               onPress={handleRequestOtp}
             >
               <Text style={styles.primarySubmitButtonText}>
-                {isLoading ? strings.requestingOtp : strings.requestOtpButton}
+                {isLoading ? strings.requestingOtp : phoneCooldown ? strings.waitCountdown(countdown) : strings.requestOtpButton}
               </Text>
             </Pressable>
           ) : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={strings.verifyButton}
-              accessibilityHint="Verifies the 6-digit OTP code and completes authentication"
-              disabled={!isOtpComplete || !isConsentGranted || isLoading}
+              accessibilityState={{ disabled: otp.length !== OTP_LENGTH || isLoading || verified, busy: isLoading }}
+              disabled={otp.length !== OTP_LENGTH || isLoading || verified}
               style={({ pressed }) => [
                 styles.primarySubmitButton,
-                (!isOtpComplete || !isConsentGranted || isLoading) &&
-                  styles.primarySubmitButtonDisabled,
+                (otp.length !== OTP_LENGTH || isLoading || verified) && styles.primarySubmitButtonDisabled,
                 pressed && styles.primarySubmitButtonPressed,
               ]}
-              onPress={handleVerifyOtp}
+              onPress={() => submitOtp(otp)}
             >
               <Text style={styles.primarySubmitButtonText}>
-                {isLoading ? strings.verifyingOtp : strings.verifyButton}
+                {verified ? strings.signedIn : isLoading ? strings.verifyingOtp : strings.verifyButton}
               </Text>
             </Pressable>
           )}
+          {/* Signing in must never stand between a patient and the national helpline. */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void Linking.openURL("tel:108").catch(() => {})}
+            style={styles.call108}
+            hitSlop={4}
+          >
+            <AppIcon icon={{ set: "ion", name: "call" }} size={16} color={colors.emergencyDark} />
+            <Text style={styles.call108Text}>{strings.call108}</Text>
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -726,8 +578,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: radii.md,
     backgroundColor: colors.slate100,
     justifyContent: "center",
@@ -785,6 +637,10 @@ const styles = StyleSheet.create({
   langButtonTextActive: {
     color: colors.white,
   },
+  langRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   langDivider: {
     width: 1,
     height: 16,
@@ -805,27 +661,6 @@ const styles = StyleSheet.create({
   /* STEP HEADER */
   stepHeader: {
     marginBottom: spacing.xl,
-  },
-  securityShieldBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate100,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    marginBottom: spacing.md,
-  },
-  shieldIcon: {
-    fontSize: 12,
-    marginRight: 5,
-  },
-  shieldText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate800,
   },
   screenHeading: {
     fontSize: typography.fontSizes["2xl"],
@@ -944,9 +779,50 @@ const styles = StyleSheet.create({
   inputBorderError: {
     borderColor: colors.emergencyDark,
   },
+  modeNote: {
+    backgroundColor: colors.slate50,
+    borderWidth: 1,
+    borderColor: colors.slate300,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  modeNoteText: {
+    fontSize: typography.fontSizes.sm,
+    lineHeight: typography.lineHeights.sm,
+    color: colors.slate800,
+  },
+  modeSwitch: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  modeSwitchText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.emergencyDark,
+    textDecorationLine: "underline",
+  },
+  inlineAction: {
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  call108: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    minHeight: 44,
+    marginTop: spacing.sm,
+  },
+  call108Text: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.emergencyDark,
+  },
   phoneHelperText: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate600,
+    fontSize: typography.fontSizes.sm,
+    color: colors.slate700,
     marginTop: spacing.xs,
   },
 
@@ -979,11 +855,25 @@ const styles = StyleSheet.create({
     borderColor: colors.slate300,
     borderRadius: radii.lg,
     backgroundColor: colors.slate50,
-    textAlign: "center",
+    justifyContent: "center",
+    alignItems: "center",
+    ...shadows.sm,
+  },
+  otpCellText: {
     fontSize: 22,
     fontWeight: typography.fontWeights.extrabold,
     color: colors.slate900,
-    ...shadows.sm,
+  },
+  // Covers the cells so a tap lands on the real input; transparent text, not opacity 0, which can block autofill.
+  otpHiddenInput: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    color: "transparent",
+    backgroundColor: "transparent",
+    fontSize: 1,
   },
   otpCellFilled: {
     backgroundColor: colors.white,
@@ -1000,18 +890,6 @@ const styles = StyleSheet.create({
   resendRow: {
     alignItems: "center",
     marginTop: spacing.xs,
-  },
-  timerBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate100,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: radii.full,
-  },
-  timerIcon: {
-    fontSize: 14,
-    marginRight: 6,
   },
   timerText: {
     fontSize: typography.fontSizes.sm,

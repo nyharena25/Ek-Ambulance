@@ -4,6 +4,7 @@ import {
   BACKGROUND_LOCATION_TASK,
   handleLocationFix,
   shouldTrackInBackground,
+  shouldWatchLocation,
   syncBackgroundTracking,
   type LocationFixDeps,
 } from "./backgroundLocation.core.ts";
@@ -75,5 +76,12 @@ assert.strictEqual(published.length, 2, "no active mission -> nothing published"
 handleLocationFix(loc, deps, false);
 assert.strictEqual(gps.length, 5, "gps store still updated every time");
 console.log("✓ payload\n");
+
+console.log("Test: a signed-in offline driver is watched (no fix -> can never go online)...");
+assert.strictEqual(shouldWatchLocation(true, false, false), true, "signed in, offline: must watch or Go online deadlocks on no_gps_fix");
+assert.strictEqual(shouldWatchLocation(false, false, false), false, "signed out: no GPS");
+assert.strictEqual(shouldWatchLocation(false, false, true), true);
+assert.strictEqual(shouldWatchLocation(true, true, false), true);
+console.log("✓ watch gate\n");
 
 console.log("BACKGROUND LOCATION TESTS PASSED (100% GREEN)");

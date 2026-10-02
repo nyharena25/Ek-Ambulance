@@ -2,7 +2,8 @@ import { Redirect, useRouter } from "expo-router";
 import { Linking, View } from "react-native";
 import { colors } from "@sahayak/ui";
 import { OnboardingScreen } from "../src/screens";
-import { realAccessToken, usePatientAuthStore } from "../src/state/patientAuth.store";
+import { usePatientAuthStore } from "../src/state/patientAuth.store";
+import { entryTarget } from "../src/hooks/otpAuth.core";
 
 /** Entry: a signed-in patient goes straight home; everyone else sees Welcome (Sign in / Create account / Call 108). */
 export default function WelcomeRoute() {
@@ -11,13 +12,14 @@ export default function WelcomeRoute() {
   const isInitializing = usePatientAuthStore((s) => s.isInitializing);
 
   // Nothing while the stored session is read, so a signed-in patient never sees Welcome flash by.
-  if (isInitializing) return <View style={{ flex: 1, backgroundColor: colors.white }} />;
-  if (realAccessToken(session)) return <Redirect href="/(tabs)/home" />;
+  const target = entryTarget(session, isInitializing);
+  if (target === "wait") return <View style={{ flex: 1, backgroundColor: colors.white }} />;
+  if (target === "home") return <Redirect href="/(tabs)/home" />;
 
   return (
     <OnboardingScreen
-      onSignIn={() => router.push({ pathname: "/(auth)/phone-entry", params: { mode: "signin" } })}
-      onCreateAccount={() => router.push({ pathname: "/(auth)/phone-entry", params: { mode: "signup" } })}
+      onSignIn={(lang) => router.push({ pathname: "/(auth)/phone-entry", params: { mode: "signin", lang } })}
+      onCreateAccount={(lang) => router.push({ pathname: "/(auth)/phone-entry", params: { mode: "signup", lang } })}
       onCall108={() => void Linking.openURL("tel:108").catch(() => {})}
     />
   );

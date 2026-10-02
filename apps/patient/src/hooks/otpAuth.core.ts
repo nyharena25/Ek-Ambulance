@@ -1,4 +1,5 @@
-import type { AuthError } from "@supabase/supabase-js";
+import type { AuthError, Session, SupabaseClient } from "@supabase/supabase-js";
+import { isUuid } from "@sahayak/domain";
 
 /**
  * Pure helpers backing useOtpAuth.ts, split out so they're unit-testable
@@ -30,9 +31,11 @@ export function toE164IndianPhone(rawNumber: string): string {
 /** Phone-field text -> the raw 10-digit number. Autofill and paste bring "+91 98765 43210" or "098765 43210"; keeping
  *  the first 10 digits of those would keep the country/trunk prefix and drop the end of the number. */
 export function normalizeIndianMobileInput(text: string): string {
-  const digits = text.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
-  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  // A valid mobile never starts with 0, so leading zeros (trunk "0", international "00") are always a prefix.
+  const digits = text.replace(/\D/g, "").replace(/^0+/, "");
+  // More than 10 digits starting 91 is the country code - pasted whole, or typed one digit at a time (the field then
+  // passes 11 digits, "91" + the first 9 of the number). Keeping the first 10 would send +91 91XXXXXXXX.
+  if (digits.length > 10 && digits.startsWith("91")) return digits.slice(2, 12);
   return digits.slice(0, 10);
 }
 
@@ -105,4 +108,65 @@ export function networkErrorToApiError(_err: unknown): AuthApiError {
     error: "network_error",
     error_description: NETWORK_MESSAGE,
   };
+}
+
+/** Live check of the phone field: "invalid_start" as soon as the first digit rules out a mobile number. */
+export function phoneInputIssue(rawNumber: string): "empty" | "incomplete" | "invalid_start" | null {
+  if (!rawNumber) return "empty";
+  if (!/^[6-9]/.test(rawNumber)) return "invalid_start";
+  return isValidIndianMobile(rawNumber) ? null : "incomplete";
+}
+
+/** Every message a patient can see for an auth failure. The screen renders only these (localized) - never the GoTrue
+ *  text, which can be "Invalid API key", "Database error saving new user" and the like. */
+export type AuthMessageKey =
+  | "rateLimit" | "network" | "invalidOtp" | "accountNotFound" | "signupUnavailable" | "smsSendFailed" | "invalidPhone" | "generic";
+
+export function authMessageKey(e: AuthApiError, mode: "signin" | "signup"): AuthMessageKey {
+  if (e.isRateLimited) return "rateLimit";
+  if (e.error === "network_error") return "network";
+  if (e.error === "invalid_otp") return "invalidOtp";
+  // Same GoTrue answer ("Signups not allowed"): on Sign In it means no account; on Create Account, sign-ups are off.
+  if (e.error === "account_not_found") return mode === "signin" ? "accountNotFound" : "signupUnavailable";
+  if (e.error === "sms_send_failed") return "smsSendFailed";
+  if (e.error === "validation_failed" && /phone/i.test(e.error_description)) return "invalidPhone";
+  return "generic";
+}
+
+type OtpAuthClient = Pick<SupabaseClient["auth"], "signInWithOtp" | "verifyOtp">;
+export type OtpResult<T> = { ok: true; data: T } | { ok: false; error: AuthApiError };
+
+/** Sign In never creates an account (shouldCreateUser: false); Create Account may. phone is E.164 (+91...). */
+export async function requestOtpWith(auth: OtpAuthClient, phone: string, createAccount: boolean): Promise<OtpResult<null>> {
+  try {
+    const { error } = await auth.signInWithOtp({ phone, options: { channel: "sms", shouldCreateUser: createAccount } });
+    return error ? { ok: false, error: mapAuthError(error, false) } : { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: networkErrorToApiError(err) };
+  }
+}
+
+export async function verifyOtpWith(auth: OtpAuthClient, phone: string, token: string): Promise<OtpResult<Session>> {
+  try {
+    const { data, error } = await auth.verifyOtp({ phone, token, type: "sms" });
+    if (error) return { ok: false, error: mapAuthError(error, true) };
+    if (!data.session) return { ok: false, error: { error: "invalid_otp", error_description: "Token has expired or is invalid." } };
+    return { ok: true, data: data.session };
+  } catch (err) {
+    return { ok: false, error: networkErrorToApiError(err) };
+  }
+}
+
+/**
+ * The access token, but only for a session the server can verify: a session with a non-UUID user id (or no
+ * session at all) is not "signed in" for anything that reaches the server.
+ */
+export function realAccessToken(session: Session | null): string | null {
+  return session && isUuid(session.user.id) ? session.access_token : null;
+}
+
+/** Where the entry route sends someone: nothing while the stored session is still being read (no Welcome flash). */
+export function entryTarget(session: Session | null, isInitializing: boolean): "wait" | "home" | "welcome" {
+  if (isInitializing) return "wait";
+  return realAccessToken(session) ? "home" : "welcome";
 }

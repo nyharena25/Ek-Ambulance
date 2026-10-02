@@ -1,11 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import {
-  toE164IndianPhone,
-  mapAuthError,
-  networkErrorToApiError,
-  type AuthApiError,
-} from "./otpAuth.core";
+import { toE164IndianPhone, requestOtpWith, verifyOtpWith, type AuthApiError, type OtpResult } from "./otpAuth.core";
 
 export type { AuthApiError };
 
@@ -51,82 +46,50 @@ export function useOtpAuth(): UseOtpAuthReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<AuthApiError | null>(null);
   const [rateLimitCooldown, setRateLimitCooldown] = useState<number | null>(null);
+  // One request at a time. A ref, not isLoading: a double tap (or auto-submit plus a tap) lands before the re-render.
+  const inFlight = useRef(false);
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
-  const requestOtp = useCallback(async (phone: string, createAccount: boolean): Promise<boolean> => {
+  const run = useCallback(async <T,>(call: () => Promise<OtpResult<T>>): Promise<T | null> => {
+    if (inFlight.current) return null;
+    inFlight.current = true;
     setIsLoading(true);
     setError(null);
-
-    try {
-      // `phone` already arrives +91-prefixed from PhoneAuthScreen (matches
-      // the prior contract); toE164IndianPhone is for callers passing a
-      // raw 10-digit number, kept here only for symmetry with verifyOtp.
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        phone,
-        options: { channel: "sms", shouldCreateUser: createAccount },
-      });
-
-      setIsLoading(false);
-
-      if (!authError) return true;
-
-      const apiError = mapAuthError(authError, false);
-      const cooldown = apiError.cooldownSeconds;
-      if (cooldown) setRateLimitCooldown(cooldown);
-      setError(apiError);
-      return false;
-    } catch (err: unknown) {
-      setError(networkErrorToApiError(err));
-      setIsLoading(false);
-      return false;
-    }
+    const result = await call();
+    inFlight.current = false;
+    setIsLoading(false);
+    if (result.ok) return result.data;
+    if (result.error.cooldownSeconds) setRateLimitCooldown(result.error.cooldownSeconds);
+    setError(result.error);
+    return null;
   }, []);
+
+  // `phone` arrives +91-prefixed from PhoneAuthScreen.
+  const requestOtp = useCallback(
+    async (phone: string, createAccount: boolean): Promise<boolean> =>
+      (await run(async () => {
+        const r = await requestOtpWith(supabase.auth, phone, createAccount);
+        return r.ok ? { ok: true as const, data: true } : r;
+      })) === true,
+    [run]
+  );
 
   const verifyOtp = useCallback(
     async (phone: string, token: string): Promise<VerifyOtpResponse | null> => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const { data, error: authError } = await supabase.auth.verifyOtp({
-          phone,
-          token,
-          type: "sms",
-        });
-
-        setIsLoading(false);
-
-        if (authError || !data.session) {
-          setError(
-            authError
-              ? mapAuthError(authError, true)
-              : { error: "invalid_otp", error_description: "Token has expired or is invalid." }
-          );
-          return null;
-        }
-
-        const session = data.session;
-        return {
-          access_token: session.access_token,
-          token_type: session.token_type,
-          expires_in: session.expires_in,
-          refresh_token: session.refresh_token,
-          user: {
-            id: session.user.id,
-            phone: session.user.phone ?? phone,
-            role: session.user.role ?? "authenticated",
-          },
-        };
-      } catch (err: unknown) {
-        setError(networkErrorToApiError(err));
-        setIsLoading(false);
-        return null;
-      }
+      const session = await run(() => verifyOtpWith(supabase.auth, phone, token));
+      if (!session) return null;
+      return {
+        access_token: session.access_token,
+        token_type: session.token_type,
+        expires_in: session.expires_in,
+        refresh_token: session.refresh_token,
+        user: { id: session.user.id, phone: session.user.phone ?? phone, role: session.user.role ?? "authenticated" },
+      };
     },
-    []
+    [run]
   );
 
   return { isLoading, error, rateLimitCooldown, requestOtp, verifyOtp, clearError };

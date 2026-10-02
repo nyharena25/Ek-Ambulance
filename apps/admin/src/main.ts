@@ -13,6 +13,24 @@ import {
   type KycApplication,
   type KycStatus,
 } from "./kycApi.ts";
+import {
+  OUTCOMES,
+  OUTCOME_LABEL,
+  PAGE_SIZE,
+  VEHICLE_TYPES,
+  fmtDuration,
+  fmtInr,
+  fmtIst,
+  fmtKm,
+  getDriverActivity,
+  listDriverMissions,
+  missionDurations,
+  presetRange,
+  type ActivityTotals,
+  type DriverMission,
+  type Outcome,
+  type Preset,
+} from "./activityApi.ts";
 
 // Anon key only (vite.config.ts refuses a secret key). Same phone-OTP sign-in as the apps; staff accounts are
 // created and granted app_metadata.role = 'staff' server-side, so sign-in never creates a user here.
@@ -46,7 +64,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 function header(phone: string | undefined): HTMLElement {
   return h("header", {},
-    h("h1", {}, "Sahayak · Driver KYC review"),
+    h("h1", {}, "Sahayak · Driver KYC & operations"),
     phone ? h("div", {}, h("span", { class: "muted" }, phone, " "), h("button", { onclick: () => db.auth.signOut() }, "Sign out")) : null);
 }
 
@@ -182,9 +200,10 @@ async function detail(phone: string, driverId: string, notice?: string) {
 
   render(header(phone), h("main", {}, back,
     h("div", { class: "card" }, h("h2", {}, "Applicant"), fields([
-      ["Name", a.fullName ?? "Not provided"], ["Phone", a.phone], ["Status", STATUS_LABEL[a.kycStatus] ?? a.kycStatus],
-      ["Verified", a.isVerified ? "Yes" : "No"], ["Reference", a.kycReference], ["Submitted", fmtDate(a.submittedAt)],
-      ["Reviewed", fmtDate(a.reviewedAt)], ["Rejection reason", a.kycRejectReason], ["Service zone", a.serviceZone],
+      ["Name", a.fullName ?? "Not provided"], ["Phone", a.phone], ["Driver ID", a.driverId], ["Status", STATUS_LABEL[a.kycStatus] ?? a.kycStatus],
+      ["Verified", a.isVerified ? "Yes" : "No"], ["Reference", a.kycReference], ["Submitted (latest)", fmtDate(a.submittedAt)],
+      ["Reviewed", fmtDate(a.reviewedAt)], ["Approved (latest review)", a.kycStatus === "approved" ? fmtDate(a.reviewedAt) : null],
+      ["Rejection reason", a.kycRejectReason], ["Service zone", a.serviceZone],
     ])),
     h("div", { class: "card" }, h("h2", {}, "Licence & medical"), fields([
       ["Licence number", a.licenseNumber], ["DL expiry", a.dlExpiry], ["DL state", a.dlState], ["PSV badge", a.psvBadgeNumber],
@@ -197,7 +216,158 @@ async function detail(phone: string, driverId: string, notice?: string) {
       ["Equipment attested", Array.isArray(a.vehicle.equipmentAttested) ? a.vehicle.equipmentAttested.join(", ") : JSON.stringify(a.vehicle.equipmentAttested)],
     ]) : h("p", { class: "muted" }, "No active vehicle on file.")),
     h("div", { class: "card" }, h("h2", {}, "Documents"), h("p", { class: "muted" }, "* required for submission"), docs),
-    decision));
+    decision,
+    operations(a.driverId)));
+}
+
+// ---------------------------------------------------------------------------
+// Operations history. Read-only; every figure comes from staff_driver_activity / staff_driver_missions (server-computed).
+// ---------------------------------------------------------------------------
+const PRESETS: [Preset | "custom", string][] = [["today", "Today"], ["yesterday", "Yesterday"], ["last7", "Last 7 days"], ["last30", "Last 30 days"], ["custom", "Custom range"]];
+const table = (head: string[], rows: Node[]) =>
+  h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, ...head.map((t) => h("th", {}, t)))), h("tbody", {}, ...rows)));
+const when = (iso: string | null) => (iso ? fmtIst(iso) : "—");
+// No completed task is "—"; "Not recorded" is kept for a missing timestamp.
+const avgDuration = (x: ActivityTotals) => (x.completed ? fmtDuration(x.avgCompletedDurationS) : "—");
+
+function operations(driverId: string): HTMLElement {
+  const state = { ...presetRange("last7"), outcome: null as Outcome | null, vehicleType: null as string | null, offset: 0 };
+  const status = h("div", {}), summary = h("div", {}), daily = h("div", {}), history = h("div", {});
+  const err = h("p", { class: "error", role: "alert" });
+  const from = h("input", { type: "date", id: "from", value: state.from }) as HTMLInputElement;
+  const to = h("input", { type: "date", id: "to", value: state.to }) as HTMLInputElement;
+  const preset = h("select", { id: "preset" }, ...PRESETS.map(([v, l]) => h("option", { value: v, selected: v === "last7" }, l))) as HTMLSelectElement;
+  const outcome = h("select", { id: "outcome" }, h("option", { value: "" }, "All statuses"),
+    ...OUTCOMES.map((o) => h("option", { value: o }, OUTCOME_LABEL[o]))) as HTMLSelectElement;
+  const vehicle = h("select", { id: "vehicle" }, h("option", { value: "" }, "All ambulance types"),
+    ...VEHICLE_TYPES.map((v) => h("option", { value: v }, v))) as HTMLSelectElement;
+
+  const setRange = (r: { from: string; to: string }) => { Object.assign(state, r); from.value = r.from; to.value = r.to; reload(); };
+  preset.addEventListener("change", () => preset.value !== "custom" && setRange(presetRange(preset.value as Preset)));
+  const onDate = () => { preset.value = "custom"; if (from.value && to.value) setRange({ from: from.value, to: to.value }); };
+  from.addEventListener("change", onDate);
+  to.addEventListener("change", onDate);
+  outcome.addEventListener("change", () => { state.outcome = (outcome.value || null) as Outcome | null; state.offset = 0; void loadHistory(); });
+  vehicle.addEventListener("change", () => { state.vehicleType = vehicle.value || null; state.offset = 0; void loadHistory(); });
+
+  // Each loader drops a response that a newer filter change has superseded.
+  let summarySeq = 0, historySeq = 0;
+  async function loadSummary() {
+    const my = ++summarySeq;
+    summary.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+    const res = await getDriverActivity(db, driverId, state.from, state.to);
+    if (my !== summarySeq) return;
+    if (!res.ok) { summary.replaceChildren(); daily.replaceChildren(); return void (err.textContent = describeError(res.error)); }
+    const t = res.data;
+    status.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Operational status"), fields([
+      ["Presence flag", `${t.isOnline ? "Online" : "Offline"} (last reported ${when(t.lastSeenAt)})`],
+      ["Holding a mission now", t.onMission ? "Yes" : "No"],
+      ["Account created", when(t.accountCreatedAt)],
+      ["Online session history", "Not recorded (the backend keeps only the current presence flag)"],
+    ])));
+
+    const cols: [string, ActivityTotals][] = [[`Today (${t.today.date})`, t.today], [`${state.from} → ${state.to}`, t.range], ["Lifetime", t.lifetime]];
+    const metric = (label: string, f: (x: ActivityTotals) => string) => h("tr", {}, h("th", {}, label), ...cols.map(([, x]) => h("td", { class: "num" }, f(x))));
+    summary.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Operational summary"),
+      h("p", { class: "muted" }, "A task belongs to the IST day it was accepted. Fare and distance count completed tasks only."),
+      table(["", ...cols.map(([l]) => l)], [
+        metric("Tasks accepted", (x) => String(x.accepted)),
+        metric("Completed", (x) => String(x.completed)),
+        metric("Cancelled while assigned", (x) => `${x.cancelled}${x.cancelledByDriver ? ` (${x.cancelledByDriver} by driver)` : ""}`),
+        metric("Released before pickup", (x) => String(x.released)),
+        metric("In progress", (x) => String(x.inProgress)),
+        metric("Final fare (server, authoritative)", (x) => fmtInr(x.finalFareInr)),
+        metric("Quoted fare of the same tasks", (x) => fmtInr(x.estimatedFareInr)),
+        metric("Average final fare per completed task", (x) => fmtInr(x.avgFinalFareInr)),
+        metric("Billed distance (transport leg)", (x) => fmtKm(x.distanceKm)),
+        metric("… GPS-measured", (x) => fmtKm(x.measuredDistanceKm)),
+        metric("… quoted estimate (no GPS track)", (x) => `${fmtKm(x.estimateDistanceKm)} · ${x.estimateDistanceMissions} task(s)`),
+        metric("Average billed distance per completed task", (x) => fmtKm(x.avgDistanceKm)),
+        metric("Average completed task duration", avgDuration),
+        metric("Recorded mission time (accepted → end)", (x) => fmtDuration(x.recordedTimeS)),
+        metric("First activity", (x) => when(x.firstActivityAt)),
+        metric("Last activity", (x) => when(x.lastActivityAt)),
+      ])));
+
+    daily.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Daily statistics"), h("p", { class: "muted" }, "Click a day to see that day's summary and tasks."),
+      table(["Date", "Accepted", "Completed", "Cancelled", "Released", "Distance", "Final fare", "Avg completed duration", "Recorded time", "First activity", "Last activity"],
+        t.days.map((d) => {
+          const open = () => { preset.value = "custom"; setRange({ from: d.date!, to: d.date! }); };
+          return h("tr", { class: "row", tabindex: 0, onclick: open, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && open() },
+          h("td", {}, d.date!), h("td", { class: "num" }, String(d.accepted)), h("td", { class: "num" }, String(d.completed)),
+          h("td", { class: "num" }, String(d.cancelled)), h("td", { class: "num" }, String(d.released)), h("td", { class: "num" }, fmtKm(d.distanceKm)),
+          h("td", { class: "num" }, fmtInr(d.finalFareInr)), h("td", { class: "num" }, avgDuration(d)), h("td", { class: "num" }, fmtDuration(d.recordedTimeS)),
+          h("td", {}, when(d.firstActivityAt)), h("td", {}, when(d.lastActivityAt)));
+        }))));
+  }
+
+  async function loadHistory() {
+    const my = ++historySeq;
+    history.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+    const res = await listDriverMissions(db, driverId, state);
+    if (my !== historySeq) return;
+    if (!res.ok) { history.replaceChildren(); return void (err.textContent = describeError(res.error)); }
+    const { total, rows } = res.data;
+    const page = (offset: number) => { state.offset = offset; void loadHistory(); };
+    history.replaceChildren(h("div", { class: "card" }, h("h2", {}, "Mission history"),
+      rows.length === 0 ? h("p", { class: "muted" }, "No tasks for these filters.") :
+      table(["Accepted", "Mission", "Type", "Pickup", "Destination", "On scene", "Transport started", "Status", "Ended", "Duration", "Distance", "Fare"], rows.flatMap(missionRows)),
+      h("div", { class: "row-actions" },
+        h("span", { class: "muted" }, total ? `${state.offset + 1}–${state.offset + rows.length} of ${total}` : ""),
+        h("button", { disabled: state.offset === 0, onclick: () => page(Math.max(0, state.offset - PAGE_SIZE)) }, "← Newer"),
+        h("button", { disabled: state.offset + PAGE_SIZE >= total, onclick: () => page(state.offset + PAGE_SIZE) }, "Older →"))));
+  }
+
+  function reload() { err.textContent = ""; state.offset = 0; void loadSummary(); void loadHistory(); }
+  reload();
+  return h("div", {}, h("h2", {}, "Operations history"),
+    h("div", { class: "card filters" },
+      h("div", {}, h("label", { for: "preset" }, "Period"), preset),
+      h("div", {}, h("label", { for: "from" }, "From (IST)"), from),
+      h("div", {}, h("label", { for: "to" }, "To (IST)"), to),
+      h("div", {}, h("label", { for: "outcome" }, "Task status"), outcome),
+      h("div", {}, h("label", { for: "vehicle" }, "Ambulance type"), vehicle)),
+    err, status, summary, daily, history);
+}
+
+/** A table row plus a hidden lifecycle row that the first row toggles. */
+function missionRows(m: DriverMission): Node[] {
+  const total = missionDurations(m).at(-1)!.seconds;
+  const detailCell = h("td", { colspan: 12 });
+  const detailRow = h("tr", { class: "expand", hidden: true }, detailCell);
+  const toggle = () => {
+    if (!detailCell.firstChild) detailCell.append(lifecycle(m));
+    detailRow.hidden = !detailRow.hidden;
+  };
+  const outcome = OUTCOME_LABEL[m.outcome] + (m.cancelledBy ? ` (by ${m.cancelledBy})` : "");
+  return [h("tr", { class: "row", tabindex: 0, onclick: toggle, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && toggle() },
+    h("td", {}, fmtIst(m.acceptedAt)), h("td", {}, m.displayRef), h("td", {}, m.vehicleType),
+    h("td", {}, orDash(m.pickupAddress)), h("td", {}, orDash(m.destination)),
+    h("td", {}, fmtIst(m.onSceneAt)), h("td", {}, fmtIst(m.transportAt)), h("td", {}, outcome),
+    h("td", {}, when(m.endedAt)), h("td", { class: "num" }, fmtDuration(total)),
+    h("td", { class: "num" }, m.billedDistanceKm == null ? "—" : `${fmtKm(m.billedDistanceKm)} (${m.distanceSource ?? "source not recorded"})`),
+    h("td", { class: "num" }, fmtInr(m.finalFareInr))), detailRow];
+}
+
+function lifecycle(m: DriverMission): HTMLElement {
+  const by = (e: DriverMission["events"][number]) => (e.byThisDriver ? "This driver" : e.actorRole === "driver" ? "Another driver" : e.actorRole);
+  return h("div", { class: "lifecycle" },
+    fields([
+      ["Mission ID", m.missionId], ["Reference", m.displayRef], ["Urgency", m.urgency], ["Mission status now", m.missionStatus],
+      ["This driver's outcome", OUTCOME_LABEL[m.outcome] + (m.endReason ? ` — ${m.endReason}` : "")],
+      ["Pickup", `${m.pickupAddress ?? "Address not recorded"} (${m.pickupLat.toFixed(5)}, ${m.pickupLng.toFixed(5)})`],
+      ["Destination", m.destination ?? "Not recorded"],
+      ["Final fare (missions.final_fare_inr)", m.outcome === "completed" ? fmtInr(m.finalFareInr) : "Not billed to this driver"],
+      ["Quoted fare at request", fmtInr(m.estimatedFareInr)],
+      ["Billed distance", m.billedDistanceKm == null ? "Not billed to this driver" : `${fmtKm(m.billedDistanceKm)} — ${m.distanceSource === "measured" ? "GPS-measured transport leg" : m.distanceSource === "estimate" ? "quoted estimate (too few GPS fixes)" : "source not recorded"}`],
+      ["Quoted distance at request", fmtKm(m.quotedDistanceKm)],
+    ]),
+    h("h3", {}, "Durations (server timestamps)"),
+    table(["Segment", "Duration"], missionDurations(m).map((d) => h("tr", {}, h("td", {}, d.label), h("td", { class: d.seconds == null ? "muted" : "" }, fmtDuration(d.seconds))))),
+    h("h3", {}, "Lifecycle events"),
+    table(["#", "Event", "Server time", "Device-reported time", "By", "Detail"], m.events.map((e) => h("tr", {},
+      h("td", {}, String(e.seq)), h("td", {}, e.eventType), h("td", {}, fmtIst(e.at)), h("td", {}, e.reportedAt ? fmtIst(e.reportedAt) : "—"),
+      h("td", {}, by(e)), h("td", {}, [e.cancelledBy && `cancelled by ${e.cancelledBy}`, e.reason, e.distanceSource && `distance: ${e.distanceSource}`].filter(Boolean).join(" · ") || "—")))));
 }
 
 // ---------------------------------------------------------------------------

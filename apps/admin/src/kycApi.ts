@@ -128,5 +128,7 @@ const MESSAGES: Record<string, string> = {
   cannot_review_own_application: "You cannot review your own application.",
   staff_check_failed: "Could not verify staff access (network or gateway error). Try again.",
   documents_invalid: "Cannot approve: a required document is rejected or its file is missing. Reject the application so the driver can replace it.",
+  invalid_range: "Choose a date range of at most 366 days, with the start on or before the end.",
+  invalid_outcome: "Unknown status filter.",
 };
 export const describeError = (code: string): string => MESSAGES[code] ?? `Request failed (${code}).`;

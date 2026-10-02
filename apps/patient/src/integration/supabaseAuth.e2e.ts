@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { createClient, type SupabaseClient, type SupportedStorage } from "@supabase/supabase-js";
 import { isUuid } from "@sahayak/domain";
-import { mapAuthError } from "../hooks/otpAuth.core.ts";
+import { authMessageKey, mapAuthError } from "../hooks/otpAuth.core.ts";
 import { buildCreateMissionParams, mapRpcError } from "../lib/missionApi.core.ts";
 import { authRedirectTarget, verifiedDriverSession } from "../../../driver/src/hooks/otpAuth.core.ts";
 import { cleanupE2E, findUserIdByPhone, type E2ECreated } from "./supabaseAuth.cleanup.ts";
@@ -91,6 +91,7 @@ try {
   const wrong = await verifyOtp(patient, PATIENT_PHONE, WRONG_OTP);
   assert.ok(wrong.error && !wrong.data.session, "no session for a wrong code");
   assert.strictEqual(mapAuthError(wrong.error, true).error, "invalid_otp");
+  assert.strictEqual(authMessageKey(mapAuthError(wrong.error, true), "signin"), "invalidOtp", "the patient sees the invalid-code message");
   assert.strictEqual((await patient.auth.getSession()).data.session, null, "nothing stored after a failed verify");
   console.log(`✓ ${wrong.error.status} ${wrong.error.code}\n`);
 
@@ -114,6 +115,7 @@ try {
     const refused = await requestOtp(client(memoryStorage()), unknown, false);
     assert.ok(refused.error, "Sign In must not start an OTP for an unknown number");
     assert.strictEqual(mapAuthError(refused.error, false).error, "account_not_found");
+    assert.strictEqual(authMessageKey(mapAuthError(refused.error, false), "signin"), "accountNotFound", "the patient sees 'no account' + Create account");
     assert.strictEqual(await findUserIdByPhone(admin, unknown), null, "no account was created");
     console.log(`✓ ${refused.error.status} ${refused.error.code} -> account_not_found; no user created\n`);
   } else console.log("  SKIPPED — needs SUPABASE_SERVICE_ROLE_KEY to prove the probe number has no account\n");

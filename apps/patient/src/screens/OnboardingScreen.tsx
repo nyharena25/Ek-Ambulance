@@ -17,8 +17,9 @@ import {
 
 import { AppIcon } from "../components";
 export interface OnboardingScreenProps {
-  onSignIn?: () => void;
-  onCreateAccount?: () => void;
+  /** The chosen language is carried into sign-in. */
+  onSignIn?: (language: SupportedLanguage) => void;
+  onCreateAccount?: (language: SupportedLanguage) => void;
   onCall108?: () => void;
   initialLanguage?: SupportedLanguage;
 }
@@ -64,17 +65,14 @@ export default function OnboardingScreen({
             <Text style={styles.brandTitle} accessibilityRole="header">
               {strings.brandName}
             </Text>
-            <View style={styles.liveIndicatorContainer}>
-              <View style={styles.livePulseDot} />
-              <Text style={styles.brandTagline}>{strings.brandTagline}</Text>
-            </View>
+            <Text style={styles.brandTagline}>{strings.brandTagline}</Text>
           </View>
         </View>
 
         {/* Persistent Bilingual Language Toggle */}
+        {/* Not `accessible`: grouping would hide the two radios from TalkBack / VoiceOver. */}
         <View
           style={styles.languageToggleContainer}
-          accessible={true}
           accessibilityRole="radiogroup"
           accessibilityLabel={strings.languageToggleLabel}
         >
@@ -158,8 +156,8 @@ export default function OnboardingScreen({
 
       {/* PERSISTENT DUAL ACTION DOCK */}
       <View style={styles.actionDock}>
-        {/* Sign in and Create account are the same phone-OTP sign-in; only the wording differs. A request needs a
-            signed-in patient, so there is no anonymous path past this screen. */}
+        {/* Both are Supabase phone OTP. Sign in never creates an account (an unknown number is told so and offered Create
+            account); Create account may create one. A request needs a signed-in patient: no anonymous path past here. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={strings.signInTitle}
@@ -168,7 +166,7 @@ export default function OnboardingScreen({
             styles.primaryButton,
             pressed && styles.primaryButtonPressed,
           ]}
-          onPress={onSignIn}
+          onPress={() => onSignIn?.(language)}
         >
           <View style={styles.primaryButtonContent}>
             <View style={styles.primaryTextWrapper}>
@@ -201,7 +199,7 @@ export default function OnboardingScreen({
             styles.secondaryButton,
             pressed && styles.secondaryButtonPressed,
           ]}
-          onPress={onCreateAccount}
+          onPress={() => onCreateAccount?.(language)}
         >
           <Text
             style={[
@@ -210,6 +208,9 @@ export default function OnboardingScreen({
             ]}
           >
             {strings.createAccountTitle}
+          </Text>
+          <Text style={[styles.secondaryButtonSubtitle, language === "hi" && styles.hindiBodyFont]}>
+            {strings.createAccountSubtitle}
           </Text>
         </Pressable>
 
@@ -314,19 +315,8 @@ const styles = StyleSheet.create({
     color: colors.slate900,
     letterSpacing: -0.3,
   },
-  liveIndicatorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  livePulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: colors.emergency,
-    marginRight: 5,
-  },
   brandTagline: {
+    marginTop: 2,
     fontSize: typography.fontSizes.xs,
     color: colors.slate700,
     fontWeight: typography.fontWeights.semibold,
@@ -499,13 +489,19 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: colors.white,
     borderRadius: radii.lg,
-    paddingVertical: 14,
-    minHeight: 52,
+    paddingVertical: 12,
+    minHeight: 60,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
     borderColor: colors.slate900,
     marginBottom: spacing.md,
+  },
+  secondaryButtonSubtitle: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.slate700,
+    fontWeight: typography.fontWeights.medium,
+    marginTop: 2,
   },
   secondaryButtonPressed: {
     backgroundColor: colors.slate100,

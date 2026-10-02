@@ -10,6 +10,13 @@ export function shouldTrackInBackground(state: DriverLifecycleState): boolean {
   return BACKGROUND_TRACKING_STATES.includes(state);
 }
 
+/** Foreground watcher gate. Must include a signed-in but offline driver: going online needs a real fix first
+ *  (driverStandby.store `no_gps_fix`), so gating on isOnline alone means a driver can never get online. While offline the
+ *  fix only stays local - the presence heartbeat (useServerSync) is gated on isOnline. */
+export function shouldWatchLocation(signedIn: boolean, isOnline: boolean, missionActive: boolean): boolean {
+  return signedIn || isOnline || missionActive;
+}
+
 export interface BackgroundTrackingApi {
   isRunning: () => Promise<boolean>;
   start: () => Promise<void>;

@@ -1,17 +1,10 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
-import { isUuid } from "@sahayak/domain";
 import { authStorage, supabase } from "../lib/supabaseClient";
-import { canSignOut, clearPersistedMission } from "../services/missionSession.core";
+import { signOutPatient } from "../services/missionSession.core";
 import { usePatientLifecycleStore } from "./patientLifecycle.store";
 
-/**
- * The access token, but only for a session the server can verify: a session with a non-UUID user id (or no
- * session at all) is not "signed in" for anything that reaches the server.
- */
-export function realAccessToken(session: Session | null): string | null {
-  return session && isUuid(session.user.id) ? session.access_token : null;
-}
+export { realAccessToken } from "../hooks/otpAuth.core";
 
 export interface PatientAuthStoreState {
   session: Session | null;
@@ -40,14 +33,12 @@ export const usePatientAuthStore = create<PatientAuthStoreState>((set) => {
   return {
     session: null,
     isInitializing: true,
-    signOut: async () => {
-      if (!canSignOut(usePatientLifecycleStore.getState().currentState)) return { ok: false, code: "mission_in_progress" };
-      const { error } = await supabase.auth.signOut();
-      if (error) return { ok: false, code: "sign_out_failed" };
-      // App state only (the SDK owns the session keys): no mission context or resume baseline carries to the next account.
-      await clearPersistedMission(authStorage);
-      usePatientLifecycleStore.getState().reset();
-      return { ok: true };
-    },
+    signOut: () =>
+      signOutPatient({
+        state: usePatientLifecycleStore.getState().currentState,
+        signOut: () => supabase.auth.signOut(),
+        storage: authStorage,
+        resetLifecycle: () => usePatientLifecycleStore.getState().reset(),
+      }),
   };
 });

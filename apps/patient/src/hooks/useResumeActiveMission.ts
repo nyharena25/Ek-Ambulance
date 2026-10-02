@@ -4,7 +4,7 @@ import { usePatientAuthStore, realAccessToken } from "../state/patientAuth.store
 import { usePatientLifecycleStore } from "../state/patientLifecycle.store";
 import { fetchActiveMission, fetchAssignedDriver } from "../lib/missionApi";
 import { authStorage } from "../lib/supabaseClient";
-import { savePersistedMission } from "../services/missionSession.core";
+import { resumeRoute, savePersistedMission } from "../services/missionSession.core";
 
 /**
  * Section 7.5 rule 9 / 7.6: every store is in memory, so a process kill used to orphan the mission. On launch with a
@@ -14,13 +14,17 @@ import { savePersistedMission } from "../services/missionSession.core";
 export function useResumeActiveMission(): void {
   const router = useRouter();
   const navReady = Boolean(useRootNavigationState()?.key);
-  const token = realAccessToken(usePatientAuthStore((s) => s.session));
-  const attempted = useRef(false);
+  const session = usePatientAuthStore((s) => s.session);
+  const token = realAccessToken(session);
+  const userId = token ? session!.user.id : null;
+  // Once per signed-in account, not once per process: RootLayout outlives a sign-out, so signing back in (or as another
+  // patient) must look up that account's mission again. A token refresh keeps the same id and does not re-run it.
+  const attemptedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!navReady || !token || attempted.current) return;
+    if (!navReady || !userId || attemptedFor.current === userId) return;
     if (usePatientLifecycleStore.getState().currentState !== "idle") return;
-    attempted.current = true;
+    attemptedFor.current = userId;
     void (async () => {
       const result = await fetchActiveMission();
       if (!result.ok || !result.data) return;
@@ -35,11 +39,10 @@ export function useResumeActiveMission(): void {
       await savePersistedMission(authStorage, { missionId: s.missionId, lastSeq: s.stateVersion });
       const lat = s.pickup ? String(s.pickup.latitude) : undefined;
       const lon = s.pickup ? String(s.pickup.longitude) : undefined;
-      if (s.status === "requesting") {
-        router.replace({ pathname: "/booking/matching", params: { vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, address: s.pickupAddress, lat, lon } });
-      } else {
-        router.replace({ pathname: "/booking/[id]", params: { id: s.missionId, vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, address: s.pickupAddress, lat, lon } });
-      }
+      const pathname = resumeRoute(s.status);
+      const params = { vehicleType: s.vehicleType, jurisdiction: s.jurisdiction, address: s.pickupAddress, lat, lon };
+      if (pathname === "/booking/matching") router.replace({ pathname, params });
+      else router.replace({ pathname, params: { id: s.missionId, ...params } });
     })();
-  }, [navReady, token, router]);
+  }, [navReady, userId, router]);
 }

@@ -1,7 +1,7 @@
 # Admin: Driver KYC Review Console (`@sahayak/admin`)
 
-This app is a small browser console where **staff** review a driver's KYC application and then approve or reject it.
-It is the only piece of the Admin app. It has no map, no dispatch view, no user management and no staff management.
+This app is a small browser console where **staff** review a driver's KYC application and then approve or reject it, and
+read each driver's operations history (section 15). It has no map, no dispatch view, no user management and no staff management.
 
 Everything below comes from the code in this repository. Where the repository does not provide something, this
 document says so plainly.
@@ -19,7 +19,7 @@ document says so plainly.
 | Runtime | **Client only.** `vite build` outputs static files to `apps/admin/dist`. There is no server code. |
 | Dev URL | `http://localhost:5173`. The port comes from `"dev": "vite --port 5173"`. There is no `--strictPort`, so if 5173 is busy Vite picks the next free port and prints it. |
 | Source | `src/main.ts` (UI and session gate), `src/kycApi.ts` (service layer), `index.html` (markup and styles), `vite.config.ts` (secret-key guard) |
-| Tests | `src/kycApi.test.ts` (unit), `src/kycAdmin.e2e.ts` (HTTP end to end, local stack only) |
+| Tests | `src/kycApi.test.ts`, `src/activityApi.test.ts` (unit), `src/kycAdmin.e2e.ts` (HTTP end to end, local stack only), `supabase/tests/driver_activity.behaviour.sql` (SQL) |
 
 ### Map clarification
 
@@ -547,3 +547,21 @@ SUPABASE_URL="$API_URL" SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY=
 - The driver wizard shows "mandatory" badges on `commercial_dl` and `emt_certificate`, but neither the client
   (`validateCurrentStep`) nor the server requires them. Only `arai_certificate`, `fitness_permit` and `vehicle_rc`
   are required.
+
+## 15. Operations history (driver detail screen)
+
+Below the KYC cards, the detail screen shows the driver's operations history. It is read-only and comes from two staff RPCs in
+`supabase/migrations/20261002000000_staff_driver_activity.sql`: `staff_driver_activity` (operational status, today / range /
+lifetime totals, one row per day) and `staff_driver_missions` (paged task history with each mission's lifecycle). Both start
+with `_require_staff()`, like the KYC RPCs.
+
+- **Task** = one acceptance by the driver (offer or board claim), ended by the mission's next completed / cancelled /
+  released event. A task belongs to the **Asia/Kolkata** day it was accepted.
+- **Fare** = `missions.final_fare_inr` (set by `transition_mission` COMPLETE). The quote is `fare_details.estimatedTotalInr`.
+- **Distance** = billed transport leg `missions.distance_km`, split into GPS-measured km and quote-fallback km.
+- **Durations** = differences between server event times (`mission_events.created_at`). A missing event shows "Not recorded".
+- **Not available:** online/offline session history. The backend stores only the current `is_online` / `last_seen_at`.
+
+```bash
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/driver_activity.behaviour.sql   # ALL DRIVER ACTIVITY CHECKS PASSED
+```
