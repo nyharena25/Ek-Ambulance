@@ -7,6 +7,7 @@ import { mapAuthError } from "../hooks/otpAuth.core.ts";
 import { buildCreateMissionParams, parseCreateMissionResult } from "../lib/missionApi.core.ts";
 import { verifiedDriverSession } from "../../../driver/src/hooks/otpAuth.core.ts";
 import { buildKycDocumentPath, extensionForMimeType, REQUIRED_KYC_SLOTS } from "../../../driver/src/lib/kycSubmission.core.ts";
+import { findUserIdByPhone as findByPhone, userIdsToDelete } from "./supabaseAuth.cleanup.ts";
 
 /**
  * G4.5-C: ONE real hosted mission through the production gateway (Oracle PBL: Caddy -> Kong -> hosted Supabase, token-mint,
@@ -82,12 +83,7 @@ const teardowns: Array<() => void> = [];
 const out: Record<string, unknown> = { mode: DRY ? "dry-run" : "real" };
 const at = () => new Date().toISOString();
 
-async function findUserIdByPhone(phone: string): Promise<string | null> {
-  const digits = phone.replace(/\D/g, "");
-  const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  if (error) throw error;
-  return data.users.find((u) => u.phone === digits)?.id ?? null;
-}
+const findUserIdByPhone = (phone: string) => findByPhone(admin, phone);
 
 // Same calls as apps/*/src/hooks/useOtpAuth.ts; one wait-and-retry on the server-stated cooldown, as the apps do.
 async function otpSession(label: string, phone: string, otp: string, check?: (s: { access_token: string; user: { id: string; app_metadata?: Record<string, unknown> } }) => void): Promise<Actor> {
@@ -139,11 +135,17 @@ const tokenStatus = async (scope: string, bearer?: string) =>
 
 const step = (s: string) => console.log(`\n${s}`);
 let failure: unknown;
+// Accounts that already exist for the test numbers are never reused or deleted. Until the precondition passes nothing has
+// been created, so cleanup deletes nothing (userIdsToDelete).
+const preexisting = new Set<string>();
+let preconditionPassed = false;
 try {
-  // Accounts that already exist for the test numbers are never reused or deleted by a permanent-data run.
   for (const phone of [PATIENT_PHONE, DRIVER_PHONE]) {
-    assert.strictEqual(await findUserIdByPhone(phone), null, "a test phone account already exists; refusing to reuse it");
+    const id = await findUserIdByPhone(phone);
+    if (id) preexisting.add(id);
   }
+  assert.strictEqual(preexisting.size, 0, "a test phone account already exists; refusing to reuse it");
+  preconditionPassed = true;
 
   step("1. Identities");
   const patient = await otpSession("patient", PATIENT_PHONE, OTP);
@@ -327,17 +329,17 @@ for (const p of uploaded) {
   if ((await admin.storage.from(KYC_BUCKET).list(dir)).data?.some((o) => p.endsWith(o.name))) remaining.push(`storage ${p}`);
 }
 // signInWithOtp creates the user before verify: an id not captured from a session is found by the exact test number.
-for (const [label, phone] of [["patient", PATIENT_PHONE], ["driver", DRIVER_PHONE]] as const) {
+// Only after the precondition passed: before that, the account on that number is someone else's.
+for (const [label, phone] of preconditionPassed ? ([["patient", PATIENT_PHONE], ["driver", DRIVER_PHONE]] as const) : []) {
   if (!users.has(label)) {
     const id = await findUserIdByPhone(phone);
     if (id) users.set(label, id);
   }
 }
-for (const [label, id] of users) {
-  if (label === "patient" && out.missionId) {
-    remaining.push(`RETAINED BY DESIGN auth.users/profiles ${id} (patient; missions.patient_id ON DELETE RESTRICT)`);
-    continue;
-  }
+if (out.missionId && users.has("patient")) {
+  remaining.push(`RETAINED BY DESIGN auth.users/profiles ${users.get("patient")} (patient; missions.patient_id ON DELETE RESTRICT)`);
+}
+for (const [label, id] of userIdsToDelete(users, { preconditionPassed, preexisting, retain: new Set(out.missionId ? ["patient"] : []) })) {
   const del = await admin.auth.admin.deleteUser(id);
   if ((await admin.auth.admin.getUserById(id)).data.user) remaining.push(`auth.users ${id} (${label}): ${del.error?.message ?? "still present"}`);
 }

@@ -23,6 +23,19 @@ export async function findUserIdByPhone(admin: SupabaseClient, phone: string): P
   }
 }
 
+/**
+ * Which captured users a hosted run may delete. Nothing unless the run's "no account exists for the test phones"
+ * precondition passed (before that, nothing was created, so any id is someone else's), never an id that existed before
+ * the run, never a retained label (the booking patient behind a permanent mission).
+ */
+export function userIdsToDelete(
+  captured: ReadonlyMap<string, string>,
+  { preconditionPassed, preexisting, retain = new Set() }: { preconditionPassed: boolean; preexisting: ReadonlySet<string>; retain?: ReadonlySet<string> }
+): Array<[label: string, id: string]> {
+  if (!preconditionPassed) return [];
+  return [...captured].filter(([label, id]) => !preexisting.has(id) && !retain.has(label));
+}
+
 export async function cleanupE2E(admin: SupabaseClient, created: E2ECreated, preexisting: Set<string>): Promise<string[]> {
   const remaining: string[] = [];
   const userGone = async (id: string) => (await admin.auth.admin.getUserById(id)).data.user == null;
