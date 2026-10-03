@@ -215,6 +215,8 @@ export default function DriverOnboardingScreen({
             onChangeText={(val) => updateField("dlExpiry", val)}
             placeholder={strings.dlExpiryPlaceholder}
             placeholderTextColor={colors.slate400}
+            keyboardType="numbers-and-punctuation"
+            maxLength={10}
           />
         </View>
         <View style={[styles.formGroup, styles.flex1]}>

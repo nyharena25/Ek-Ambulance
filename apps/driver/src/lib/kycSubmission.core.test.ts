@@ -106,6 +106,19 @@ const badDate = mapStep1ToDraftFields({ ...baseForm, dlExpiry: "2028-08-14" });
 assert.deepStrictEqual(badDate, { ok: false, errors: ["VALIDATION_EXPIRED_DL"] }, "an unparseable expiry is never sent");
 console.log("✓ Step 1 draft mapping\n");
 
+console.log("Test 9b: Step 1 Continue and the pre-upload draft agree on every expiry (one rule, no hidden failure later)...");
+for (const dlExpiry of ["14/08/2028", "01/12/2030"]) {
+  const form = { ...baseForm, dlExpiry };
+  assert.deepStrictEqual(step1ValidationErrors(form), [], `Continue accepts ${dlExpiry}`);
+  assert.strictEqual(mapStep1ToDraftFields(form).ok, true, `the draft accepts ${dlExpiry}`);
+}
+for (const dlExpiry of ["14-08-2028", "14.08.2028", "14/8/2028", "2028-08-14", "31/02/2028", "", "14/08/2028x"]) {
+  const form = { ...baseForm, dlExpiry };
+  assert.deepStrictEqual(step1ValidationErrors(form), ["VALIDATION_EXPIRED_DL"], `Continue refuses "${dlExpiry}" on Step 1`);
+  assert.deepStrictEqual(mapStep1ToDraftFields(form), { ok: false, errors: ["VALIDATION_EXPIRED_DL"] }, `the draft refuses "${dlExpiry}"`);
+}
+console.log("✓ Continue/draft expiry parity\n");
+
 console.log("Test 10: upload error text names the cause and keeps the server's short reason...");
 assert.strictEqual(documentUploadErrorMessage("unsupported_file_type"), "Only PDF, JPG or PNG files can be uploaded.");
 assert.strictEqual(documentUploadErrorMessage("upload_failed", "Payload too large"), "The document was not uploaded. (Payload too large)");

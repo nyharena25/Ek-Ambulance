@@ -85,7 +85,8 @@ export type DraftApplicationFields = Pick<ApplicationFields, "licenseNumber" | "
 export function step1ValidationErrors(formData: DriverOnboardingFormData): string[] {
   const errors: string[] = [];
   if (!formData.commercialDlNumber || formData.commercialDlNumber.trim().length < 8) errors.push("VALIDATION_INVALID_DL");
-  if (!formData.dlExpiry || formData.dlExpiry.trim().length === 0) errors.push("VALIDATION_EXPIRED_DL");
+  // The same parse the draft sends, so Continue can never pass an expiry the upload step would later refuse.
+  if (!parseFormDate(formData.dlExpiry ?? "")) errors.push("VALIDATION_EXPIRED_DL");
   if (!formData.psvBadgeNumber || formData.psvBadgeNumber.trim().length < 4) errors.push("VALIDATION_MISSING_PSV");
   if (!formData.ais125VehicleType) errors.push("VALIDATION_MISSING_AIS125");
   return errors;
@@ -96,7 +97,6 @@ export function mapStep1ToDraftFields(
 ): { ok: true; fields: DraftApplicationFields } | { ok: false; errors: string[] } {
   const errors = step1ValidationErrors(formData);
   const dlExpiry = parseFormDate(formData.dlExpiry);
-  if (!dlExpiry && !errors.includes("VALIDATION_EXPIRED_DL")) errors.push("VALIDATION_EXPIRED_DL");
   if (errors.length > 0 || !dlExpiry || !formData.ais125VehicleType) return { ok: false, errors };
   return {
     ok: true,
