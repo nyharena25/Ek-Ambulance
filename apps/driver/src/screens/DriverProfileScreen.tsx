@@ -61,10 +61,9 @@ export default function DriverProfileScreen({ onBack, onOpenApplication }: Drive
     if (standby.isOnline) await getServerAdapter()?.setPresence(false);
     const result = await signOut();
     setSigningOut(false);
-    if (!result.ok) return Alert.alert(t.signOutFailed);
-    // Local state only (the server adapter is already gone): offline, and no previous driver's profile for the next account.
-    if (standby.isOnline) standby.confirmGoOffline();
-    useDriverProfileStore.setState({ profile: null, status: "idle", errorCode: null });
+    // The local cleanup (offline, profile, consent, mission state, notifications) runs in useServerSync on SIGNED_OUT,
+    // the same path a revoked refresh token or a sign-out on another device takes.
+    if (!result.ok) Alert.alert(t.signOutFailed);
   };
   const confirmSignOut = () =>
     Alert.alert(t.signOutConfirmTitle, t.signOutConfirmBody, [

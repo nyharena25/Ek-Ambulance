@@ -1,8 +1,11 @@
+/** What the UI may claim about the realtime link (driverConnection.store derives it from SDK evidence only). Whether the
+ *  store-and-forward fallback is active is a separate flag (isFallbackActive), never a status. */
 export type CentrifugoConnectionStatus =
-  | "connected"
-  | "connecting"
-  | "disconnected"
-  | "fallback";
+  | "connecting" // first connect of this session, not yet up
+  | "connected" // socket up and every required channel subscribed (or none required)
+  | "reconnecting" // was up, or is up with a channel not (re)subscribed yet: degraded, retrying
+  | "disconnected" // down past the failure threshold
+  | "authRequired"; // the server refused the credentials: retrying the network will not help
 
 export type TelemetrySyncStatus = "queued" | "syncing" | "synced" | "failed";
 

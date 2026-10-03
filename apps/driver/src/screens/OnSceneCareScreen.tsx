@@ -81,7 +81,8 @@ export default function OnSceneCareScreen({
 
   // Hospital selection: registered hospitals for the chosen emergency, nearest to the pickup first. Nothing is pre-selected:
   // the crew picks the destination, and only its canonical id is sent.
-  const [emergency, setEmergency] = useState<EmergencyType>("trauma");
+  // Not recorded until the crew picks one: every registered hospital is listed meanwhile, and no emergency type is sent.
+  const [emergency, setEmergency] = useState<EmergencyType | null>(null);
   const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(null);
 
   // Handoff Alert Modal
@@ -90,7 +91,7 @@ export default function OnSceneCareScreen({
 
   const strings = driverOnSceneStrings[language];
   const nearby = useMemo(
-    () => hospitalsFor(emergency, pickupCoordinates, hospitals ?? []),
+    () => hospitalsFor(emergency ?? "general", pickupCoordinates, hospitals ?? []),
     [emergency, pickupCoordinates.latitude, pickupCoordinates.longitude, hospitals]
   );
   const selectedHospital = nearby.find((n) => n.hospital.id === selectedHospitalId)?.hospital ?? null;
@@ -116,7 +117,7 @@ export default function OnSceneCareScreen({
       hospitalId: selectedHospital.id,
       onboardAt: new Date().toISOString(),
       ...(Object.keys(entered).length > 0 ? { vitals: entered } : {}),
-      emergencyType: emergency,
+      ...(emergency ? { emergencyType: emergency } : {}),
       bypass: isBypassActive,
     };
 
@@ -222,17 +223,28 @@ export default function OnSceneCareScreen({
                 <Text style={styles.vitalUnit}>{strings.pulseUnit}</Text>
               </View>
               <View style={styles.vitalValueRow}>
-                <Text style={styles.vitalLargeValue}>{pulse ?? "--"}</Text>
+                {/* Typed from the measurement; the steppers only adjust a reading that exists (no invented starting value). */}
+                <TextInput
+                  style={styles.vitalLargeValue}
+                  value={pulse === null ? "" : String(pulse)}
+                  placeholder="--"
+                  onChangeText={(val) => setPulse(toNumberOrNull(val))}
+                  keyboardType="numeric"
+                  maxLength={3}
+                  accessibilityLabel={strings.pulseLabel}
+                />
                 <View style={styles.quickStepButtons}>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setPulse((p) => Math.max(30, (p ?? 80) - 5))}
+                    disabled={pulse === null}
+                    onPress={() => setPulse((p) => (p === null ? null : Math.max(30, p - 5)))}
                   >
                     <Text style={styles.stepBtnText}>-5</Text>
                   </Pressable>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setPulse((p) => Math.min(220, (p ?? 80) + 5))}
+                    disabled={pulse === null}
+                    onPress={() => setPulse((p) => (p === null ? null : Math.min(220, p + 5)))}
                   >
                     <Text style={styles.stepBtnText}>+5</Text>
                   </Pressable>
@@ -256,17 +268,27 @@ export default function OnSceneCareScreen({
                 <Text style={styles.vitalUnit}>{strings.spO2Unit}</Text>
               </View>
               <View style={styles.vitalValueRow}>
-                <Text style={styles.vitalLargeValue}>{spO2 === null ? "--" : `${spO2}%`}</Text>
+                <TextInput
+                  style={styles.vitalLargeValue}
+                  value={spO2 === null ? "" : String(spO2)}
+                  placeholder="--"
+                  onChangeText={(val) => setSpO2(toNumberOrNull(val))}
+                  keyboardType="numeric"
+                  maxLength={3}
+                  accessibilityLabel={strings.spO2Label}
+                />
                 <View style={styles.quickStepButtons}>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setSpO2((s) => Math.max(50, (s ?? 95) - 1))}
+                    disabled={spO2 === null}
+                    onPress={() => setSpO2((s) => (s === null ? null : Math.max(50, s - 1)))}
                   >
                     <Text style={styles.stepBtnText}>-1</Text>
                   </Pressable>
                   <Pressable
                     style={styles.stepBtn}
-                    onPress={() => setSpO2((s) => Math.min(100, (s ?? 95) + 1))}
+                    disabled={spO2 === null}
+                    onPress={() => setSpO2((s) => (s === null ? null : Math.min(100, s + 1)))}
                   >
                     <Text style={styles.stepBtnText}>+1</Text>
                   </Pressable>
@@ -367,6 +389,11 @@ export default function OnSceneCareScreen({
         {/* NEAREST HOSPITALS FOR THIS EMERGENCY */}
         <View style={styles.traumaSectionCard}>
           <Text style={styles.sectionTitle}>{language === "hi" ? "आपातकाल का प्रकार" : "Type of emergency"}</Text>
+          {emergency === null && (
+            <Text style={styles.sectionSub}>
+              {language === "hi" ? "अभी दर्ज नहीं - चुनें (सभी पंजीकृत अस्पताल दिखाए जा रहे हैं)" : "Not recorded yet - choose one (showing every registered hospital)"}
+            </Text>
+          )}
           <View style={styles.categoryFiltersRow}>
             {EMERGENCY_TYPES.map((type) => (
               <Pressable

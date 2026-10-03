@@ -126,6 +126,23 @@ unsubscribe();
 
 console.log("✓ State listener and observer subscription verified.\n");
 
+console.log("Test: no saved fix and no invented contact in the SMS / drawer...");
+{
+  const empty = new TelemetryQueueService();
+  const sms = empty.formatSmsFallbackPayload("M-1");
+  assert.strictEqual(sms.smsNumber, "108", "the SMS goes to the configured 108 short code");
+  assert.ok(sms.body.includes("LOC:NA"), "no fix: the location says NA, never 0.0000,0.0000");
+  assert.ok(!sms.body.includes("0.0000"));
+  for (const lang of ["en", "hi"] as const) {
+    const t = driverOfflineStrings[lang];
+    assert.ok(t.smsDestinationDesk.includes("108"), "the label names the real destination");
+    assert.ok(!/\+91|\d{7,}/.test(t.smsDestinationDesk), "no other phone number is shown as the destination");
+    assert.ok(!/encrypt/i.test(t.smsFallbackDescription), "no encryption claim: the SMS is plain text");
+  }
+  assert.strictEqual(empty.getState().lastSuccessfulSyncAt, null, "no upload yet: the drawer shows 'never', not '1 min ago'");
+}
+console.log("✓ SMS + drawer honesty\n");
+
 console.log("=================================================");
 console.log("ALL 6 TEST SUITES PASSED SUCCESSFULLY (100% GREEN)");
 console.log("=================================================");

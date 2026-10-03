@@ -25,6 +25,9 @@ export interface DriverVerificationTranslation {
   loadFailedTitle: string;
   loadFailedBody: string;
   retry: string;
+  /** A stored session that could not be refreshed yet because the device is offline: not signed out. */
+  restoringTitle: string;
+  restoringBody: string;
 }
 
 export const driverVerificationStrings: Record<SupportedLanguage, DriverVerificationTranslation> = {
@@ -53,6 +56,8 @@ export const driverVerificationStrings: Record<SupportedLanguage, DriverVerifica
     loadFailedTitle: "Could not load your driver status",
     loadFailedBody: "Your verification status could not be read from the server. You cannot go online until it is.",
     retry: "Try again",
+    restoringTitle: "Restoring your session",
+    restoringBody: "You are still signed in on this device, but the server cannot be reached to renew your session. It will continue automatically once you are back online.",
   },
   hi: {
     title: "आवेदन समीक्षाधीन है",
@@ -79,5 +84,7 @@ export const driverVerificationStrings: Record<SupportedLanguage, DriverVerifica
     loadFailedTitle: "ड्राइवर स्थिति लोड नहीं हो सकी",
     loadFailedBody: "सर्वर से आपकी सत्यापन स्थिति नहीं पढ़ी जा सकी। तब तक आप ऑनलाइन नहीं जा सकते।",
     retry: "पुनः प्रयास करें",
+    restoringTitle: "आपका सत्र बहाल किया जा रहा है",
+    restoringBody: "आप इस डिवाइस पर साइन इन हैं, लेकिन सत्र नवीनीकृत करने हेतु सर्वर से संपर्क नहीं हो पा रहा। ऑनलाइन होते ही यह स्वतः जारी रहेगा।",
   },
 };

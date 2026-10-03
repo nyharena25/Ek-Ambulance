@@ -106,7 +106,81 @@ export function verifiedDriverSession(
   return hasDriverRole(typeof role === "string" ? role : null) ? { accessToken: session.access_token, userId: session.user.id } : null;
 }
 
-export type DriverAuthStatus = "loading" | "signedIn" | "signedOut";
+/**
+ * The driver's authentication state machine:
+ *   loading    startup, the stored session has not been read yet
+ *   restoring  a session is stored but could not be refreshed for a network reason: the account still exists on this
+ *              device and auth-js keeps retrying; never shown as signed out (that used to send an existing driver back
+ *              to sign-in and consent whenever the app started offline with an expired access token)
+ *   signedIn   a verified driver session (verifiedDriverSession)
+ *   signedOut  no session, an invalid/revoked refresh token, or a non-driver account
+ */
+export type DriverAuthStatus = "loading" | "restoring" | "signedIn" | "signedOut";
+
+type SessionLike = Parameters<typeof verifiedDriverSession>[0];
+type AuthErrorLike = { status?: number; name?: string; message?: string };
+
+/** The startup getSession() answer -> status. auth-js returns { session: null, error } both for a dead refresh token (it
+ *  has already removed the stored session) and for a network failure (it keeps it): only the error tells them apart. */
+export function initialAuthStatus(result: { session: SessionLike; error: AuthErrorLike | null }): DriverAuthStatus {
+  if (verifiedDriverSession(result.session)) return "signedIn";
+  if (!result.session && result.error && isNetworkFailure(result.error)) return "restoring";
+  return "signedOut";
+}
+
+export type DriverAuthEvent = "INITIAL_SESSION" | "SIGNED_IN" | "SIGNED_OUT" | "TOKEN_REFRESHED" | "USER_UPDATED" | "PASSWORD_RECOVERY" | "MFA_CHALLENGE_VERIFIED";
+
+/**
+ * Orders the two sources of the session at startup. The listener's INITIAL_SESSION is ignored: on a refresh failure it
+ * fires with null and no error, so it cannot tell "offline" from "signed out" - the getSession() result (which has the
+ * error) decides the initial state instead. Once a real auth event has been adopted, a getSession() answer that lands later
+ * is stale and ignored, so a slow startup read can never undo a sign-in, a refresh or a sign-out.
+ */
+export function createAuthSessionTracker(adopt: (session: SessionLike, status: DriverAuthStatus) => void) {
+  let eventAdopted = false;
+  return {
+    initial(result: { session: SessionLike; error: AuthErrorLike | null }): void {
+      if (eventAdopted) return;
+      adopt(result.session ?? null, initialAuthStatus(result));
+    },
+    event(event: DriverAuthEvent | string, session: SessionLike): void {
+      if (event === "INITIAL_SESSION") return;
+      eventAdopted = true;
+      adopt(session ?? null, verifiedDriverSession(session) ? "signedIn" : "signedOut");
+    },
+  };
+}
+
+/**
+ * DPDP consent (5.3.9). Recorded server-side per account (consent_records via record_consent, server timestamp, keyed on
+ * auth.uid()), once per notice version: bumping DRIVER_CONSENT_NOTICE_VERSION asks every driver again, nothing else does.
+ */
+export const DRIVER_CONSENT_NOTICE_VERSION = "driver-dpdp-v1";
+export const DRIVER_CONSENT_PURPOSES = ["driver_location", "driver_credentials"] as const;
+
+export interface ConsentRecordRow {
+  purpose: string;
+  granted: boolean;
+  notice_version: string;
+  granted_at: string;
+  withdrawn_at: string | null;
+}
+
+/** consent_records is append-only: the newest row per purpose is the current decision. Every driver purpose must be granted,
+ *  not withdrawn, under the current notice version. */
+export function hasCurrentDriverConsent(rows: readonly ConsentRecordRow[], version: string = DRIVER_CONSENT_NOTICE_VERSION): boolean {
+  const latest = new Map<string, ConsentRecordRow>();
+  for (const row of [...rows].sort((a, b) => Date.parse(b.granted_at) - Date.parse(a.granted_at))) {
+    if (!latest.has(row.purpose)) latest.set(row.purpose, row);
+  }
+  return DRIVER_CONSENT_PURPOSES.every((purpose) => {
+    const row = latest.get(purpose);
+    return !!row && row.granted && !row.withdrawn_at && row.notice_version === version;
+  });
+}
+
+/** "unknown" until read, "error" when it could not be read (never "required": a network blip must not re-ask consent). */
+export type DriverConsentGate = "unknown" | "error" | "required" | "granted";
 
 /**
  * The driver's authorization, read from the server's own KYC state (get_driver_profile), never a local flag:
@@ -136,12 +210,25 @@ export function driverKycGate(p: {
  * application goes to onboarding, a submitted one to the verification screen. Until the KYC state is known the index
  * route waits (it shows the load error and a retry). A live mission screen is never interrupted. Loading: never redirect.
  */
-export function authRedirectTarget(status: DriverAuthStatus, segments: readonly string[], kyc: DriverKycGate): string | null {
-  if (status === "loading") return null;
+export function authRedirectTarget(
+  status: DriverAuthStatus,
+  segments: readonly string[],
+  kyc: DriverKycGate,
+  consent: DriverConsentGate
+): string | null {
+  // Still reading or restoring the stored session: never redirect (no flash of sign-in or consent).
+  if (status === "loading" || status === "restoring") return null;
   const [first, second] = segments;
-  if (status === "signedOut") return first === "(auth)" ? null : "/(auth)/phone-entry";
+  if (status === "signedOut") return first === "(auth)" && second !== "consent" ? null : "/(auth)/phone-entry";
   if (first === "mission") return null;
   const at = (route: string) => (`/${first}/${second}` === route ? null : route);
+  // Consent before the application: credentials are processed only once the account has consented to it.
+  if (consent === "required") return at("/(auth)/consent");
+  if (consent !== "granted") return first === "(shift)" || second === "consent" ? "/" : null;
+  return kycTarget(first, second, kyc, at) ?? (second === "consent" ? "/" : null);
+}
+
+function kycTarget(first: string | undefined, second: string | undefined, kyc: DriverKycGate, at: (route: string) => string | null): string | null {
   switch (kyc) {
     case "unknown":
     case "error":

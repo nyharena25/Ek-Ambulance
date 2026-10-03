@@ -10,14 +10,12 @@ import {
   Platform,
   StatusBar,
   Modal,
-  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { ConfirmArrivalScenePayload, type GeoPoint } from "@sahayak/domain";
 import {
   driverNavigationStrings,
-  IncidentDelayOption,
 } from "../i18n/driverNavigationStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
@@ -54,9 +52,6 @@ export default function DriverNavigationScreen({
   onBackToStandby,
 }: DriverNavigationScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
-  const [isDelayDrawerOpen, setIsDelayDrawerOpen] = useState(false);
-  const [selectedDelay, setSelectedDelay] = useState<IncidentDelayOption | null>(null);
-  const [activeDelayNotice, setActiveDelayNotice] = useState<string | null>(null);
   const [isArrivedOnScene, setIsArrivedOnScene] = useState(false);
   const [isOnSceneModalOpen, setIsOnSceneModalOpen] = useState(false);
 
@@ -65,8 +60,9 @@ export default function DriverNavigationScreen({
   const gps = useDriverStandbyStore((s) => s.gps);
   const currentSpeed = Math.round(gps.speedKmh);
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
-  const effectivePickup = pickupCoordinates ?? (IS_TEST_RUNNER ? DEMO_PICKUP : driverPos);
-  const distanceKm = distanceKmBetween(driverPos, effectivePickup);
+  // No pickup known (the mission route re-reads it from the server): shown as not available, never the driver's own position.
+  const effectivePickup = pickupCoordinates ?? (IS_TEST_RUNNER ? DEMO_PICKUP : null);
+  const distanceKm = effectivePickup ? distanceKmBetween(driverPos, effectivePickup) : null;
 
   const strings = driverNavigationStrings[language];
 
@@ -134,19 +130,6 @@ export default function DriverNavigationScreen({
     })
   ).current;
 
-  // Broadcast Incident Delay
-  const handleBroadcastDelay = () => {
-    if (!selectedDelay) return;
-    const added = selectedDelay.addedMinutes;
-    setActiveDelayNotice(strings.delayBroadcastSuccessNotice(added));
-    setIsDelayDrawerOpen(false);
-
-    // Clear notice banner after 6s
-    setTimeout(() => {
-      setActiveDelayNotice(null);
-    }, 6000);
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={colors.slate950} />
@@ -186,20 +169,18 @@ export default function DriverNavigationScreen({
             <Text style={styles.speedUnit}>{strings.currentSpeedUnit}</Text>
           </View>
           <View style={styles.etaBox}>
-            <Text style={styles.etaTimeText}>{isArrivedOnScene ? "0.0" : distanceKm.toFixed(1)} km</Text>
+            <Text style={styles.etaTimeText}>{isArrivedOnScene ? "0.0 km" : distanceKm === null ? "—" : `${distanceKm.toFixed(1)} km`}</Text>
             <Text style={styles.etaDistText}>{language === "hi" ? "मरीज तक (सीधी दूरी)" : "to patient (straight line)"}</Text>
           </View>
         </View>
       </View>
 
-      <NavigateInGoogleMapsButton destination={effectivePickup} target="pickup" language={language} />
-
-      {/* ACTIVE INCIDENT DELAY BANNER (IF BROADCASTED) */}
-      {activeDelayNotice && (
-        <View style={styles.activeDelayBanner}>
-          <AppIcon icon={{ set: "ion", name: "warning" }} size={14} color={colors.slate700} style={styles.activeDelayIcon} />
-          <Text style={styles.activeDelayText}>{activeDelayNotice}</Text>
-        </View>
+      {effectivePickup ? (
+        <NavigateInGoogleMapsButton destination={effectivePickup} target="pickup" language={language} />
+      ) : (
+        <Text style={styles.etaDistText} accessibilityRole="alert">
+          {language === "hi" ? "पिकअप स्थान अभी उपलब्ध नहीं है।" : "Pickup location not available yet."}
+        </Text>
       )}
 
       {/* FULL-SCREEN TACTICAL NAVIGATION CANVAS */}
@@ -215,14 +196,6 @@ export default function DriverNavigationScreen({
             </Text>
           </View>
 
-          <Pressable
-            style={styles.incidentDelayBtn}
-            onPress={() => setIsDelayDrawerOpen(true)}
-          >
-            <Text style={styles.incidentDelayBtnText}>
-              {strings.btnOpenDelayDrawer}
-            </Text>
-          </Pressable>
         </View>
       </View>
 
@@ -296,85 +269,6 @@ export default function DriverNavigationScreen({
           </Animated.View>
         </View>
       </View>
-
-      {/* INCIDENT DELAY REPORTING DRAWER / MODAL */}
-      <Modal
-        visible={isDelayDrawerOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsDelayDrawerOpen(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.drawerCard}>
-            <View style={styles.drawerHeaderRow}>
-              <View style={styles.drawerTitleBox}>
-                <Text style={styles.drawerTitle}>
-                  {strings.delayDrawerTitle}
-                </Text>
-                <Text style={styles.drawerSub}>
-                  {strings.delayDrawerSubtitle}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => setIsDelayDrawerOpen(false)}
-                style={styles.drawerCloseBtn}
-              >
-                <AppIcon icon={{ set: "ion", name: "close" }} size={18} style={styles.drawerCloseText} />
-              </Pressable>
-            </View>
-
-            {/* Delay Choices */}
-            <ScrollView style={styles.drawerOptionsScroll}>
-              {strings.delayOptions.map((opt) => {
-                const isSelected = selectedDelay?.id === opt.id;
-                return (
-                  <Pressable
-                    key={opt.id}
-                    style={[
-                      styles.delayOptionItem,
-                      isSelected && styles.delayOptionItemSelected,
-                    ]}
-                    onPress={() => setSelectedDelay(opt)}
-                  >
-                    <AppIcon
-                      icon={opt.icon}
-                      size={22}
-                      color={colors.slate700}
-                      style={styles.delayOptionIcon}
-                    />
-                    <View style={styles.delayOptionTextWrap}>
-                      <Text style={styles.delayOptionTitle}>{opt.title}</Text>
-                      <Text style={styles.delayOptionImpact}>
-                        Impact: +{opt.addedMinutes} mins ({opt.impactLevel})
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.radioDot,
-                        isSelected && styles.radioDotSelected,
-                      ]}
-                    />
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* Broadcast Button */}
-            <Pressable
-              style={[
-                styles.broadcastDelayBtn,
-                !selectedDelay && styles.broadcastDelayBtnDisabled,
-              ]}
-              onPress={handleBroadcastDelay}
-              disabled={!selectedDelay}
-            >
-              <Text style={styles.broadcastDelayBtnText}>
-                {strings.btnBroadcastDelay(selectedDelay?.addedMinutes || 5)}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
 
 
       {/* ARRIVAL ON SCENE CONFIRMED CELEBRATION MODAL */}
@@ -467,15 +361,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  voiceToggleBtn: {
-    backgroundColor: colors.slate800,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: radii.sm,
-  },
-  voiceToggleIcon: {
-    fontSize: 14,
-  },
   langPill: {
     backgroundColor: colors.white,
     paddingHorizontal: 8,
@@ -499,45 +384,6 @@ const styles = StyleSheet.create({
     borderColor: colors.slate700,
     gap: spacing.sm,
     ...shadows.md,
-  },
-  maneuverRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  maneuverIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.md,
-    backgroundColor: colors.emergency,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  maneuverArrowIcon: {
-    fontSize: 22,
-    color: colors.white,
-    fontWeight: typography.fontWeights.extrabold,
-  },
-  maneuverDistBadge: {
-    fontSize: 9,
-    color: colors.white,
-    fontWeight: typography.fontWeights.bold,
-    marginTop: -2,
-  },
-  maneuverTextBox: {
-    flex: 1,
-  },
-  maneuverInstruction: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.white,
-    lineHeight: typography.lineHeights.base,
-  },
-  maneuverSub: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate300,
-    lineHeight: typography.lineHeights.xs,
-    marginTop: 2,
   },
   telemetryRow: {
     flexDirection: "row",
@@ -564,30 +410,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.slate400,
   },
-  corridorBadgeBox: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-  corridorPill: {
-    backgroundColor: semanticColors.triage.green.textAccessible,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: semanticColors.triage.green.border,
-  },
-  corridorPillText: {
-    color: colors.triageGreen, // nearest existing token
-    fontSize: 9,
-    fontWeight: typography.fontWeights.extrabold,
-    letterSpacing: 0.5,
-  },
-  corridorSubText: {
-    fontSize: 9,
-    color: colors.slate400,
-    marginTop: 2,
-  },
   etaBox: {
     alignItems: "flex-end",
   },
@@ -601,26 +423,6 @@ const styles = StyleSheet.create({
     color: colors.slate400,
   },
 
-  // Active Delay Banner
-  activeDelayBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.warningLight,
-    paddingHorizontal: spacing.base,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.warning,
-    gap: 8,
-  },
-  activeDelayIcon: {
-    fontSize: 14,
-  },
-  activeDelayText: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-    flex: 1,
-  },
 
   // Map Canvas
   mapCanvas: {
@@ -653,92 +455,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: typography.fontWeights.bold,
   },
-  incidentDelayBtn: {
-    backgroundColor: "rgba(180, 83, 9, 0.9)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.warning,
-  },
-  incidentDelayBtnText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-  },
 
-  // Quick Dial Bar
-  quickDialBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.slate900,
-    paddingHorizontal: spacing.base,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.slate800,
-  },
-  callerInfoBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flex: 1,
-  },
-  callerIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.full,
-    backgroundColor: colors.slate800,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  callerIconEmoji: {
-    fontSize: 14,
-  },
-  callerTextWrap: {
-    flex: 1,
-  },
-  callerName: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: typography.fontWeights.bold,
-  },
-  callerSub: {
-    color: colors.slate400,
-    fontSize: 10,
-  },
-  dialActionsRow: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  callPatientBtn: {
-    backgroundColor: colors.success,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: radii.sm,
-    justifyContent: "center",
-  },
-  callPatientBtnText: {
-    flexShrink: 1,
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-  },
-  callDispatchBtn: {
-    backgroundColor: colors.slate800,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.slate700,
-    justifyContent: "center",
-  },
-  callDispatchBtnText: {
-    flexShrink: 1,
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: typography.fontWeights.semibold,
-  },
 
   // Persistent Bottom Action Bar
   bottomBar: {
@@ -813,161 +530,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.8)",
     justifyContent: "flex-end",
   },
-  drawerCard: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radii["2xl"],
-    borderTopRightRadius: radii["2xl"],
-    padding: spacing.xl,
-    gap: spacing.md,
-    maxHeight: "80%",
-    ...shadows.md,
-  },
-  drawerHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  drawerTitleBox: {
-    flex: 1,
-  },
-  drawerTitle: {
-    flexShrink: 1,
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  drawerSub: {
-    flexShrink: 1,
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate600,
-    marginTop: 2,
-  },
-  drawerCloseBtn: {
-    padding: 6,
-  },
-  drawerCloseText: {
-    fontSize: 18,
-    color: colors.slate600,
-    fontWeight: typography.fontWeights.bold,
-  },
-  drawerOptionsScroll: {
-    maxHeight: 280,
-  },
-  delayOptionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.slate50,
-    borderWidth: 1.5,
-    borderColor: colors.slate200,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    marginBottom: 8,
-    gap: 12,
-  },
-  delayOptionItemSelected: {
-    borderColor: colors.warning,
-    backgroundColor: colors.warningLight,
-  },
-  delayOptionIcon: {
-    fontSize: 22,
-  },
-  delayOptionTextWrap: {
-    flex: 1,
-  },
-  delayOptionTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-  },
-  delayOptionImpact: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate700,
-    marginTop: 2,
-  },
-  radioDot: {
-    width: 18,
-    height: 18,
-    borderRadius: radii.full,
-    borderWidth: 2,
-    borderColor: colors.slate400,
-  },
-  radioDotSelected: {
-    borderColor: colors.warning,
-    backgroundColor: colors.warning,
-  },
-  broadcastDelayBtn: {
-    backgroundColor: colors.warning,
-    paddingVertical: 14,
-    borderRadius: radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 52,
-  },
-  broadcastDelayBtnDisabled: {
-    opacity: 0.6,
-  },
-  broadcastDelayBtnText: {
-    color: colors.white,
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-  },
 
-  // Calling Modal
-  callingModalCard: {
-    backgroundColor: colors.white,
-    margin: spacing.xl,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    alignItems: "center",
-    gap: spacing.sm,
-    alignSelf: "center",
-    width: "90%",
-    maxWidth: 380,
-    ...shadows.md,
-  },
-  callingIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: radii.full,
-    backgroundColor: colors.successLight,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.success,
-  },
-  callingIconEmoji: {
-    fontSize: 24,
-  },
-  callingModalTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate900,
-    textAlign: "center",
-  },
-  callingModalTarget: {
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.success,
-  },
-  callingModalNotice: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate600,
-    textAlign: "center",
-    lineHeight: typography.lineHeights.xs,
-    backgroundColor: colors.slate50,
-    padding: spacing.sm,
-    borderRadius: radii.sm,
-  },
-  callingCloseBtn: {
-    marginTop: spacing.sm,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.base,
-  },
-  callingCloseBtnText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.slate700,
-  },
 
   // On-Scene Celebration Modal
   onSceneCard: {

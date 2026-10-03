@@ -85,6 +85,19 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
   // The registered catalog (canonical ids). null = loading; an error is shown, never replaced by a built-in list.
   const [hospitals, setHospitals] = useState<CatalogHospital[] | null>(null);
   const [hospitalsError, setHospitalsError] = useState(false);
+  // The pickup travels in the route params; without them (reload, deep link) it is re-read from the server's mission row,
+  // never substituted. Until then the screens show it as not available.
+  const [pickup, setPickup] = useState<GeoPoint | undefined>(pickupCoordinates);
+  useEffect(() => {
+    if (pickup) return;
+    let alive = true;
+    void fetchAssignedMission().then((r) => {
+      if (alive && r.ok && r.data?.missionId === missionId && r.data.pickup) setPickup(r.data.pickup);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [pickup, missionId]);
   const loadHospitals = useCallback(async () => {
     setHospitalsError(false);
     const result = await fetchHospitalCatalog();
@@ -160,7 +173,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
       <DriverNavigationScreen
         missionId={missionId}
         driverId={driverId}
-        pickupCoordinates={pickupCoordinates}
+        pickupCoordinates={pickup}
         onConfirmArrival={(payload) => {
           void run({ type: "CONFIRM_ARRIVAL_SCENE", payload });
         }}
@@ -177,13 +190,17 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
       <OnSceneCareScreen
         missionId={missionId}
         driverId={driverId}
-        pickupCoordinates={pickupCoordinates}
+        pickupCoordinates={pickup}
         hospitals={hospitals}
         hospitalsError={hospitalsError}
         onRetryHospitals={() => void loadHospitals()}
         onConfirmPatientOnboard={async (payload) => {
           // payload.hospitalId is the chosen catalog row's canonical id; the server validates it and takes the bed hold.
-          return run({ type: "CONFIRM_PATIENT_ONBOARD", payload });
+          const accepted = await run({ type: "CONFIRM_PATIENT_ONBOARD", payload });
+          // Refused (deactivated / full / unknown hospital): re-read the catalog, so a hospital that is gone drops out of the
+          // list and its selection clears (the screen resolves the selection by id against this list).
+          if (!accepted) void loadHospitals();
+          return accepted;
         }}
         onProceedToTransportNavigation={(hospital) => {
           if (!machineIs("transporting")) return;

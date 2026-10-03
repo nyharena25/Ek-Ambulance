@@ -12,6 +12,7 @@ import {
   type ServerCall,
 } from "./driverServer.core";
 import type { QueuedTelemetryPing } from "../types/driverConnection.types";
+import { DRIVER_CONSENT_PURPOSES, type ConsentRecordRow } from "../hooks/otpAuth.core";
 import { buildKycDocumentPath, extensionForMimeType, type ApplicationFields, type DraftApplicationFields } from "./kycSubmission.core";
 import type { DocumentSlotKey } from "../state/driverOnboarding.store";
 
@@ -187,10 +188,39 @@ export async function confirmPhoneChange(phone: string, token: string): Promise<
 
 /** Supabase signOut. The SDK clears the stored session; useServerSync (onAuthStateChange) drops the server adapter and the
  *  root layout's route gate returns to phone entry. */
-export async function signOut(): Promise<ApiResult<true>> {
+/** "global" (default) revokes the refresh token on the server. "local" only forgets it on this device: the way out of a
+ *  session that cannot be refreshed while offline, where a global sign-out cannot reach the server. */
+export async function signOut(scope: "global" | "local" = "global"): Promise<ApiResult<true>> {
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope });
     return error ? authFail(error) : { ok: true, data: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** The account's own consent history (RLS consent_records_select_own). A failed read is an error, never "no consent". */
+export async function fetchDriverConsents(userId: string): Promise<ApiResult<ConsentRecordRow[]>> {
+  try {
+    const { data, error } = await supabase
+      .from("consent_records")
+      .select("purpose,granted,notice_version,granted_at,withdrawn_at")
+      .eq("user_id", userId)
+      .in("purpose", [...DRIVER_CONSENT_PURPOSES]);
+    if (error) return { ok: false, error: mapRpcError(error) };
+    if (!data) return { ok: false, error: { code: "invalid_response", status: 0, retryable: true } };
+    return { ok: true, data: data as ConsentRecordRow[] };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Consent evidence is written by the server (record_consent): user from the JWT, server timestamp (DPDP, 5.3.9). */
+export async function recordDriverConsent(purpose: string, noticeVersion: string, granted: boolean, locale: "en" | "hi"): Promise<ApiResult<true>> {
+  try {
+    const { data, error } = await supabase.rpc("record_consent", { p_purpose: purpose, p_notice_version: noticeVersion, p_granted: granted, p_locale: locale });
+    if (error) return { ok: false, error: mapRpcError(error) };
+    return (data as { ok?: boolean } | null)?.ok ? { ok: true, data: true } : { ok: false, error: { code: "invalid_response", status: 0, retryable: false } };
   } catch (e) {
     return fail(e);
   }

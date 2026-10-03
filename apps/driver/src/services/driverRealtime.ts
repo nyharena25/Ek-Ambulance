@@ -1,5 +1,5 @@
 import { Centrifuge, UnauthorizedError } from "centrifuge";
-import { driverOffersChannelName, missionChannelName, realtimeLogLine, type RealtimeEvent } from "@sahayak/domain";
+import { decideSeq, driverOffersChannelName, missionChannelName, realtimeLogLine, type RealtimeEvent } from "@sahayak/domain";
 import { routeMissionPublication, routeOfferPublication, type MissionWatchHandlers, type OfferHandlers } from "../lib/driverServer.core.ts";
 
 /**
@@ -13,7 +13,16 @@ import { routeMissionPublication, routeOfferPublication, type MissionWatchHandle
 const GATEWAY_URL = process.env.EXPO_PUBLIC_GATEWAY_URL || "http://localhost:8000";
 const CENTRIFUGO_WS_URL = process.env.EXPO_PUBLIC_CENTRIFUGO_WS_URL || "ws://localhost:8001/connection/websocket";
 
-async function requestToken(scope: string, authToken: string | null): Promise<string> {
+/** A session token getter. The app's is async: it reads Supabase, which refreshes an expired access token first. */
+type AuthTokenSource = () => string | null | Promise<string | null>;
+
+/** SDK disconnect codes that mean "the credentials were refused", not "the network is down": client unauthorized (1),
+ *  Centrifugo invalid token (3500) and permission denied (3507). The SDK stops retrying after these. */
+const AUTH_DISCONNECT_CODES = new Set([1, 3500, 3507]);
+export const AUTH_REQUIRED_REASON = "unauthorized";
+
+async function requestToken(scope: string, getAuthToken: AuthTokenSource): Promise<string> {
+  const authToken = await getAuthToken();
   // No session: a permanent refusal (the SDK stops retrying) rather than a retry loop with no credentials.
   if (!authToken) throw new UnauthorizedError("No authenticated session");
   const response = await fetch(`${GATEWAY_URL}/realtime/token`, {
@@ -43,7 +52,7 @@ export interface SubscriptionClientLike {
   state?: string;
   connect(): void;
   disconnect(): void;
-  on?(event: "connecting" | "connected" | "disconnected", cb: (ctx?: { reason?: string }) => void): unknown;
+  on?(event: "connecting" | "connected" | "disconnected", cb: (ctx?: { code?: number; reason?: string }) => void): unknown;
   on?(event: "error", cb: (ctx?: { type?: string; error?: Error }) => void): unknown;
   newSubscription(channel: string, options: { getToken: () => Promise<string> }): SubscriptionLike;
   removeSubscription?(sub: SubscriptionLike): void;
@@ -58,6 +67,11 @@ export interface DriverRealtimeSession {
   subscribe: (channel: string, onData: (data: unknown) => void, onSubscribed?: () => void) => () => void;
   /** Publishes only while connected; false otherwise (the caller keeps the ping in its acknowledged upload buffer). */
   publish: (channel: string, data: unknown) => boolean;
+  /** Recovers the connection without a new client (subscriptions and their listeners are kept, never duplicated).
+   *  force=false (app resume): only restarts a socket the SDK gave up on, or skips a pending backoff; a connected socket is
+   *  left alone. force=true (the driver's Reconnect button): a full disconnect/connect cycle, so every channel resubscribes
+   *  and its onSubscribed re-reads server state. Channels the server refused are subscribed again in both cases. */
+  reconnect: (force: boolean) => void;
   teardown: () => void;
 }
 
@@ -69,15 +83,19 @@ export interface DriverRealtimeOptions {
 }
 
 export function createDriverRealtimeSession(
-  getAuthToken: () => string | null,
+  getAuthToken: AuthTokenSource,
   { onTransportEvent, onPublishRejected, createClient = defaultClient }: DriverRealtimeOptions = {}
 ): DriverRealtimeSession {
   const client = createClient(CENTRIFUGO_WS_URL, {
     minReconnectDelay: 500,
     maxReconnectDelay: 20000,
-    getToken: () => requestToken("connect", getAuthToken()),
+    getToken: () => requestToken("connect", getAuthToken),
   });
-  const emit = (event: RealtimeEvent) => onTransportEvent?.(event);
+  let torn = false;
+  // A torn-down session never writes into the connection state again (it would overwrite the live session's).
+  const emit = (event: RealtimeEvent) => {
+    if (!torn) onTransportEvent?.(event);
+  };
   client.on?.("connecting", (ctx) => {
     devLog("RECONNECTING", { reason: ctx?.reason });
     emit({ type: "connecting", reason: ctx?.reason });
@@ -87,8 +105,9 @@ export function createDriverRealtimeSession(
     emit({ type: "connected" });
   });
   client.on?.("disconnected", (ctx) => {
-    devLog("DISCONNECTED", { reason: ctx?.reason });
-    emit({ type: "disconnected", reason: ctx?.reason });
+    devLog("DISCONNECTED", { code: ctx?.code, reason: ctx?.reason });
+    const authRefused = ctx?.code !== undefined && AUTH_DISCONNECT_CODES.has(ctx.code);
+    emit({ type: "disconnected", reason: authRefused ? AUTH_REQUIRED_REASON : ctx?.reason });
   });
 
   // A failed (re)connect attempt: counted toward the reconnect threshold, never a fallback trigger on its own.
@@ -109,13 +128,12 @@ export function createDriverRealtimeSession(
     reportSubscriptions();
   };
 
-  let torn = false;
   client.connect();
   return {
     subscribe: (channel, onData, onSubscribed) => {
       const previous = subs.get(channel);
       if (previous) remove(channel, previous);
-      const sub = client.newSubscription(channel, { getToken: () => requestToken(channel, getAuthToken()) });
+      const sub = client.newSubscription(channel, { getToken: () => requestToken(channel, getAuthToken) });
       const entry = { sub, subscribed: false };
       subs.set(channel, entry);
       sub.on("publication", (ctx) => {
@@ -145,6 +163,18 @@ export function createDriverRealtimeSession(
       if (torn || !client.publish || (client.state !== undefined && client.state !== "connected")) return false;
       client.publish(channel, data).catch((error: unknown) => onPublishRejected?.(error));
       return true;
+    },
+    reconnect: (force) => {
+      if (torn) return;
+      const state = client.state;
+      devLog("RECONNECT_REQUESTED", { force: String(force), state });
+      // Not forced and already up (or the state is unknown): nothing to recover.
+      if (!force && (state === undefined || state === "connected")) return;
+      // connect() is a no-op while connected/connecting; disconnecting first restarts now instead of after the backoff.
+      // Subscriptions survive a client disconnect and resubscribe on connect.
+      if (state !== "disconnected") client.disconnect();
+      client.connect();
+      for (const entry of subs.values()) if (!entry.subscribed) entry.sub.subscribe(); // idempotent in the SDK
     },
     teardown: () => {
       if (torn) return;
@@ -184,7 +214,15 @@ export function mountMissionWatch(
   handlers: MissionWatchHandlers & { onSubscribed?: () => void },
   createClient?: CreateClient
 ): () => void {
-  return withSession(session, createClient, (s) =>
-    s.subscribe(missionChannelName(missionId), (data) => routeMissionPublication(data, handlers), () => handlers.onSubscribed?.())
-  );
+  // Mission events carry a per-mission seq: a redelivery after a reconnect / resubscribe (seq <= last applied) is dropped.
+  // A gap is still applied - the onSubscribed re-read is what covers missed events.
+  let lastSeq: number | null = null;
+  const onData = (data: unknown) => {
+    const seq = typeof data === "object" && data !== null ? (data as { seq?: unknown }).seq : undefined;
+    const n = typeof seq === "number" && Number.isInteger(seq) && seq >= 1 ? seq : undefined;
+    if (decideSeq(lastSeq, n) === "duplicate") return devLog("DUPLICATE_DROPPED", { mission_id: missionId, seq: n });
+    if (n !== undefined) lastSeq = Math.max(lastSeq ?? 0, n);
+    routeMissionPublication(data, handlers);
+  };
+  return withSession(session, createClient, (s) => s.subscribe(missionChannelName(missionId), onData, () => handlers.onSubscribed?.()));
 }

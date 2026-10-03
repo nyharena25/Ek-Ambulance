@@ -18,8 +18,6 @@ const SERVER_VERIFIED_MARKER = "server-verified";
 // (GO_ONLINE is excluded there), so a real session must not carry the demo literal into its local context either.
 const SERVER_AMBULANCE_MARKER = "server-managed";
 
-export type JurisdictionCode = "UP_NOIDA" | "DL_SOUTH";
-
 export interface GpsCoordinates {
   latitude: number;
   longitude: number;
@@ -31,24 +29,14 @@ export interface GpsCoordinates {
   fixedAt?: string;
 }
 
-export interface RedisPresenceTelemetry {
-  geoKey: string;
-  isIndexed: boolean;
-  ttlSeconds: number;
-  lastPingMs: number;
-  syncIntervalSec: number;
-}
-
 export interface DriverStandbyStoreState {
   isOnline: boolean;
   isTogglingPresence: boolean;
-  shiftStartedAt: string | null;
   language: SupportedLanguage;
-  currentJurisdiction: JurisdictionCode;
+  /** The map's starting point before the first real fix (hasRealFix false): never sent, never drawn as the driver. */
   gps: GpsCoordinates;
   /** The server profile's registered tier; null until it has loaded (never assumed). */
   registeredAis125Type: AIS125VehicleType | null;
-  redisPresence: RedisPresenceTelemetry;
   isOfflineModalOpen: boolean;
   /** True only once a real GPS fix has come in via setGps (useDriverLocation). Until then, `gps` is a city
    *  preset placeholder - with a real server session, going online is refused and the presence heartbeat sends
@@ -64,16 +52,16 @@ export interface DriverStandbyStoreState {
   confirmGoOffline: () => void;
   openOfflineModal: () => void;
   closeOfflineModal: () => void;
+  /** The driver closed the refusal notice: UI only, the presence state is unchanged. */
+  clearPresenceError: () => void;
   setGps: (gps: GpsCoordinates) => void;
-  setJurisdiction: (jur: JurisdictionCode) => void;
   setAis125Type: (type: AIS125VehicleType) => void;
   toggleLanguage: () => void;
   setLanguage: (lang: SupportedLanguage) => void;
   recenterGps: () => void;
 }
 
-// Coordinate presets:
-// Gautam Buddha Nagar (Noida Sector 62 / Fortis / Jaypee corridor)
+// The map's starting point until the first real fix (Noida): a camera position, not a driver position.
 const NOIDA_COORDS: GpsCoordinates = {
   latitude: 28.5355,
   longitude: 77.391,
@@ -83,15 +71,6 @@ const NOIDA_COORDS: GpsCoordinates = {
   altitudeMeters: 215,
 };
 
-// South Delhi (AIIMS Trauma Centre / Saket / Hauz Khas corridor)
-const SOUTH_DELHI_COORDS: GpsCoordinates = {
-  latitude: 28.5672,
-  longitude: 77.21,
-  accuracyMeters: 2.8,
-  heading: 18,
-  speedKmh: 0,
-  altitudeMeters: 228,
-};
 
 /** What a presence heartbeat may send: the last real fix, or null before there is one (never a city preset). */
 export function heartbeatLocation(s: Pick<DriverStandbyStoreState, "gps" | "hasRealFix">): GpsCoordinates | null {
@@ -125,18 +104,10 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   return {
   isOnline: IS_TEST_RUNNER,
   isTogglingPresence: false,
-  shiftStartedAt: "07:30 AM",
   language: "en",
-  currentJurisdiction: "UP_NOIDA",
   gps: NOIDA_COORDS,
   registeredAis125Type: IS_TEST_RUNNER ? "TYPE_D_ALS" : null,
-  redisPresence: {
-    geoKey: "ambulances:geo:tier_d",
-    isIndexed: true,
-    ttlSeconds: 60,
-    lastPingMs: 42,
-    syncIntervalSec: 3,
-  },
+
   isOfflineModalOpen: false,
   hasRealFix: false,
   presenceErrorCode: null,
@@ -177,16 +148,7 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       }
       sendGoOnline(registeredAis125Type, gps);
 
-      set((state) => ({
-        isOnline: true,
-        isTogglingPresence: false,
-        shiftStartedAt: state.shiftStartedAt || "Just now",
-        redisPresence: {
-          ...state.redisPresence,
-          isIndexed: true,
-          lastPingMs: Math.floor(35 + Math.random() * 20),
-        },
-      }));
+      set({ isOnline: true, isTogglingPresence: false });
     }
   },
 
@@ -197,38 +159,17 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       type: "GO_OFFLINE",
       payload: { driverId: server?.userId ?? DEMO_DRIVER_ID, wentOfflineAt: new Date().toISOString() },
     });
-    set({
-      isOnline: false,
-      isOfflineModalOpen: false,
-      redisPresence: {
-        ...get().redisPresence,
-        isIndexed: false,
-      },
-    });
+    set({ isOnline: false, isOfflineModalOpen: false });
   },
 
   setGps: (gps) => set({ gps, hasRealFix: true }),
   openOfflineModal: () => set({ isOfflineModalOpen: true }),
   closeOfflineModal: () => set({ isOfflineModalOpen: false }),
-
-  setJurisdiction: (jur) => {
-    // The service area is part of the profile, which is frozen from the offer to the end of the mission.
-    if (isProfileLocked(useDriverLifecycleStore.getState().currentState)) return;
-    // A real GPS fix must never be overwritten by a city preset just because the driver tapped a
-    // jurisdiction chip - useDriverLocation is the only thing that may move `gps` once it's real.
-    const preset = getServerAdapter() ? {} : { gps: jur === "UP_NOIDA" ? NOIDA_COORDS : SOUTH_DELHI_COORDS };
-    set({ currentJurisdiction: jur, ...preset });
-  },
+  clearPresenceError: () => set({ presenceErrorCode: null }),
 
   setAis125Type: (type) => {
     if (isProfileLocked(useDriverLifecycleStore.getState().currentState)) return;
-    set((state) => ({
-      registeredAis125Type: type,
-      redisPresence: {
-        ...state.redisPresence,
-        geoKey: `ambulances:geo:${type.toLowerCase()}`,
-      },
-    }));
+    set({ registeredAis125Type: type });
   },
 
   toggleLanguage: () =>
@@ -236,15 +177,11 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
 
   setLanguage: (lang) => set({ language: lang }),
 
-  // Dev-only: without a real session there's no live fix to recenter on, so this jumps back to the
-  // jurisdiction's preset. With a real session, `gps` already holds the last real fix - recentering the
-  // camera on it is the map component's job, not a reason to overwrite real data with a preset.
+  // Without a session (test runner only) there is no live fix: back to the map's starting point. With a real session `gps`
+  // already holds the last real fix - recentering the camera on it is the map component's job, never a preset overwrite.
   recenterGps: () => {
     if (getServerAdapter()) return;
-    const { currentJurisdiction } = get();
-    set({
-      gps: currentJurisdiction === "UP_NOIDA" ? NOIDA_COORDS : SOUTH_DELHI_COORDS,
-    });
+    set({ gps: NOIDA_COORDS });
   },
   };
 });

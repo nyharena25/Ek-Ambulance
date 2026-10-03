@@ -36,6 +36,12 @@ export interface DriverAuthTranslation {
   consentCredentialLabel: string;
   consentCredentialError: string;
   dpdpRightsNotice: string;
+  /** Phone entry: consent is asked once per account, after sign-in, and stored with it. */
+  consentAfterSignInNote: string;
+  consentStepTitle: string;
+  consentStepSubtitle: string;
+  consentContinueButton: string;
+  consentSaveFailed: string;
 
   // Error Messages
   invalidOtpError: string;
@@ -95,6 +101,11 @@ export const driverAuthStrings: Record<SupportedLanguage, DriverAuthTranslation>
     consentCredentialError: "Credential processing consent is required to continue.",
     dpdpRightsNotice:
       "Under Section 6 of the DPDP Act, you may withdraw consent or request data correction/erasure at any time via Settings.",
+    consentAfterSignInNote: "After verifying your number you will be asked for consent once; it is saved with your account.",
+    consentStepTitle: "Your consent",
+    consentStepSubtitle: "Asked once for your account and saved with it. You will be asked again only if this notice changes.",
+    consentContinueButton: "Agree & Continue",
+    consentSaveFailed: "Your consent could not be saved. Check your connection and try again.",
 
     invalidOtpError: "The code you entered is incorrect or has expired. Please try again.",
     rateLimitError: "Too many attempts. Please wait before requesting another code.",
@@ -152,6 +163,11 @@ export const driverAuthStrings: Record<SupportedLanguage, DriverAuthTranslation>
     consentCredentialError: "जारी रखने हेतु प्रमाण पत्र प्रसंस्करण सहमति आवश्यक है।",
     dpdpRightsNotice:
       "DPDP अधिनियम की धारा 6 के अंतर्गत, आप किसी भी समय सेटिंग्स के माध्यम से सहमति वापस ले सकते हैं या डेटा सुधार/मिटाने का अनुरोध कर सकते हैं।",
+    consentAfterSignInNote: "नंबर सत्यापित करने के बाद आपसे एक बार सहमति ली जाएगी; यह आपके खाते के साथ सहेजी जाती है।",
+    consentStepTitle: "आपकी सहमति",
+    consentStepSubtitle: "आपके खाते के लिए एक बार ली जाती है और उसी के साथ सहेजी जाती है। यह सूचना बदलने पर ही दोबारा पूछी जाएगी।",
+    consentContinueButton: "सहमत हूं और जारी रखें",
+    consentSaveFailed: "आपकी सहमति सहेजी नहीं जा सकी। कनेक्शन जांचकर पुनः प्रयास करें।",
 
     invalidOtpError: "आपके द्वारा दर्ज कोड गलत है या समाप्त हो चुका है। कृपया पुनः प्रयास करें।",
     rateLimitError: "बहुत अधिक प्रयास। कृपया दूसरा कोड मांगने से पहले प्रतीक्षा करें।",

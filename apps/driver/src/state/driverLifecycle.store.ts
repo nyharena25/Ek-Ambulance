@@ -93,6 +93,7 @@ let realtimeSession: DriverRealtimeSession | null = null;
 export function setDriverRealtimeSession(session: DriverRealtimeSession | null): void {
   realtimeSession = session;
 }
+export const getDriverRealtimeSession = (): DriverRealtimeSession | null => realtimeSession;
 
 /**
  * Live GPS ping for the active mission: published only while the socket is connected (never a rejected publish that flips

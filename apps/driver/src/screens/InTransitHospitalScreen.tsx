@@ -64,8 +64,9 @@ export default function InTransitHospitalScreen({
   const gps = useDriverStandbyStore((st) => st.gps);
   const currentSpeed = Math.round(gps.speedKmh);
   const driverPos = useMemo(() => ({ latitude: gps.latitude, longitude: gps.longitude }), [gps.latitude, gps.longitude]);
-  const hospitalTarget = hospitalCoordinates ?? (IS_TEST_RUNNER ? DEMO_HOSPITAL : driverPos);
-  const distanceKm = distanceKmBetween(driverPos, hospitalTarget);
+  // No destination known: shown as not available, never the driver's own position.
+  const hospitalTarget = hospitalCoordinates ?? (IS_TEST_RUNNER ? DEMO_HOSPITAL : null);
+  const distanceKm = hospitalTarget ? distanceKmBetween(driverPos, hospitalTarget) : null;
   const [isCompletedAtHospital, setIsCompletedAtHospital] = useState(false);
   const [isSignOffModalOpen, setIsSignOffModalOpen] = useState(false);
   const [isReceiptView, setIsReceiptView] = useState(false);
@@ -121,7 +122,7 @@ export default function InTransitHospitalScreen({
             const arrivalPayload: ConfirmArrivalHospitalPayload = {
               missionId,
               driverId: getServerAdapter()?.userId ?? driverId ?? "",
-              location: hospitalTarget,
+              location: hospitalTarget ?? driverPos,
               arrivedAt: new Date().toISOString(),
             };
 
@@ -210,11 +211,7 @@ export default function InTransitHospitalScreen({
         </Pressable>
       </View>
 
-      <NavigateInGoogleMapsButton
-        destination={hospitalTarget}
-        target="hospital"
-        language={language}
-      />
+      {hospitalTarget ? <NavigateInGoogleMapsButton destination={hospitalTarget} target="hospital" language={language} /> : null}
 
       {/* DESTINATION + DISTANCE + SPEED (directions open in Google Maps) */}
       <View style={styles.navOverlayCard}>
@@ -232,7 +229,7 @@ export default function InTransitHospitalScreen({
             <Text style={styles.speedUnit}>{strings.currentSpeedUnit}</Text>
           </View>
           <View style={styles.etaCol}>
-            <Text style={styles.etaNumeral}>{isCompletedAtHospital ? "0.0" : distanceKm.toFixed(1)} km</Text>
+            <Text style={styles.etaNumeral}>{isCompletedAtHospital ? "0.0 km" : distanceKm === null ? "—" : `${distanceKm.toFixed(1)} km`}</Text>
             <Text style={styles.etaDist}>{language === "hi" ? "सीधी दूरी" : "straight line"}</Text>
           </View>
         </View>

@@ -14,26 +14,17 @@ export interface DriverMissionOfferTranslation {
   // Banner & Alert
   alertBannerTitle: string;
   alertWaveTag: string;
-  soundAlertMute: string;
-  soundAlertUnmute: string;
   incomingOfferHeading: string;
 
-  // 15s Radial Countdown Timer
-  timerSecondsRemaining: (seconds: number) => string;
   timerAutoEscalateNotice: string;
-  timerExpiredTitle: string;
 
   // Triage Urgency Badges
   triageBadges: Record<UrgencyTier, TriageBadgeDetails>;
-  triageSeverityLabel: string;
-  mandatedCareLabel: string;
 
   // Pickup Location & Distance / ETA
   pickupSectionTitle: string;
   pickupDistanceLabel: string;
   pickupEtaLabel: string;
-  trafficStatusNormal: string;
-  openGpsNavigationHint: string;
 
   // Required AIS-125 Vehicle Category & Tier-Eligibility Gate
   requiredVehicleSectionTitle: string;
@@ -46,15 +37,9 @@ export interface DriverMissionOfferTranslation {
   patientSectionTitle: string;
   symptomSummaryLabel: string;
   symptomNotProvided: string;
-  vitalsOverviewLabel: string;
-  patientDemographics: (age: number, gender: string) => string;
-  vitalsConscious: string;
-  vitalsBleeding: string;
-  vitalsBreathing: string;
 
   // Swipe to Accept Slider
   sliderTrackPrompt: string;
-  sliderReleaseToConfirm: string;
   sliderConfirmed: string;
   sliderAccidentalTapNotice: string;
 
@@ -75,15 +60,10 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     // Alert Banner
     alertBannerTitle: "EMERGENCY DISPATCH BROADCAST",
     alertWaveTag: "WAVE 1 • HIGH PRIORITY",
-    soundAlertMute: "Mute Siren",
-    soundAlertUnmute: "Sound Siren",
     incomingOfferHeading: "New Urgent Mission Assigned",
 
     // Countdown Timer
-    timerSecondsRemaining: (sec) => `${sec}s`,
     timerAutoEscalateNotice: "Seconds left to accept before wave escalates to next fleet tier",
-    timerExpiredTitle: "Offer Expired • Escalated to Wave 2",
-
     // Triage Urgency Badges
     triageBadges: {
       CAT_1_IMMEDIATE: {
@@ -111,16 +91,10 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
         crewRequirement: "Driver + Attendant",
       },
     },
-    triageSeverityLabel: "Clinical Severity Tier",
-    mandatedCareLabel: "Statutory Life-Support Mandate",
-
     // Pickup & Navigation
     pickupSectionTitle: "Pickup Location & Route ETA",
     pickupDistanceLabel: "Driving Distance",
     pickupEtaLabel: "Estimated Arrival Time",
-    trafficStatusNormal: "Normal Corridor Traffic (Green Corridor Active)",
-    openGpsNavigationHint: "Turn-by-turn navigation starts automatically on acceptance",
-
     // Required Vehicle Tier
     requiredVehicleSectionTitle: "Required AIS-125 Vehicle Category",
     requiredVehicleLabel: "Mission Requires",
@@ -133,15 +107,8 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     patientSectionTitle: "Patient Clinical Complaint & Triage Summary",
     symptomSummaryLabel: "Primary Reported Symptom",
     symptomNotProvided: "No symptom details were provided",
-    vitalsOverviewLabel: "Field Triage Status",
-    patientDemographics: (age, gender) => `${gender}, approx. ${age} years old`,
-    vitalsConscious: "Consciousness: Responding to voice",
-    vitalsBleeding: "Severe Hemorrhage: Active bleeding reported",
-    vitalsBreathing: "Respiration: Labored (26 bpm)",
-
     // Swipe to Accept Slider
     sliderTrackPrompt: "Swipe to Accept Mission",
-    sliderReleaseToConfirm: "Release to confirm dispatch",
     sliderConfirmed: "Mission Accepted! Launching Navigation...",
     sliderAccidentalTapNotice: "Swipe slider fully across to prevent accidental taps while driving",
 
@@ -162,15 +129,10 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     // Alert Banner
     alertBannerTitle: "आपातकालीन डिस्पैच प्रसारण",
     alertWaveTag: "वेव 1 • सर्वोच्च प्राथमिकता",
-    soundAlertMute: "सायरन म्यूट करें",
-    soundAlertUnmute: "सायरन बजाएं",
     incomingOfferHeading: "नया आपातकालीन मिशन प्राप्त हुआ",
 
     // Countdown Timer
-    timerSecondsRemaining: (sec) => `${sec} से.`,
     timerAutoEscalateNotice: "अगले एंबुलेंस बेड़े में एस्केलेट होने से पूर्व स्वीकार करने हेतु शेष समय",
-    timerExpiredTitle: "समय समाप्त • वेव 2 में स्थानांतरित",
-
     // Triage Urgency Badges
     triageBadges: {
       CAT_1_IMMEDIATE: {
@@ -198,16 +160,10 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
         crewRequirement: "चालक + सहायक",
       },
     },
-    triageSeverityLabel: "चिकित्सीय गंभीरता श्रेणी",
-    mandatedCareLabel: "वैधानिक लाइफ-सपोर्ट अधिदेश",
-
     // Pickup & Navigation
     pickupSectionTitle: "पिकअप स्थान एवं पहुंचने का समय (ETA)",
     pickupDistanceLabel: "ड्राइविंग दूरी",
     pickupEtaLabel: "अनुमानित पहुंचने का समय",
-    trafficStatusNormal: "सामान्य यातायात कॉरिडोर (ग्रीन कॉरिडोर सक्रिय)",
-    openGpsNavigationHint: "स्वीकार करते ही टर्न-बाय-टर्न जीपीएस नेविगेशन स्वतः प्रारंभ होगा",
-
     // Required Vehicle Tier
     requiredVehicleSectionTitle: "आवश्यक AIS-125 वाहन श्रेणी",
     requiredVehicleLabel: "मिशन हेतु आवश्यक",
@@ -220,15 +176,8 @@ export const driverMissionOfferStrings: Record<SupportedLanguage, DriverMissionO
     patientSectionTitle: "मरीज की प्राथमिक शिकायत एवं ट्रायज सारांश",
     symptomSummaryLabel: "मुख्य रिपोर्टेड लक्षण",
     symptomNotProvided: "लक्षणों की कोई जानकारी नहीं दी गई",
-    vitalsOverviewLabel: "फील्ड ट्रायज स्थिति",
-    patientDemographics: (age, gender) => `${gender === "Male" ? "पुरुष" : "महिला"}, लगभग ${age} वर्ष`,
-    vitalsConscious: "चेतना: आवाज पर प्रतिक्रिया दे रहे हैं",
-    vitalsBleeding: "गंभीर रक्तस्राव: सक्रिय रक्तस्राव की सूचना",
-    vitalsBreathing: "श्वसन: कष्टदायक सांस (26 bpm)",
-
     // Swipe to Accept Slider
     sliderTrackPrompt: "मिशन स्वीकारने हेतु स्वाइप करें",
-    sliderReleaseToConfirm: "स्वीकृति हेतु छोड़ें",
     sliderConfirmed: "मिशन स्वीकृत! नेविगेशन खुल रहा है...",
     sliderAccidentalTapNotice: "ड्राइविंग के दौरान आकस्मिक स्पर्श रोकने हेतु स्लाइडर को पूरा खींचें",
 

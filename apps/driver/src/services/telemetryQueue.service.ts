@@ -172,7 +172,7 @@ export class TelemetryQueueService {
   }
 
   /**
-   * Generate an encrypted/compact GSM-compliant (<= 140 chars) SMS payload for rural UP dead zones.
+   * Generate a compact, plain-text GSM-compliant (<= 140 chars) SMS payload for rural UP dead zones.
    * Formatted for instant ingestion by UP 108 Emergency Control Room.
    */
   public formatSmsFallbackPayload(
@@ -183,14 +183,14 @@ export class TelemetryQueueService {
     const timestamp = ping ? ping.timestamp : new Date().toISOString();
     const timeStr = timestamp.split("T")[1]?.slice(0, 8) || "NOW";
 
-    const lat = ping ? ping.latitude.toFixed(4) : "0.0000";
-    const lng = ping ? ping.longitude.toFixed(4) : "0.0000";
+    // No saved fix: say so ("NA"), never 0.0000,0.0000 - that is a real place in the Gulf of Guinea, not "unknown".
+    const loc = ping ? `${ping.latitude.toFixed(4)},${ping.longitude.toFixed(4)}` : "NA";
     const spd = ping?.speed !== undefined ? `${ping.speed}K` : "--";
     const pendingCount = this.getPendingCount();
 
     // Concise GSM-7 character layout strictly < 140 chars
-    // Format: UP108:AMB MSN-8819 LOC:26.8467,80.9462 SPD:58K Q:14 T:08:49:02
-    const body = `UP108:AMB ${missionId} LOC:${lat},${lng} SPD:${spd} Q:${pendingCount} T:${timeStr}`;
+    // Format: UP108:AMB <mission id> LOC:<lat>,<lng>|NA SPD:<km/h>K|-- Q:<queued> T:<hh:mm:ss>
+    const body = `UP108:AMB ${missionId} LOC:${loc} SPD:${spd} Q:${pendingCount} T:${timeStr}`;
 
     return {
       smsNumber: this.smsDispatchNumber,

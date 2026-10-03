@@ -11,6 +11,13 @@ import {
   verifiedDriverSession,
   authRedirectTarget,
   driverKycGate,
+  initialAuthStatus,
+  createAuthSessionTracker,
+  hasCurrentDriverConsent,
+  DRIVER_CONSENT_NOTICE_VERSION,
+  type ConsentRecordRow,
+  type DriverAuthStatus,
+  type DriverConsentGate,
   type DriverKycGate,
 } from "./otpAuth.core.ts";
 
@@ -94,8 +101,8 @@ assert.strictEqual(verifiedDriverSession(null), null);
 console.log("✓ Verified driver session.\n");
 
 console.log("Test: route gate...");
-const R = (status: "loading" | "signedIn" | "signedOut", path: string, kyc: DriverKycGate = "approved") =>
-  authRedirectTarget(status, path ? path.split("/") : [], kyc);
+const R = (status: DriverAuthStatus, path: string, kyc: DriverKycGate = "approved", consent: DriverConsentGate = "granted") =>
+  authRedirectTarget(status, path ? path.split("/") : [], kyc, consent);
 assert.strictEqual(R("loading", ""), null, "never redirect while the stored session is read");
 assert.strictEqual(R("loading", "(shift)/standby"), null);
 assert.strictEqual(R("signedOut", ""), "/(auth)/phone-entry", "cold start without a session");
@@ -139,6 +146,115 @@ assert.strictEqual(driverKycGate({ status: "loading", errorCode: null, profile: 
 assert.strictEqual(driverKycGate({ status: "error", errorCode: "network", profile: null }), "error", "unreadable is not approved");
 assert.strictEqual(driverKycGate({ status: "error", errorCode: "driver_profile_missing", profile: null }), "application", "no drivers row yet");
 console.log("✓ Route gate.\n");
+
+console.log("Test: restoring a stored session never shows sign-in or consent...");
+for (const path of ["", "(shift)/standby", "mission/[id]", "(auth)/consent"]) {
+  assert.strictEqual(R("restoring", path, "unknown", "unknown"), null, `restoring at /${path}: stay`);
+}
+console.log("✓ Restoring.\n");
+
+console.log("Test: consent gate in the route gate...");
+// Existing account with current consent: straight through, consent never shown.
+assert.strictEqual(R("signedIn", "", "approved", "granted"), "/(shift)/standby", "existing consented driver: no consent screen");
+assert.strictEqual(R("signedIn", "(auth)/otp-verify", "approved", "granted"), "/(shift)/standby");
+// New account (or new notice version): consent first, before the application.
+assert.strictEqual(R("signedIn", "", "application", "required"), "/(auth)/consent", "new account: consent appears");
+assert.strictEqual(R("signedIn", "(auth)/onboarding", "application", "required"), "/(auth)/consent", "before credentials are processed");
+assert.strictEqual(R("signedIn", "(shift)/standby", "approved", "required"), "/(auth)/consent", "a new notice version re-asks");
+assert.strictEqual(R("signedIn", "(auth)/consent", "unknown", "required"), null, "already there");
+// Not read yet / unreadable: wait, never ask (a network blip must not re-ask consent).
+for (const consent of ["unknown", "error"] as const) {
+  assert.strictEqual(R("signedIn", "", "approved", consent), null, `${consent}: index waits`);
+  assert.strictEqual(R("signedIn", "(shift)/standby", "approved", consent), "/", `${consent}: not the shift`);
+  assert.notStrictEqual(R("signedIn", "(auth)/otp-verify", "approved", consent), "/(auth)/consent");
+}
+// Granted on the consent screen: moves on by KYC state.
+assert.strictEqual(R("signedIn", "(auth)/consent", "approved", "granted"), "/(shift)/standby");
+assert.strictEqual(R("signedIn", "(auth)/consent", "application", "granted"), "/(auth)/onboarding");
+assert.strictEqual(R("signedIn", "(auth)/consent", "unknown", "granted"), "/", "KYC still loading: index waits");
+// A live mission is never interrupted, not even by consent.
+assert.strictEqual(R("signedIn", "mission/[id]", "approved", "required"), null);
+// Signed out on the consent screen (declined = signed out): back to sign-in.
+assert.strictEqual(R("signedOut", "(auth)/consent", "unknown", "unknown"), "/(auth)/phone-entry");
+console.log("✓ Consent route gate.\n");
+
+console.log("Test: consent persistence rule (server consent_records, per account, per notice version)...");
+{
+  const row = (purpose: string, extra: Partial<ConsentRecordRow> = {}): ConsentRecordRow => ({
+    purpose,
+    granted: true,
+    notice_version: DRIVER_CONSENT_NOTICE_VERSION,
+    granted_at: "2026-10-01T10:00:00Z",
+    withdrawn_at: null,
+    ...extra,
+  });
+  assert.strictEqual(hasCurrentDriverConsent([]), false, "new account: nothing recorded");
+  assert.strictEqual(hasCurrentDriverConsent([row("driver_location"), row("driver_credentials")]), true, "both purposes, current version");
+  assert.strictEqual(hasCurrentDriverConsent([row("driver_location")]), false, "every purpose is required");
+  assert.strictEqual(
+    hasCurrentDriverConsent([row("driver_location"), row("driver_credentials", { withdrawn_at: "2026-10-02T00:00:00Z" })]),
+    false,
+    "withdrawn"
+  );
+  assert.strictEqual(
+    hasCurrentDriverConsent([row("driver_location"), row("driver_credentials", { notice_version: "driver-dpdp-v0" })]),
+    false,
+    "an older notice version asks again"
+  );
+  // Append-only: the newest row per purpose wins, whatever order the server returns.
+  const revoked = [row("driver_location"), row("driver_credentials"), row("driver_credentials", { granted: false, granted_at: "2026-10-03T00:00:00Z" })];
+  assert.strictEqual(hasCurrentDriverConsent(revoked), false, "a later refusal overrides an earlier grant");
+  const regranted = [row("driver_location", { granted: false, granted_at: "2026-09-01T00:00:00Z" }), row("driver_location"), row("driver_credentials")];
+  assert.strictEqual(hasCurrentDriverConsent(regranted), true, "a later grant overrides an earlier refusal");
+}
+console.log("✓ Consent persistence rule.\n");
+
+console.log("Test: startup session restoration and auth state transitions...");
+{
+  const driver = sess(U, { role: "driver" });
+  const offline = { name: "AuthRetryableFetchError", status: 0, message: "Network request failed" };
+  assert.strictEqual(initialAuthStatus({ session: driver, error: null }), "signedIn", "valid stored session restored");
+  assert.strictEqual(initialAuthStatus({ session: null, error: null }), "signedOut", "nothing stored");
+  assert.strictEqual(initialAuthStatus({ session: null, error: offline }), "restoring", "expired token + offline refresh: NOT signed out");
+  assert.strictEqual(
+    initialAuthStatus({ session: null, error: { name: "AuthApiError", status: 400, message: "Invalid Refresh Token: Refresh Token Not Found" } }),
+    "signedOut",
+    "invalid/revoked refresh token: signed out"
+  );
+  assert.strictEqual(initialAuthStatus({ session: sess(U, { role: "patient" }), error: null }), "signedOut", "wrong role");
+
+  const seen: DriverAuthStatus[] = [];
+  const run = () => {
+    seen.length = 0;
+    return createAuthSessionTracker((_s, status) => seen.push(status));
+  };
+
+  // INITIAL_SESSION fires with null on a refresh failure; only getSession (with its error) decides.
+  let t = run();
+  t.event("INITIAL_SESSION", null);
+  t.initial({ session: null, error: offline });
+  assert.deepStrictEqual(seen, ["restoring"], "INITIAL_SESSION null is not a sign-out");
+  // Back online: auth-js refreshes on its own and emits TOKEN_REFRESHED.
+  t.event("TOKEN_REFRESHED", driver);
+  assert.deepStrictEqual(seen, ["restoring", "signedIn"], "restoring -> signedIn on refresh");
+
+  // Race: the sign-in event lands before a slow startup read; the stale read must not undo it.
+  t = run();
+  t.event("SIGNED_IN", driver);
+  t.initial({ session: null, error: null });
+  assert.deepStrictEqual(seen, ["signedIn"], "a late getSession() never overrides a newer auth event");
+
+  // Token refresh while signed in stays signed in; sign-out (button, revoked token, elsewhere) signs out.
+  t = run();
+  t.initial({ session: driver, error: null });
+  t.event("TOKEN_REFRESHED", driver);
+  t.event("SIGNED_OUT", null);
+  assert.deepStrictEqual(seen, ["signedIn", "signedIn", "signedOut"]);
+  // Login after logout.
+  t.event("SIGNED_IN", driver);
+  assert.deepStrictEqual(seen, ["signedIn", "signedIn", "signedOut", "signedIn"], "a new sign-in after logout is adopted");
+}
+console.log("✓ Session restoration + transitions.\n");
 
 console.log("=================================================");
 console.log("ALL DRIVER OTP AUTH CORE TESTS PASSED (100% GREEN)");

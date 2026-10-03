@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "../config/env.ts";
@@ -64,4 +64,13 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     detectSessionInUrl: false,
   },
+});
+
+// Session refresh (Supabase's React Native lifecycle): auth-js refreshes the access token on a 30 s ticker, which the OS
+// suspends with the app's timers in the background. Back in the foreground, restart it: it checks immediately, so an
+// access token that expired meanwhile is refreshed before anything uses it (a success emits TOKEN_REFRESHED). Never
+// stopped on background: during a mission the process stays alive behind Google Maps, and its uploads and realtime
+// token requests need the refresh to keep running.
+AppState.addEventListener("change", (state) => {
+  if (state === "active") void supabase.auth.startAutoRefresh();
 });

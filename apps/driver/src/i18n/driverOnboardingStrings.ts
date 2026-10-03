@@ -34,18 +34,12 @@ export interface DriverOnboardingTranslation {
   screenSubtitle: string;
   appBadge: string;
   morthComplianceNotice: string;
-  languageToggleEn: string;
-  languageToggleHi: string;
 
   // Step Indicators
   step1Title: string;
-  step1Subtitle: string;
   step2Title: string;
-  step2Subtitle: string;
   step3Title: string;
-  step3Subtitle: string;
   step4Title: string;
-  step4Subtitle: string;
 
   // Step 1: Commercial Driver's License
   step1Header: string;
@@ -111,7 +105,6 @@ export interface DriverOnboardingTranslation {
   step4Header: string;
   step4Description: string;
   mandatoryDocsTitle: string;
-  optionalDocsTitle: string;
   statutoryMandatoryBadge: string;
   araiHighlightBoxTitle: string;
   araiHighlightBoxDescription: string;
@@ -169,19 +162,11 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     screenSubtitle: "National Fleet Registration & AIS-125 Compliance",
     appBadge: "MoRTH AIS-125 REGULATED",
     morthComplianceNotice: "Under Central Motor Vehicles Rules (CMVR) & Indian Standard AIS-125 Part 1/2",
-    languageToggleEn: "English",
-    languageToggleHi: "हिन्दी",
-
     // Steps
     step1Title: "License & Type",
-    step1Subtitle: "Commercial DL & PSV",
     step2Title: "EMT Details",
-    step2Subtitle: "Medical Credentials",
     step3Title: "Vehicle",
-    step3Subtitle: "Classification & Specs",
     step4Title: "Statutory Permits",
-    step4Subtitle: "ARAI & Fitness",
-
     // Step 1: CDL
     step1Header: "Commercial Driver Credentials",
     step1Description:
@@ -358,7 +343,6 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     step4Description:
       "Upload original scanned certificates or high-resolution photos. ARAI inspection certificate and commercial vehicle fitness permit are strictly mandatory to ensure zero illegal ambulance operations.",
     mandatoryDocsTitle: "Mandatory Regulatory Documents (MoRTH Requirement)",
-    optionalDocsTitle: "Supporting Vehicle Documents",
     statutoryMandatoryBadge: "MANDATORY STATUTORY",
     araiHighlightBoxTitle: "ARAI AIS-125 Compliance Certificate (Mandatory)",
     araiHighlightBoxDescription:
@@ -486,19 +470,11 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     screenSubtitle: "राष्ट्रीय आपातकालीन बेड़ा पंजीकरण एवं AIS-125 अनुपालन",
     appBadge: "MoRTH AIS-125 वैधानिक प्रमाणित",
     morthComplianceNotice: "केंद्रीय मोटर वाहन नियम (CMVR) एवं भारतीय मानक AIS-125 भाग 1/2 के अंतर्गत",
-    languageToggleEn: "English",
-    languageToggleHi: "हिन्दी",
-
     // Steps
     step1Title: "लाइसेंस व प्रकार",
-    step1Subtitle: "वाणिज्यिक DL व PSV",
     step2Title: "EMT विवरण",
-    step2Subtitle: "चिकित्सा प्रमाणन",
     step3Title: "वाहन",
-    step3Subtitle: "श्रेणी व उपकरण",
     step4Title: "वैधानिक परमिट",
-    step4Subtitle: "ARAI व फिटनेस",
-
     // Step 1: CDL
     step1Header: "वाणिज्यिक चालक पहचान व लाइसेंस",
     step1Description:
@@ -675,7 +651,6 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     step4Description:
       "मूल दस्तावेजों की स्पष्ट स्कैन या उच्च गुणवत्ता वाली तस्वीर अपलोड करें। अवैध एंबुलेंस संचालन रोकने हेतु ARAI निरीक्षण प्रमाण पत्र और वाहन फिटनेस परमिट अनिवार्य हैं।",
     mandatoryDocsTitle: "अनिवार्य वैधानिक दस्तावेज (MoRTH दिशानिर्देश)",
-    optionalDocsTitle: "सहायक वाहन दस्तावेज",
     statutoryMandatoryBadge: "वैधानिक रूप से अनिवार्य",
     araiHighlightBoxTitle: "ARAI AIS-125 निरीक्षण प्रमाण पत्र (अनिवार्य)",
     araiHighlightBoxDescription:

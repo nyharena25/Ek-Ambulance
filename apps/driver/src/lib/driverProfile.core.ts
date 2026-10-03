@@ -1,5 +1,4 @@
 import type { AIS125VehicleType } from "@sahayak/domain";
-import type { JurisdictionCode } from "../state/driverStandby.store.ts";
 
 /**
  * Pure half of the driver Profile: the shape `get_driver_profile` returns, the minimal patch `update_driver_profile`
@@ -9,9 +8,6 @@ import type { JurisdictionCode } from "../state/driverStandby.store.ts";
 
 export type ServiceZone = "DL" | "UP";
 
-/** The driver-app jurisdiction chips are finer-grained than the server's DL/UP zone; each zone maps to one. */
-export const ZONE_TO_JURISDICTION: Record<ServiceZone, JurisdictionCode> = { DL: "DL_SOUTH", UP: "UP_NOIDA" };
-export const JURISDICTION_TO_ZONE: Record<JurisdictionCode, ServiceZone> = { DL_SOUTH: "DL", UP_NOIDA: "UP" };
 
 export interface DriverVehicleInfo {
   registrationNumber: string;

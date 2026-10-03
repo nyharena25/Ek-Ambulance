@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 import { router } from "expo-router";
 import { driverStateForStatus, type DriverLifecycleState } from "@sahayak/domain";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
-import { verifiedDriverSession } from "./otpAuth.core";
+import { createAuthSessionTracker, isNetworkFailure, verifiedDriverSession, type DriverAuthStatus } from "./otpAuth.core";
+import { useDriverConsentStore } from "../state/driverConsent.store";
 import { useDriverAuthStore } from "../state/driverAuth.store";
 import {
   callServer,
@@ -21,7 +22,7 @@ import {
   type ServerSession,
 } from "../lib/driverServer";
 import { getDevicePushToken } from "../services/dispatchNotifications";
-import { getServerAdapter, setDriverRealtimeSession, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
+import { getDriverRealtimeSession, getServerAdapter, setDriverRealtimeSession, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { heartbeatLocation, useDriverStandbyStore } from "../state/driverStandby.store";
 import { useDriverProfileStore } from "../state/driverProfile.store";
@@ -36,11 +37,20 @@ const HEARTBEAT_MS = 10_000;
 /** How often the time-dependent connection health (grace period, failure threshold) is re-derived. */
 const HEALTH_EVALUATE_MS = 2_000;
 
+/** Offers already shown, by offer id. The live push, its redelivery after a resubscribe and the reconnect re-read can all
+ *  carry the same offer; a declined or expired one must never come back. */
+const presentedOfferIds = new Set<string>();
+// ponytail: plain set, cleared past a cap; offers are a handful per shift.
+const PRESENTED_OFFERS_CAP = 200;
+
 /** Shows a server offer, if this driver is free to take one. Shared by the live push and the reconnect recovery read. */
 function presentOffer(offer: DispatchOffer, clockOffsetMs: number): void {
   const lifecycle = useDriverLifecycleStore.getState();
-  // Busy or mid-offer: the server expires this offer on its own; nothing to show.
+  // Busy or mid-offer: the server expires this offer on its own; nothing to show (and not marked seen).
   if (lifecycle.currentState !== "standby") return;
+  if (presentedOfferIds.has(offer.offerId)) return devLog("DUPLICATE_DROPPED", { offer_id: offer.offerId });
+  if (presentedOfferIds.size >= PRESENTED_OFFERS_CAP) presentedOfferIds.clear();
+  presentedOfferIds.add(offer.offerId);
   devLog("OFFER_RECEIVED", { mission_id: offer.missionId, offer_id: offer.offerId });
   lifecycle.send({ type: "SERVER_OFFER_RECEIVED", payload: { offerId: offer.offerId, missionId: offer.missionId } });
   const params: Record<string, string> = {
@@ -62,6 +72,65 @@ function presentOffer(offer: DispatchOffer, clockOffsetMs: number): void {
   void notifyIncomingOffer(params as never);
 }
 
+/** The current session's access token, refreshed first by Supabase if it has expired. A backgrounded app resumes with an
+ *  expired token in React state; using it got every reconnect refused (401) until the refresh ticker caught up, and that
+ *  outage was shown as low connectivity. A failed read (offline refresh) falls back to the last known token, which the
+ *  gateway may refuse - a retryable error, never a permanent sign-out. */
+async function freshAccessToken(fallback: string | null): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    return error ? fallback : (data.session?.access_token ?? null);
+  } catch {
+    return fallback;
+  }
+}
+
+/** The "restoring" screen's Retry: one refresh attempt with the stored refresh token. Success arrives as TOKEN_REFRESHED
+ *  (signed in); a dead refresh token makes auth-js remove the session and emit SIGNED_OUT; a network failure leaves the
+ *  driver in "restoring" (auth-js keeps retrying on its own). Returns false while still offline. */
+export async function retrySessionRestore(): Promise<boolean> {
+  try {
+    const { error } = await supabase.auth.refreshSession();
+    if (!error) return true;
+    // Nothing usable is stored (no SIGNED_OUT is emitted for that): signed out.
+    if (!isNetworkFailure(error)) useDriverAuthStore.setState({ status: "signedOut" });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Local state that belongs to the account that just signed out (button, revoked refresh token, sign-out elsewhere). The
+ *  realtime connection, presence heartbeat and telemetry loop stop with the session (useServerSync effects keyed on the
+ *  user id). Kept on purpose: the store-and-forward telemetry queue (acknowledged uploads of a finished mission's track)
+ *  and device preferences (language). */
+function clearSignedOutDriverState(): void {
+  useDriverLifecycleStore.getState().reset();
+  useDriverStandbyStore.setState({ isOnline: false, isOfflineModalOpen: false, presenceErrorCode: null });
+  useDriverConsentStore.getState().reset();
+  presentedOfferIds.clear();
+  dismissAllNotifications();
+}
+
+let refreshing: Promise<void> | null = null;
+/**
+ * The driver's Reconnect action: refreshes the session if needed, then restarts the realtime connection on the same
+ * client (no new subscriptions). Each channel resubscribes and its onSubscribed re-reads the server (open offers, the
+ * assigned mission), so the server state is refreshed too. The mission state is untouched: only a successful server read
+ * that shows no such mission ends it. Concurrent taps share one run.
+ */
+export function refreshDriverConnection(): Promise<void> {
+  refreshing ??= (async () => {
+    try {
+      await freshAccessToken(null);
+      getDriverRealtimeSession()?.reconnect(true);
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
 /**
  * The driver app's connection to the server (DATA_AND_SYNC_SPECIFICATION.md 6, 7). Mounted once at the root. With a session the
  * server can verify it: makes the server authoritative for transitions (lifecycle store adapter), receives offers on
@@ -80,17 +149,25 @@ export function useServerSync(): void {
   const isOnline = useDriverStandbyStore((s) => s.isOnline);
   const currentState = useDriverLifecycleStore((s) => s.currentState);
   const activeMissionId = useDriverLifecycleStore((s) => s.activeMissionId);
+  const missionActive = ACTIVE_STATES.includes(currentState);
 
   // Adopt the verified driver session, and drop it on sign-out, expiry or a wrong-role account. The status is set
   // synchronously from the auth event, so the route gate already knows when verifyOtp resolves; Supabase calls are
   // deferred out of the onAuthStateChange callback (calling the client inside it can deadlock on its auth lock).
   useEffect(() => {
     let alive = true;
-    const adopt = (raw: Session | null) => {
+    const adopt = (raw: Session | null, status: DriverAuthStatus) => {
       if (!alive) return;
-      const s: ServerSession | null = verifiedDriverSession(raw);
-      // The KYC state belongs to one account: never route the next sign-in on the previous driver's profile.
-      if (s?.userId !== getServerAdapter()?.userId) useDriverProfileStore.setState({ profile: null, status: "idle", errorCode: null });
+      // A stored session that could not be refreshed yet (offline): not signed out, not usable. The route gate waits on
+      // the index screen; auth-js's own refresh (or the Retry button) moves it on with TOKEN_REFRESHED or SIGNED_OUT.
+      if (status === "restoring") return useDriverAuthStore.setState({ status });
+      const s: ServerSession | null = status === "signedIn" ? verifiedDriverSession(raw) : null;
+      const previousUserId = getServerAdapter()?.userId ?? null;
+      if ((s?.userId ?? null) !== previousUserId) {
+        // The KYC state belongs to one account: never route the next sign-in on the previous driver's profile.
+        useDriverProfileStore.setState({ profile: null, status: "idle", errorCode: null });
+        if (previousUserId) clearSignedOutDriverState();
+      }
       useDriverAuthStore.setState({ status: s ? "signedIn" : "signedOut" });
       setSession(s);
       setServerAdapter(
@@ -113,6 +190,8 @@ export function useServerSync(): void {
       if (s) {
         setTimeout(() => {
           void useDriverProfileStore.getState().load();
+          // Consent is per account, not per session: read once for this user, never again on an hourly token refresh.
+          if (useDriverConsentStore.getState().userId !== s.userId) void useDriverConsentStore.getState().load(s.userId);
           // Best-effort (G-21): getDevicePushToken() returns null without a real EAS project id, which this
           // repo does not have configured yet - registration then simply does not happen, never a fake token.
           void getDevicePushToken().then((device) => {
@@ -121,11 +200,12 @@ export function useServerSync(): void {
         }, 0);
       }
     };
+    const tracker = createAuthSessionTracker((raw, status) => adopt(raw as Session | null, status));
     supabase.auth
       .getSession()
-      .then(({ data }) => adopt(data.session))
-      .catch(() => adopt(null));
-    const { data } = supabase.auth.onAuthStateChange((_event, raw) => adopt(raw));
+      .then(({ data, error }) => tracker.initial({ session: data.session, error }))
+      .catch((error: unknown) => tracker.initial({ session: null, error: error instanceof Error ? error : { message: String(error) } }));
+    const { data } = supabase.auth.onAuthStateChange((event, raw) => tracker.event(event, raw));
     return () => {
       alive = false;
       data.subscription.unsubscribe();
@@ -137,13 +217,18 @@ export function useServerSync(): void {
     if (!userId) return;
     const connection = useDriverConnectionStore.getState();
     connection.reset();
-    const rt = createDriverRealtimeSession(() => tokenRef.current, {
+    const rt = createDriverRealtimeSession(() => freshAccessToken(tokenRef.current), {
       onTransportEvent: (event) => useDriverConnectionStore.getState().applyTransport(event),
       onPublishRejected: (error) => devLog("PUBLISH_REJECTED", { error: error instanceof Error ? error.message : "unknown" }),
     });
     setDriverRealtimeSession(rt);
     setRealtime(rt);
+    // Back in the foreground: restart a socket the SDK gave up on, or skip a long backoff. A connected socket is left alone.
+    const appState = AppState.addEventListener("change", (s) => {
+      if (s === "active") rt.reconnect(false);
+    });
     return () => {
+      appState.remove();
       setDriverRealtimeSession(null);
       setRealtime(null);
       rt.teardown();
@@ -199,7 +284,8 @@ export function useServerSync(): void {
 
   // Mission watch: the server ended the mission under a driver who is already driving.
   useEffect(() => {
-    if (!realtime || !activeMissionId || !ACTIVE_STATES.includes(currentState)) return;
+    // Keyed on "a mission is active", not on its stage: en route -> on scene -> transporting must keep one subscription.
+    if (!realtime || !activeMissionId || !missionActive) return;
     const missionId = activeMissionId;
     const end = (cancelledBy?: "patient" | "driver" | "system", reason?: string) => {
       const lifecycle = useDriverLifecycleStore.getState();
@@ -219,7 +305,7 @@ export function useServerSync(): void {
         });
       },
     });
-  }, [realtime, activeMissionId, currentState]);
+  }, [realtime, activeMissionId, missionActive]);
 
   // Resume after a process kill: the machine is memory-only, the assignment is on the server (7.6).
   useEffect(() => {

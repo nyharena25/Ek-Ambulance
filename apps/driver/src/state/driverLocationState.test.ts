@@ -18,7 +18,6 @@ console.log("✓ gps updates\n");
 console.log("Test 2: going offline keeps the last real fix (no snap back to a preset)...");
 s().confirmGoOffline();
 assert.strictEqual(s().isOnline, false);
-assert.strictEqual(s().redisPresence.isIndexed, false);
 assert.deepStrictEqual([s().gps.latitude, s().gps.longitude], [28.62, 77.24]);
 s().setGps(gps(28.63, 77.25));
 assert.strictEqual(s().isOnline, false, "a stray late fix must not bring the driver online");

@@ -133,6 +133,54 @@ console.log("Test 4: hospital catalog keeps the canonical id (never a name or a 
 }
 console.log("✓ hospitals\n");
 
+console.log("Test 4b: the hospital the driver sees is the hospital the server receives (catalog -> selection -> payload -> resume)...");
+{
+  const { hospitalsFor } = await import("../hooks/hospitalSelection.core.ts");
+  const sharda = "a5337fd7-d641-4ce9-9b6c-820518d2ab9c";
+  const fortis = "10182431-ea5e-4a9a-956b-64d3fa02f2e2";
+  const point = (lng: number, lat: number) => ({ type: "Point", coordinates: [lng, lat] });
+  const rows = [
+    { id: sharda, name: "Sharda Hospital Greater Noida", zone: "UP", location: point(77.482, 28.4732), specialities: [] },
+    { id: fortis, name: "Fortis Hospital Noida Sector 62", zone: "UP", location: point(77.3732, 28.6189), specialities: ["cardiac"] },
+  ];
+  const catalog = rows.map(parseCatalogHospital).filter((h) => h !== null);
+  const pickup = { latitude: 28.47, longitude: 77.48 };
+  // The driver taps the row showing "Sharda ...": the selection is that row's id.
+  const shown = hospitalsFor("general", pickup, catalog);
+  const tapped = shown.find((n) => n.hospital.name === "Sharda Hospital Greater Noida")!.hospital;
+  const selectedId = tapped.id;
+  // Re-filtering (reopening the list, another emergency type) keeps the identity: the id resolves to the same row.
+  assert.strictEqual(hospitalsFor("trauma", pickup, catalog).find((n) => n.hospital.id === selectedId)?.hospital.name, "Sharda Hospital Greater Noida");
+  // A: the payload carries exactly that registered id.
+  const built = call({
+    type: "CONFIRM_PATIENT_ONBOARD",
+    payload: { missionId: M, driverId: D, destination: tapped.coordinates, hospitalId: selectedId, onboardAt: T },
+  }) as unknown as { ok: true; call: { rpc: string; args: { p_event: string; p_payload: { hospitalId: string } } } };
+  assert.ok(built.ok);
+  assert.strictEqual(built.call.args.p_event, "PATIENT_ON_BOARD");
+  assert.strictEqual(built.call.args.p_payload.hospitalId, sharda, "A/F: displayed name and submitted id are the same database row");
+  assert.ok(!JSON.stringify(built.call.args.p_payload).includes("Sharda"), "no display text travels as identity");
+  // E: resume mid-transport rehydrates the same hospital from missions.destination_hospital_id.
+  const resumedId = parseAssignedMissionRow({ id: M, status: "transporting", destination_hospital_id: sharda })!.destinationHospitalId;
+  assert.strictEqual(catalog.find((h) => h.id === resumedId)?.name, "Sharda Hospital Greater Noida", "E: the resumed destination is the selected one");
+  // D: a hospital deactivated after selection is gone from the re-read catalog, so the stale selection resolves to nothing.
+  const reread = rows.filter((r) => r.id !== sharda).map(parseCatalogHospital).filter((h) => h !== null);
+  assert.strictEqual(hospitalsFor("general", pickup, reread).find((n) => n.hospital.id === selectedId), undefined, "D: the selection clears");
+  // B/C at the client: the old build's preset ids and names never reach the server.
+  for (const bad of ["hosp_sharda_gnoida", "hosp_jaypee", "Sharda Hospital Greater Noida", "Jaypee Hospital (Sec 128)", ""]) {
+    assert.deepStrictEqual(
+      call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: pickup, hospitalId: bad, onboardAt: T } }),
+      { ok: false, code: "hospital_required" },
+      `B: ${JSON.stringify(bad)} is refused before sending`
+    );
+  }
+  // C (an unregistered but well-formed uuid) is decided by the server: it is sent, and refused there as invalid_hospital.
+  const unregistered = call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: pickup, hospitalId: "6f0c1e9a-0000-4000-8000-00000000dead", onboardAt: T } });
+  assert.ok(unregistered.ok, "C: the client never guesses which uuids are registered");
+  assert.notStrictEqual(driverErrorMessage("invalid_hospital"), driverErrorMessage("unheard_of"), "the server's refusal has its own message");
+}
+console.log("✓ hospital identity end to end\n");
+
 console.log("Test 5: telemetry upload is acknowledged, never assumed (D-UX-08, G-10)...");
 {
   const pings = [

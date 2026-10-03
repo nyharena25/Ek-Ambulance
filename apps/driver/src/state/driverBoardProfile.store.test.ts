@@ -10,7 +10,6 @@ const standby = () => useDriverStandbyStore.getState();
 const M = "6f0c1e9a-0000-4000-8000-000000000001";
 
 // The dev build seeds the driver online on standby; make that explicit so the test does not lean on it.
-standby().setJurisdiction("UP_NOIDA");
 assert.strictEqual(lifecycle().currentState, "standby");
 useDriverStandbyStore.setState({ isOnline: true });
 
@@ -78,15 +77,15 @@ await useDriverProfileStore.getState().load();
   assert.deepStrictEqual(ok, { ok: true });
   assert.strictEqual(useDriverProfileStore.getState().profile?.fullName, "Asha Verma");
   assert.strictEqual(useDriverProfileStore.getState().profile?.vehicle.crewCount, 4);
-  assert.strictEqual(standby().currentJurisdiction, "DL_SOUTH", "the service area reaches the standby label");
+  assert.strictEqual(useDriverProfileStore.getState().profile?.serviceZone, "DL", "the service area lives on the profile only (no standby copy)");
   assert.deepStrictEqual(standby().gps, gpsBefore, "changing the profile never moves the position");
 
   // An offer is held: locked, before any mission exists.
   lifecycle().send({ type: "SERVER_OFFER_RECEIVED", payload: { offerId: "o1", missionId: M } });
   assert.strictEqual(lifecycle().currentState, "offered");
   assert.deepStrictEqual(await useDriverProfileStore.getState().save({ fullName: "Someone Else" }), { ok: false, code: "profile_locked" }, "locked while an offer is held");
-  standby().setJurisdiction("UP_NOIDA");
-  assert.strictEqual(standby().currentJurisdiction, "DL_SOUTH", "the standby service-area chips are locked too");
+  assert.deepStrictEqual(await useDriverProfileStore.getState().save({ serviceZone: "UP" }), { ok: false, code: "profile_locked" }, "the service zone is locked too");
+  assert.strictEqual(useDriverProfileStore.getState().profile?.serviceZone, "DL");
 
   // On a mission.
   lifecycle().send({ type: "ACCEPT_DISPATCH", payload: { missionId: M, driverId: "d", offerId: "o1", acceptedAt: new Date().toISOString() } });

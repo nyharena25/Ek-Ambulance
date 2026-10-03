@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { createDriverRealtimeSession, mountOffersChannel, type SubscriptionClientLike, type SubscriptionLike } from "./driverRealtime.ts";
+import { AUTH_REQUIRED_REASON, createDriverRealtimeSession, mountMissionWatch, mountOffersChannel, type SubscriptionClientLike, type SubscriptionLike } from "./driverRealtime.ts";
 
 console.log("=================================================");
 console.log("Running Driver Realtime Session Tests (one connection, honest state)");
@@ -134,5 +134,108 @@ console.log("Test 5: the legacy mount API (E2E scripts, one private connection p
   assert.strictEqual(f.calls.disconnect, 1);
 }
 console.log("✓ legacy mount\n");
+
+console.log("Test 6: reconnect recovers on the same client: no new subscription, refused channels resubscribed...");
+{
+  const f = fakeClient();
+  const subscribeCalls: string[] = [];
+  const s = createDriverRealtimeSession(() => "t", { createClient: f.create });
+  s.subscribe("driver:D1:offers", () => {});
+  s.subscribe("mission:M1", () => {});
+  for (const [channel, entry] of Object.entries(f.subs)) (entry.sub as { subscribe: () => void }).subscribe = () => void subscribeCalls.push(channel);
+  f.client.state = "connected";
+  f.subs["driver:D1:offers"]!.handlers.subscribed!();
+  f.subs["mission:M1"]!.handlers.unsubscribed!(); // the server refused mission:M1
+
+  s.reconnect(false); // app resume on a connected socket
+  assert.strictEqual(f.calls.disconnect, 0, "resume never cycles a connected socket");
+  assert.strictEqual(f.calls.connect, 1);
+
+  s.reconnect(true); // the driver's Reconnect button
+  assert.strictEqual(f.calls.disconnect, 1, "forced: one disconnect/connect cycle");
+  assert.strictEqual(f.calls.connect, 2);
+  assert.deepStrictEqual(subscribeCalls, ["mission:M1"], "only the channel that is not subscribed is asked to subscribe again");
+  assert.deepStrictEqual(f.calls.newSubscription, ["driver:D1:offers", "mission:M1"], "no duplicate subscription is created");
+
+  f.client.state = "disconnected"; // the SDK gave up (e.g. credentials refused)
+  s.reconnect(false);
+  assert.strictEqual(f.calls.disconnect, 1, "nothing to disconnect");
+  assert.strictEqual(f.calls.connect, 3, "resume restarts a socket the SDK gave up on");
+
+  f.client.state = "connecting"; // waiting out a backoff
+  s.reconnect(false);
+  assert.strictEqual(f.calls.disconnect, 2);
+  assert.strictEqual(f.calls.connect, 4, "resume skips the pending backoff");
+
+  s.teardown();
+  s.reconnect(true);
+  assert.strictEqual(f.calls.connect, 4, "a torn-down session never reconnects");
+}
+console.log("✓ reconnect\n");
+
+console.log("Test 7: a refused-credentials disconnect is reported as auth, and a torn session is silent...");
+{
+  const f = fakeClient();
+  const events: Array<{ type: string; reason?: string }> = [];
+  const s = createDriverRealtimeSession(() => "t", { createClient: f.create, onTransportEvent: (e) => events.push(e as never) });
+  f.clientHandlers.disconnected!({ code: 1, reason: "unauthorized" });
+  f.clientHandlers.disconnected!({ code: 3500, reason: "invalid token" });
+  f.clientHandlers.disconnected!({ code: 0, reason: "disconnect called" });
+  assert.deepStrictEqual(
+    events.map((e) => e.reason),
+    [AUTH_REQUIRED_REASON, AUTH_REQUIRED_REASON, "disconnect called"],
+    "client unauthorized and Centrifugo invalid token are auth; a local disconnect is not"
+  );
+  s.teardown();
+  const before = events.length;
+  f.clientHandlers.connecting!({ reason: "late" });
+  f.clientHandlers.error!({ type: "transport" });
+  assert.strictEqual(events.length, before, "a torn-down session never writes into the live connection state");
+}
+console.log("✓ auth + torn silence\n");
+
+console.log("Test 8: the token getter may be async (session refreshed first); a 401 stays retryable...");
+{
+  const f = fakeClient();
+  const realFetch = globalThis.fetch;
+  let status = 200;
+  const seen: string[] = [];
+  globalThis.fetch = (async (_u: string, init: { headers: Record<string, string> }) => {
+    seen.push(init.headers.Authorization ?? "");
+    return { ok: status === 200, status, json: async () => ({ token: "c" }) };
+  }) as unknown as typeof fetch;
+  try {
+    const s = createDriverRealtimeSession(async () => "refreshed", { createClient: f.create });
+    const getToken = f.options().getToken as () => Promise<string>;
+    assert.strictEqual(await getToken(), "c");
+    assert.deepStrictEqual(seen, ["Bearer refreshed"]);
+    status = 401; // expired JWT at the gateway
+    await assert.rejects(getToken(), (e: Error) => e.name !== "UnauthorizedError" && /HTTP 401/.test(e.message), "retryable, not a permanent stop");
+    status = 403; // a scope the server refuses
+    await assert.rejects(getToken(), (e: Error) => e.name === "UnauthorizedError");
+    s.teardown();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+console.log("✓ async token\n");
+
+console.log("Test 9: mission events are idempotent: a redelivered seq is dropped, a gap still applies...");
+{
+  const f = fakeClient();
+  const s = createDriverRealtimeSession(() => "t", { createClient: f.create });
+  const cancelled: Array<number | undefined> = [];
+  mountMissionWatch("M1", s, { onCancelled: (info) => cancelled.push(info.seq) });
+  const deliver = (seq?: number) =>
+    f.subs["mission:M1"]!.handlers.publication!({ data: { event: "MISSION_CANCELLED", missionId: "M1", ...(seq ? { seq } : {}), data: {} } });
+  deliver(4);
+  deliver(4); // duplicate delivery after a resubscribe
+  deliver(3); // older
+  deliver(6); // gap: applied (the onSubscribed re-read covers what was missed)
+  deliver(); // a pre-seq publisher: applied
+  assert.deepStrictEqual(cancelled, [4, 6, undefined]);
+  s.teardown();
+}
+console.log("✓ seq dedup\n");
 
 console.log("ALL DRIVER REALTIME TESTS PASSED (100% GREEN)");

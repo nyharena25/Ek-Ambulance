@@ -22,6 +22,7 @@ import { resolveOfferAction } from "../src/services/dispatchNotifications.core";
 import { authRedirectTarget, driverKycGate } from "../src/hooks/otpAuth.core";
 import { useDriverAuthStore } from "../src/state/driverAuth.store";
 import { useDriverProfileStore } from "../src/state/driverProfile.store";
+import { useDriverConsentStore } from "../src/state/driverConsent.store";
 
 assertEnvOrWarn();
 
@@ -35,12 +36,13 @@ export default function RootLayout() {
   // driver reaches the shift at all, or the application / verification screens instead.
   const authStatus = useDriverAuthStore((s) => s.status);
   const kyc = useDriverProfileStore(driverKycGate);
+  const consent = useDriverConsentStore((s) => s.gate);
   const segments = useSegments();
   const path = segments.join("/");
   useEffect(() => {
-    const target = authRedirectTarget(authStatus, path ? path.split("/") : [], kyc);
+    const target = authRedirectTarget(authStatus, path ? path.split("/") : [], kyc, consent);
     if (target) router.replace(target as never);
-  }, [authStatus, path, kyc]);
+  }, [authStatus, path, kyc, consent]);
 
   // Accept/Decline buttons on the dispatch notification run the same lifecycle events as the offer screen, through the
   // same server-authoritative path: an Accept the server refuses (offer taken, expired) does not move the machine.

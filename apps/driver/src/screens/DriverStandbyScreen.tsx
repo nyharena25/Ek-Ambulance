@@ -15,10 +15,10 @@ import { driverStandbyStrings } from "../i18n/driverStandbyStrings";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
 import { driverBookingStrings } from "../i18n/driverBookingStrings";
+import { driverProfileStrings } from "../i18n/driverProfileStrings";
 import { useDriverProfileStore } from "../state/driverProfile.store";
-import { useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
-import { isProfileLocked } from "../state/driverAvailability.core";
+import { refreshDriverConnection } from "../hooks/useServerSync";
 
 import { AppIcon, DriverMap, StandbyBookingSection } from "../components";
 import { driverErrorMessage } from "../lib/driverServer.core";
@@ -34,20 +34,19 @@ export default function DriverStandbyScreen({
   onOpenBooking,
   onOpenProfile,
 }: DriverStandbyScreenProps) {
-  const transportHealth = useDriverConnectionStore((c) => c.health);
+  const connectionStatus = useDriverConnectionStore((c) => c.status);
   const {
     isOnline,
     isTogglingPresence,
     presenceErrorCode,
     language,
-    currentJurisdiction,
     gps,
     isOfflineModalOpen,
     hasRealFix,
     toggleOnlineState,
     confirmGoOffline,
+    clearPresenceError,
     closeOfflineModal,
-    setJurisdiction,
     toggleLanguage,
     recenterGps,
   } = useDriverStandbyStore();
@@ -57,8 +56,6 @@ export default function DriverStandbyScreen({
   const profile = useDriverProfileStore((s) => s.profile);
   // Only the server's registered classification is shown - never the store's pre-profile default.
   const ais125Info = profile?.ais125Type ? strings.ais125TierBadge[profile.ais125Type] : null;
-  // The service area is part of the profile: the chips freeze from the offer to the end of the mission.
-  const profileLocked = isProfileLocked(useDriverLifecycleStore((s) => s.currentState));
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -181,25 +178,56 @@ export default function DriverStandbyScreen({
             <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]}>{strings.offlineBannerStatus}</Text>
           )}
 
-          {/* Online (business state) but the realtime socket is really down (transport state, past the grace period): offers
-              cannot arrive until it reconnects. Shown only on that evidence, never because the channel is quiet. */}
-          {isOnline && transportHealth === "disconnected" && (
-            <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]} accessibilityRole="alert">
-              {language === "hi"
-                ? "डिस्पैच से कनेक्शन नहीं है - दोबारा जुड़ने तक नए अनुरोध नहीं आ सकते। फिर से जुड़ रहा है…"
-                : "Not connected to dispatch - new requests cannot reach you until it reconnects. Reconnecting…"}
-            </Text>
+          {/* Online (business state) but the realtime socket is really down (transport state, past the grace period) or its
+              credentials were refused: offers cannot arrive. Shown only on that evidence, never because the channel is quiet. */}
+          {isOnline && (connectionStatus === "disconnected" || connectionStatus === "authRequired" || connectionStatus === "reconnecting") && (
+            <View style={styles.noticeRow}>
+              <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline, styles.noticeText]} accessibilityRole="alert">
+                {connectionStatus === "reconnecting"
+                  ? language === "hi"
+                    ? "डिस्पैच से फिर से जुड़ रहा है…"
+                    : "Reconnecting to dispatch…"
+                  : connectionStatus === "authRequired"
+                  ? language === "hi"
+                    ? "सत्र की पुष्टि नहीं हो सकी - नए अनुरोध नहीं आ सकते। फिर से जोड़ें, या दोबारा साइन इन करें।"
+                    : "Your session could not be verified - new requests cannot reach you. Reconnect, or sign in again."
+                  : language === "hi"
+                    ? "डिस्पैच से कनेक्शन नहीं है - दोबारा जुड़ने तक नए अनुरोध नहीं आ सकते। फिर से जुड़ रहा है…"
+                    : "Not connected to dispatch - new requests cannot reach you until it reconnects. Reconnecting…"}
+              </Text>
+              <Pressable
+                style={styles.noticeAction}
+                onPress={() => void refreshDriverConnection()}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={language === "hi" ? "फिर से जोड़ें" : "Reconnect"}
+              >
+                <AppIcon icon={{ set: "ion", name: "refresh" }} size={14} color={colors.slate700} />
+                <Text style={styles.noticeActionText}>{language === "hi" ? "फिर से जोड़ें" : "Reconnect"}</Text>
+              </Pressable>
+            </View>
           )}
 
           {/* Go-online refusal, real (not_verified, kyc pending, ...) or local (no GPS fix yet) - never silent. */}
           {presenceErrorCode && (
-            <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]} accessibilityRole="alert">
-              {presenceErrorCode === "no_gps_fix"
-                ? (language === "hi" ? "स्थान की पुष्टि होने की प्रतीक्षा करें, फिर पुनः प्रयास करें।" : "Waiting for a GPS fix - try again in a moment.")
-                : language === "hi"
-                  ? strings.presenceRefused
-                  : driverErrorMessage(presenceErrorCode)}
-            </Text>
+            <View style={styles.noticeRow}>
+              <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline, styles.noticeText]} accessibilityRole="alert">
+                {presenceErrorCode === "no_gps_fix"
+                  ? (language === "hi" ? "स्थान की पुष्टि होने की प्रतीक्षा करें, फिर पुनः प्रयास करें।" : "Waiting for a GPS fix - try again in a moment.")
+                  : language === "hi"
+                    ? strings.presenceRefused
+                    : driverErrorMessage(presenceErrorCode)}
+              </Text>
+              <Pressable
+                style={styles.noticeAction}
+                onPress={clearPresenceError}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={language === "hi" ? "सूचना बंद करें" : "Dismiss notice"}
+              >
+                <AppIcon icon={{ set: "ion", name: "close" }} size={16} color={colors.slate700} />
+              </Pressable>
+            </View>
           )}
 
           {/* PROMINENT ACTION TOGGLE BUTTON */}
@@ -330,80 +358,27 @@ export default function DriverStandbyScreen({
             </View>
           </View>
 
-          {/* Dual Jurisdiction Selector Chips */}
-          <View style={styles.jurisdictionChipsRow}>
-            <Pressable
-              style={[
-                styles.jurChip,
-                currentJurisdiction === "UP_NOIDA" && styles.jurChipActive,
-                profileLocked && styles.jurChipLocked,
-              ]}
-              disabled={profileLocked}
-              onPress={() => setJurisdiction("UP_NOIDA")}
-            >
-              <View style={styles.jurChipTop}>
-                <Text
-                  style={[
-                    styles.jurStateBadge,
-                    currentJurisdiction === "UP_NOIDA" &&
-                      styles.jurStateBadgeActive,
-                  ]}
-                >
-                  UP
-                </Text>
-                <Text
-                  style={[
-                    styles.jurChipName,
-                    currentJurisdiction === "UP_NOIDA" && styles.jurChipNameActive,
-                  ]}
-                >
-                  {strings.jurisdictionNoidaName}
-                </Text>
-              </View>
-              <Text style={styles.jurChipSub}>
-                {strings.jurisdictionNoidaDistrict}
+          {/* The server's service zone (get_driver_profile -> drivers.service_zone), read-only here: it is changed on the
+              Profile screen through update_driver_profile. Never a client-side default. */}
+          <Pressable
+            style={styles.jurChip}
+            onPress={onOpenProfile}
+            accessibilityRole="button"
+            accessibilityLabel={`${strings.jurisdictionSectionTitle}: ${
+              profile?.serviceZone ? driverProfileStrings[language].zone[profile.serviceZone] : strings.serviceZoneNotSet
+            }`}
+          >
+            <View style={styles.jurChipTop}>
+              {profile?.serviceZone && <Text style={[styles.jurStateBadge, styles.jurStateBadgeActive]}>{profile.serviceZone}</Text>}
+              <Text style={[styles.jurChipName, profile?.serviceZone && styles.jurChipNameActive]}>
+                {profile === null
+                  ? strings.serviceZoneLoading
+                  : profile.serviceZone
+                    ? driverProfileStrings[language].zone[profile.serviceZone]
+                    : strings.serviceZoneNotSet}
               </Text>
-              <Text style={styles.jurChipStatutory}>
-                {strings.jurisdictionNoidaStatutory}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.jurChip,
-                currentJurisdiction === "DL_SOUTH" && styles.jurChipActive,
-                profileLocked && styles.jurChipLocked,
-              ]}
-              disabled={profileLocked}
-              onPress={() => setJurisdiction("DL_SOUTH")}
-            >
-              <View style={styles.jurChipTop}>
-                <Text
-                  style={[
-                    styles.jurStateBadge,
-                    currentJurisdiction === "DL_SOUTH" &&
-                      styles.jurStateBadgeActive,
-                  ]}
-                >
-                  DL
-                </Text>
-                <Text
-                  style={[
-                    styles.jurChipName,
-                    currentJurisdiction === "DL_SOUTH" && styles.jurChipNameActive,
-                  ]}
-                >
-                  {strings.jurisdictionSouthDelhiName}
-                </Text>
-              </View>
-              <Text style={styles.jurChipSub}>
-                {strings.jurisdictionSouthDelhiDistrict}
-              </Text>
-              <Text style={styles.jurChipStatutory}>
-                {strings.jurisdictionSouthDelhiStatutory}
-              </Text>
-            </Pressable>
-          </View>
+            </View>
+          </Pressable>
         </View>
 
         {/* REGISTERED CLASSIFICATION: the server's ais125_type and KYC status only. No equipment "readiness" - nothing on
@@ -686,6 +661,27 @@ const styles = StyleSheet.create({
   shiftSubNoticeOffline: {
     color: colors.slate600,
   },
+  noticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  noticeText: {
+    flex: 1,
+  },
+  noticeAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: "center",
+  },
+  noticeActionText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: "700",
+    color: colors.slate700,
+  },
 
   // Big Toggle Button
   mainToggleButton: {
@@ -885,9 +881,6 @@ const styles = StyleSheet.create({
     color: colors.slate600,
     lineHeight: typography.lineHeights.xs,
   },
-  jurisdictionChipsRow: {
-    gap: 8,
-  },
   jurChip: {
     backgroundColor: colors.slate50,
     borderWidth: 1.5,
@@ -895,13 +888,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.md,
     gap: 4,
-  },
-  jurChipActive: {
-    borderColor: colors.info,
-    backgroundColor: colors.infoLight,
-  },
-  jurChipLocked: {
-    opacity: 0.5,
   },
   jurChipTop: {
     flexDirection: "row",
@@ -930,16 +916,6 @@ const styles = StyleSheet.create({
   },
   jurChipNameActive: {
     color: colors.info,
-  },
-  jurChipSub: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.slate700,
-  },
-  jurChipStatutory: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.medium,
-    color: colors.slate600,
-    marginTop: 2,
   },
 
   // AIS-125 Tier Badge Card

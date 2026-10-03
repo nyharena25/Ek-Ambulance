@@ -13,24 +13,19 @@ assert.strictEqual(useDriverStandbyStore.getState().isOnline, true, "Still onlin
 assert.strictEqual(useDriverStandbyStore.getState().isOfflineModalOpen, true, "Opens the confirm-offline modal");
 console.log("✓ Toggling off while online prompts for confirmation rather than de-indexing immediately.\n");
 
-console.log("Test 2: Confirming go-offline de-indexes from the Redis geospatial set...");
+console.log("Test 2: Confirming go-offline takes the driver offline...");
 useDriverStandbyStore.getState().confirmGoOffline();
 assert.strictEqual(useDriverStandbyStore.getState().isOnline, false, "Driver is now offline");
 assert.strictEqual(useDriverStandbyStore.getState().isOfflineModalOpen, false, "Modal closes on confirm");
-assert.strictEqual(
-  useDriverStandbyStore.getState().redisPresence.isIndexed,
-  false,
-  "Redis GEOADD presence is torn down (isIndexed: false) once offline"
-);
-console.log("✓ Confirming offline removes Redis geo-index presence.\n");
+console.log("✓ Confirming offline.\n");
 
-console.log("Test 3: Going online from offline re-indexes into Redis and marks a shift start...");
-useDriverStandbyStore.setState({ shiftStartedAt: null });
+console.log("Test 3: Going online from offline, and no fabricated shift clock or presence telemetry...");
 await useDriverStandbyStore.getState().toggleOnlineState();
 assert.strictEqual(useDriverStandbyStore.getState().isOnline, true, "Driver is now online");
-assert.strictEqual(useDriverStandbyStore.getState().redisPresence.isIndexed, true, "Redis GEOADD presence restored");
-assert.strictEqual(useDriverStandbyStore.getState().shiftStartedAt, "Just now", "A fresh shift start time is recorded");
-console.log("✓ Going online re-establishes Redis presence and starts the shift clock.\n");
+for (const fabricated of ["shiftStartedAt", "redisPresence", "currentJurisdiction"]) {
+  assert.ok(!(fabricated in useDriverStandbyStore.getState()), `${fabricated} no longer exists (it was invented client-side)`);
+}
+console.log("✓ Going online.\n");
 
 console.log("Test 4: closeOfflineModal cancels without changing online state...");
 useDriverStandbyStore.setState({ isOnline: true, isOfflineModalOpen: true });
@@ -39,23 +34,10 @@ assert.strictEqual(useDriverStandbyStore.getState().isOnline, true, "Cancelling 
 assert.strictEqual(useDriverStandbyStore.getState().isOfflineModalOpen, false, "Modal is dismissed");
 console.log("✓ Cancelling the offline confirmation leaves shift state untouched.\n");
 
-console.log("Test 5: Switching jurisdiction updates GPS coordinates to the matching corridor...");
-useDriverStandbyStore.getState().setJurisdiction("DL_SOUTH");
-assert.strictEqual(useDriverStandbyStore.getState().currentJurisdiction, "DL_SOUTH");
-assert.strictEqual(useDriverStandbyStore.getState().gps.latitude, 28.5672, "South Delhi (AIIMS corridor) coordinates applied");
-useDriverStandbyStore.getState().setJurisdiction("UP_NOIDA");
-assert.strictEqual(useDriverStandbyStore.getState().gps.latitude, 28.5355, "Noida (Sector 62/Fortis corridor) coordinates applied");
-console.log("✓ Jurisdiction switch resolves to the correct GPS corridor.\n");
-
-console.log("Test 6: Registering a new AIS-125 type re-keys the Redis geo index namespace...");
+console.log("Test 6: the registered AIS-125 type follows the profile...");
 useDriverStandbyStore.getState().setAis125Type("TYPE_A_MFR");
 assert.strictEqual(useDriverStandbyStore.getState().registeredAis125Type, "TYPE_A_MFR");
-assert.strictEqual(
-  useDriverStandbyStore.getState().redisPresence.geoKey,
-  "ambulances:geo:type_a_mfr",
-  "Redis geo key is namespaced by the registered AIS-125 tier"
-);
-console.log("✓ AIS-125 tier changes re-key the Redis presence namespace.\n");
+console.log("✓ AIS-125 tier.\n");
 
 console.log("Test 7: before a real GPS fix nothing is sent as the driver's position, dev builds included (G4.7-C)...");
 {
@@ -70,8 +52,8 @@ console.log("Test 7: before a real GPS fix nothing is sent as the driver's posit
     setPresence: async (...args: unknown[]) => { presenceCalls.push(args); return { ok: true, data: true }; },
   } as unknown as ServerAdapter);
   useDriverStandbyStore.setState({ ...initial, isOnline: false });
-  useDriverStandbyStore.getState().setJurisdiction("DL_SOUTH");
-  assert.strictEqual(heartbeatLocation(useDriverStandbyStore.getState()), null, "a jurisdiction chip never makes a preset sendable");
+  useDriverStandbyStore.getState().recenterGps();
+  assert.strictEqual(heartbeatLocation(useDriverStandbyStore.getState()), null, "recentering never makes a preset sendable");
   await useDriverStandbyStore.getState().toggleOnlineState();
   assert.strictEqual(useDriverStandbyStore.getState().presenceErrorCode, "no_gps_fix", "going online with a session and no fix is refused");
   assert.strictEqual(useDriverStandbyStore.getState().isOnline, false);
@@ -85,6 +67,15 @@ console.log("Test 7: before a real GPS fix nothing is sent as the driver's posit
   setServerAdapter(null);
 }
 console.log("✓ The heartbeat and go-online send a real fix or nothing.\n");
+
+console.log("Test: closing the go-online refusal notice is UI-only...");
+{
+  useDriverStandbyStore.setState({ isOnline: false, presenceErrorCode: "not_verified" });
+  useDriverStandbyStore.getState().clearPresenceError();
+  assert.strictEqual(useDriverStandbyStore.getState().presenceErrorCode, null, "the notice is gone");
+  assert.strictEqual(useDriverStandbyStore.getState().isOnline, false, "presence is unchanged by dismissing the notice");
+}
+console.log("✓ notice dismissal\n");
 
 console.log("=================================================");
 console.log("ALL DRIVER SHIFT STANDBY STORE TESTS PASSED (100% GREEN)");

@@ -17,6 +17,7 @@ import { driverOfflineStrings } from "../i18n/driverOfflineStrings";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { telemetryQueueService } from "../services/telemetryQueue.service";
 import { syncQueuedPings } from "../services/telemetryUpload";
+import { refreshDriverConnection } from "../hooks/useServerSync";
 
 import { AppIcon } from "./AppIcon";
 export interface OfflineConnectivityOverlayProps {
@@ -50,6 +51,7 @@ export default function OfflineConnectivityOverlay({
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSyncingManually, setIsSyncingManually] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [smsFeedback, setSmsFeedback] = useState<string | null>(null);
 
   // If connected and no restored banner to show, remain invisible
@@ -119,6 +121,21 @@ export default function OfflineConnectivityOverlay({
     }
   };
 
+  // Refreshes the session and restarts the realtime link on the same subscriptions. The banner clears on its own once the
+  // connection state sees the socket back - never because the button was pressed.
+  const handleReconnect = async () => {
+    setIsReconnecting(true);
+    try {
+      await refreshDriverConnection();
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+
+  // The queue's own record of its last acknowledged upload; "never" when there was none (not a guessed "1 min ago").
+  const lastSuccessfulSyncAt = telemetryQueueService.getState().lastSuccessfulSyncAt;
+  const bannerTitle = status === "authRequired" ? strings.bannerTitleAuthRequired : strings.bannerTitle;
+
   return (
     <View style={styles.pointerEventsContainer} pointerEvents="box-none">
       <SafeAreaView pointerEvents="box-none">
@@ -127,7 +144,8 @@ export default function OfflineConnectivityOverlay({
           <Pressable
             style={[styles.bannerContainer, styles.restoredBannerContainer]}
             onPress={dismissRestoredBanner}
-            accessibilityRole="alert"
+            accessibilityRole="button"
+            accessibilityLabel={`${strings.restoredBannerNotice(lastSyncedCount)}. ${strings.a11yDismiss}`}
             accessibilityLiveRegion="assertive"
           >
             <View style={styles.bannerRow}>
@@ -148,7 +166,7 @@ export default function OfflineConnectivityOverlay({
             style={[styles.bannerContainer, styles.fallbackBannerContainer]}
             onPress={() => setIsDrawerOpen(true)}
             accessibilityRole="alert"
-            accessibilityLabel={strings.bannerTitle}
+            accessibilityLabel={bannerTitle}
             accessibilityHint={strings.a11yBannerHint}
           >
             <View style={styles.bannerRow}>
@@ -160,7 +178,7 @@ export default function OfflineConnectivityOverlay({
               <View style={styles.bannerTextCol}>
                 {/* Verbatim required string: 'Low Connectivity: Operating in SMS/Store-and-Forward Fallback' */}
                 <Text style={styles.bannerTitleText} numberOfLines={2}>
-                  {strings.bannerTitle}
+                  {bannerTitle}
                 </Text>
               </View>
 
@@ -219,9 +237,11 @@ export default function OfflineConnectivityOverlay({
                 <View style={styles.statusPill}>
                   <View style={styles.statusPillDot} />
                   <Text style={styles.statusPillText}>
-                    {status === "connecting"
-                      ? strings.statusReconnecting
-                      : strings.statusDisconnected}
+                    {status === "authRequired"
+                      ? strings.statusAuthRequired
+                      : status === "disconnected"
+                        ? strings.statusDisconnected
+                        : strings.statusReconnecting}
                   </Text>
                 </View>
                 <Text style={styles.missionIdTag}>{missionId ? `Mission: ${missionId}` : "No active mission"}</Text>
@@ -252,8 +272,8 @@ export default function OfflineConnectivityOverlay({
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>{strings.lastSyncLabel}:</Text>
                   <Text style={styles.metaValue}>
-                    {queuedPingsCount === 0
-                      ? strings.lastSyncMinutesAgo(1)
+                    {lastSuccessfulSyncAt
+                      ? strings.lastSyncMinutesAgo(Math.floor((Date.now() - Date.parse(lastSuccessfulSyncAt)) / 60_000))
                       : strings.lastSyncNever}
                   </Text>
                 </View>
@@ -275,8 +295,16 @@ export default function OfflineConnectivityOverlay({
                 </Text>
 
                 {smsFeedback && (
-                  <View style={styles.smsFeedbackBox}>
-                    <Text style={styles.smsFeedbackText}><AppIcon icon={{ set: "ion", name: "checkmark" }} />{" "}{smsFeedback}</Text>
+                  <View style={[styles.smsFeedbackBox, styles.smsFeedbackRow]}>
+                    <Text style={[styles.smsFeedbackText, styles.smsFeedbackTextFlex]}><AppIcon icon={{ set: "ion", name: "checkmark" }} />{" "}{smsFeedback}</Text>
+                    <Pressable
+                      hitSlop={12}
+                      onPress={() => setSmsFeedback(null)}
+                      accessibilityRole="button"
+                      accessibilityLabel={strings.a11yDismiss}
+                    >
+                      <AppIcon icon={{ set: "ion", name: "close" }} size={14} color={colors.slate700} />
+                    </Pressable>
                   </View>
                 )}
 
@@ -298,7 +326,33 @@ export default function OfflineConnectivityOverlay({
                 </Pressable>
               </View>
 
-              {/* Manual Reconnection / Force Sync Action */}
+              {/* Reconnect: session refresh + realtime restart (the force sync below only uploads the queue) */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.forceSyncButton,
+                  pressed && styles.forceSyncButtonPressed,
+                  isReconnecting && styles.forceSyncButtonDisabled,
+                ]}
+                onPress={handleReconnect}
+                disabled={isReconnecting}
+                accessibilityRole="button"
+                accessibilityLabel={strings.btnReconnect}
+              >
+                {isReconnecting ? (
+                  <View style={styles.syncLoadingRow}>
+                    <ActivityIndicator size="small" color={colors.white} />
+                    <Text style={styles.forceSyncButtonText}>
+                      {"  "}{strings.btnReconnectActive}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.forceSyncButtonText}>
+                    <AppIcon icon={{ set: "ion", name: "wifi" }} />{" "}{strings.btnReconnect}
+                  </Text>
+                )}
+              </Pressable>
+
+              {/* Manual Force Sync Action */}
               <Pressable
                 style={({ pressed }) => [
                   styles.forceSyncButton,
@@ -682,6 +736,14 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     padding: spacing.xs,
     marginBottom: spacing.sm,
+  },
+  smsFeedbackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  smsFeedbackTextFlex: {
+    flex: 1,
   },
   smsFeedbackText: {
     fontSize: typography.fontSizes.xs,

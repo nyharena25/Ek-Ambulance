@@ -4,10 +4,9 @@ import { useDriverStandbyStore } from "./driverStandby.store.ts";
 import { useDriverOnboardingStore } from "./driverOnboarding.store.ts";
 import { isProfileLocked } from "./driverAvailability.core.ts";
 import {
-  JURISDICTION_TO_ZONE,
-  ZONE_TO_JURISDICTION,
   type DriverProfile,
   type DriverProfilePatch,
+  type ServiceZone,
 } from "../lib/driverProfile.core.ts";
 
 /**
@@ -31,14 +30,13 @@ export interface DriverProfileState {
   /** `hospitalName` is only used by the local (development) path: the server resolves it from the hospitals table. */
   save: (patch: DriverProfilePatch, hospitalName?: string | null) => Promise<SaveResult>;
   /** Development mock login: the phone, tier and service area the chosen dev driver has. */
-  seedDev: (dev: { phone: string; jurisdiction: "UP_NOIDA" | "DL_SOUTH" }) => void;
+  seedDev: (dev: { phone: string; serviceZone: ServiceZone }) => void;
 }
 
 /** What the rest of the app reads from the profile, kept in step so the standby header and the offer screen agree with it. */
 function syncStandby(profile: DriverProfile): void {
   const standby = useDriverStandbyStore.getState();
-  // Not setJurisdiction: that also moves the (simulated) GPS to a city preset. Only the label follows the profile.
-  if (profile.serviceZone) useDriverStandbyStore.setState({ currentJurisdiction: ZONE_TO_JURISDICTION[profile.serviceZone] });
+  // The service zone is read from the profile itself (standby card, profile screen): no second copy is kept.
   if (profile.ais125Type && profile.ais125Type !== standby.registeredAis125Type) standby.setAis125Type(profile.ais125Type);
 }
 
@@ -69,7 +67,7 @@ export const useDriverProfileStore = create<DriverProfileState>((set, get) => ({
     const server = getServerAdapter();
     if (!server) {
       // Test runner only: the seeded profile the store tests build on. A phone with no session shows no profile.
-      if (!get().profile && IS_TEST_RUNNER) get().seedDev({ phone: "+919876543210", jurisdiction: useDriverStandbyStore.getState().currentJurisdiction });
+      if (!get().profile && IS_TEST_RUNNER) get().seedDev({ phone: "+919876543210", serviceZone: "UP" });
       set({ status: "ready", errorCode: null });
       return;
     }
@@ -99,14 +97,14 @@ export const useDriverProfileStore = create<DriverProfileState>((set, get) => ({
     return { ok: true };
   },
 
-  seedDev: ({ phone, jurisdiction }) => {
+  seedDev: ({ phone, serviceZone }) => {
     const standby = useDriverStandbyStore.getState();
     const form = useDriverOnboardingStore.getState().formData;
     set({
       profile: {
         fullName: "Rajesh Sharma",
         phone,
-        serviceZone: JURISDICTION_TO_ZONE[jurisdiction],
+        serviceZone,
         hospitalId: null,
         hospitalName: null,
         ais125Type: standby.registeredAis125Type,

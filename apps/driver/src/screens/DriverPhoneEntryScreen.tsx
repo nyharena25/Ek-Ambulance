@@ -17,6 +17,7 @@ import { driverAuthStrings } from "../i18n/driverAuthStrings";
 import { useOtpAuth } from "../hooks/useOtpAuth";
 import { normalizeIndianMobileInput, toE164IndianPhone } from "../hooks/otpAuth.core";
 import { AppIcon } from "../components";
+import { DpdpNoticeCard } from "../components/DpdpNoticeCard";
 
 export interface DriverPhoneEntryScreenProps {
   onOtpSent: (phone: string) => void;
@@ -34,9 +35,6 @@ export default function DriverPhoneEntryScreen({
 
   const [rawPhone, setRawPhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [consentLocation, setConsentLocation] = useState(true);
-  const [consentCredential, setConsentCredential] = useState(true);
-  const [consentError, setConsentError] = useState<string | null>(null);
 
   const { isLoading, error: apiError, requestOtp, clearError } = useOtpAuth();
 
@@ -56,16 +54,9 @@ export default function DriverPhoneEntryScreen({
   const handleRequestOtp = async () => {
     clearError();
     setPhoneError(null);
-    setConsentError(null);
 
     if (!validatePhone(rawPhone)) {
       setPhoneError(strings.invalidPhoneError);
-      return;
-    }
-    if (!consentLocation || !consentCredential) {
-      setConsentError(
-        !consentLocation ? strings.consentLocationError : strings.consentCredentialError
-      );
       return;
     }
 
@@ -75,7 +66,6 @@ export default function DriverPhoneEntryScreen({
   };
 
   const isPhoneValid = validatePhone(rawPhone);
-  const isConsentGranted = consentLocation && consentCredential;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -141,12 +131,11 @@ export default function DriverPhoneEntryScreen({
             <Text style={styles.screenSubtitle}>{strings.phoneStepSubtitle}</Text>
           </View>
 
-          {(apiError || phoneError || consentError) && (
+          {(apiError || phoneError) && (
             <View style={styles.errorAlertContainer} accessible accessibilityRole="alert">
               <AppIcon icon={{ set: "ion", name: "warning" }} size={18} color={colors.slate700} style={styles.errorAlertIcon} />
               <Text style={styles.errorAlertText}>
                 {phoneError ||
-                  consentError ||
                   (apiError?.isRateLimited
                     ? strings.rateLimitError
                     : apiError?.error === "network_error"
@@ -177,75 +166,18 @@ export default function DriverPhoneEntryScreen({
             </View>
           </View>
 
-          <View style={styles.dpdpCard}>
-            <View style={styles.dpdpCardHeader}>
-              <View style={styles.dpdpBadge}>
-                <Text style={styles.dpdpBadgeText}>{strings.dpdpActTag}</Text>
-              </View>
-              <Text style={styles.dpdpCardTitle}>{strings.dpdpNoticeTitle}</Text>
-            </View>
-            <Text style={styles.dpdpPreambleText}>{strings.dpdpPreamble}</Text>
-
-            <View style={styles.purposesContainer}>
-              {strings.dpdpPurposes.map((p, idx) => (
-                <View key={idx} style={styles.purposeItem}>
-                  <Text style={styles.purposeBullet}>•</Text>
-                  <View style={styles.purposeTextGroup}>
-                    <Text style={styles.purposeTitle}>{p.title}: </Text>
-                    <Text style={styles.purposeDescription}>{p.description}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.dpdpDivider} />
-
-            <View style={styles.checkboxGroup}>
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: consentLocation }}
-                accessibilityLabel={strings.consentLocationLabel}
-                style={styles.checkboxRow}
-                onPress={() => {
-                  setConsentError(null);
-                  setConsentLocation(!consentLocation);
-                }}
-              >
-                <View style={[styles.checkboxBox, consentLocation && styles.checkboxBoxChecked]}>
-                  {consentLocation && <AppIcon icon={{ set: "ion", name: "checkmark" }} size={14} style={styles.checkboxCheckmark} />}
-                </View>
-                <Text style={styles.checkboxLabel}>{strings.consentLocationLabel}</Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: consentCredential }}
-                accessibilityLabel={strings.consentCredentialLabel}
-                style={styles.checkboxRow}
-                onPress={() => {
-                  setConsentError(null);
-                  setConsentCredential(!consentCredential);
-                }}
-              >
-                <View style={[styles.checkboxBox, consentCredential && styles.checkboxBoxChecked]}>
-                  {consentCredential && <AppIcon icon={{ set: "ion", name: "checkmark" }} size={14} style={styles.checkboxCheckmark} />}
-                </View>
-                <Text style={styles.checkboxLabel}>{strings.consentCredentialLabel}</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.dpdpRightsFootnote}>{strings.dpdpRightsNotice}</Text>
-          </View>
+          <DpdpNoticeCard strings={strings} />
+          <Text style={styles.consentAfterSignInNote}>{strings.consentAfterSignInNote}</Text>
         </ScrollView>
 
         <View style={styles.actionDock}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={strings.requestOtpButton}
-            disabled={!isPhoneValid || !isConsentGranted || isLoading}
+            disabled={!isPhoneValid || isLoading}
             style={({ pressed }) => [
               styles.primarySubmitButton,
-              (!isPhoneValid || !isConsentGranted || isLoading) && styles.primarySubmitButtonDisabled,
+              (!isPhoneValid || isLoading) && styles.primarySubmitButtonDisabled,
               pressed && styles.primarySubmitButtonPressed,
             ]}
             onPress={handleRequestOtp}
@@ -381,44 +313,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   inputBorderError: { borderColor: colors.emergencyDark },
-  dpdpCard: {
-    backgroundColor: colors.slate50,
-    borderRadius: radii.xl,
-    padding: spacing.base,
-    borderWidth: 1.5,
-    borderColor: colors.slate300,
-    ...shadows.sm,
-  },
-  dpdpCardHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },
-  dpdpBadge: { backgroundColor: colors.slate200, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radii.sm, marginRight: spacing.sm },
-  dpdpBadgeText: { fontSize: 10, fontWeight: typography.fontWeights.extrabold, color: colors.slate800, textTransform: "uppercase" },
-  dpdpCardTitle: { flex: 1, fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.bold, color: colors.slate900 },
-  dpdpPreambleText: { fontSize: typography.fontSizes.xs, lineHeight: 18, color: colors.slate700, marginBottom: spacing.sm },
-  purposesContainer: { gap: 6, marginBottom: spacing.md },
-  purposeItem: { flexDirection: "row", alignItems: "flex-start" },
-  purposeBullet: { fontSize: 14, color: colors.emergency, marginRight: 6, lineHeight: 18 },
-  purposeTextGroup: { flex: 1, flexDirection: "row", flexWrap: "wrap" },
-  purposeTitle: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.bold, color: colors.slate900, lineHeight: 18 },
-  purposeDescription: { fontSize: typography.fontSizes.xs, color: colors.slate700, lineHeight: 18 },
-  dpdpDivider: { height: 1, backgroundColor: colors.slate300, marginVertical: spacing.md },
-  checkboxGroup: { gap: spacing.md, marginBottom: spacing.md },
-  checkboxRow: { flexDirection: "row", alignItems: "flex-start", minHeight: 44 },
-  checkboxBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.slate700,
-    backgroundColor: colors.white,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.md,
-    marginTop: 2,
-  },
-  checkboxBoxChecked: { backgroundColor: colors.emergency, borderColor: colors.emergencyDark },
-  checkboxCheckmark: { color: colors.white, fontSize: 14, fontWeight: "800" },
-  checkboxLabel: { flex: 1, fontSize: typography.fontSizes.xs, lineHeight: 18, color: colors.slate900, fontWeight: typography.fontWeights.medium },
-  dpdpRightsFootnote: { fontSize: 11, lineHeight: 16, color: colors.slate600, fontStyle: "italic" },
+  consentAfterSignInNote: { fontSize: 11, lineHeight: 16, color: colors.slate600, marginTop: spacing.sm },
   actionDock: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.base,

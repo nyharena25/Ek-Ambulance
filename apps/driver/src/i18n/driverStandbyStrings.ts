@@ -20,12 +20,8 @@ export interface DriverStandbyTranslation {
   // Current Registered Jurisdiction
   jurisdictionSectionTitle: string;
   jurisdictionChangeHint: string;
-  jurisdictionNoidaName: string;
-  jurisdictionNoidaDistrict: string;
-  jurisdictionNoidaStatutory: string;
-  jurisdictionSouthDelhiName: string;
-  jurisdictionSouthDelhiDistrict: string;
-  jurisdictionSouthDelhiStatutory: string;
+  serviceZoneLoading: string;
+  serviceZoneNotSet: string;
 
   // Registered AIS-125 Tier Badge
   ais125TierTitle: string;
@@ -68,14 +64,10 @@ export const driverStandbyStrings: Record<SupportedLanguage, DriverStandbyTransl
     btnRecenterGps: "Recenter GPS",
 
     // Jurisdiction
-    jurisdictionSectionTitle: "Registered Dispatch Jurisdiction",
-    jurisdictionChangeHint: "The area you take emergencies in. Tap to change.",
-    jurisdictionNoidaName: "Gautam Buddha Nagar, UP",
-    jurisdictionNoidaDistrict: "Noida Sector 62 & Greater Noida Zone",
-    jurisdictionNoidaStatutory: "UP Motor Vehicles Rules 1998 & AIS-125 Schedule",
-    jurisdictionSouthDelhiName: "South Delhi, DL",
-    jurisdictionSouthDelhiDistrict: "AIIMS, Saket & Hauz Khas Zone",
-    jurisdictionSouthDelhiStatutory: "Delhi Transport Dept. Ambulance Statutory Tariff 2024",
+    jurisdictionSectionTitle: "Registered service zone",
+    jurisdictionChangeHint: "From your profile. Tap to change it in Profile.",
+    serviceZoneLoading: "Loading your profile…",
+    serviceZoneNotSet: "Not set - choose your service zone in Profile",
 
     // AIS-125 Tier Badge
     ais125TierTitle: "Registered ambulance classification",
@@ -132,14 +124,10 @@ export const driverStandbyStrings: Record<SupportedLanguage, DriverStandbyTransl
     btnRecenterGps: "GPS रीसेंटर करें",
 
     // Jurisdiction
-    jurisdictionSectionTitle: "पंजीकृत डिस्पैच अधिकार क्षेत्र",
-    jurisdictionChangeHint: "वह क्षेत्र जहाँ आप आपात कॉल लेते हैं। बदलने के लिए टैप करें।",
-    jurisdictionNoidaName: "गौतम बुद्ध नगर, उत्तर प्रदेश",
-    jurisdictionNoidaDistrict: "नोएडा सेक्टर 62 एवं ग्रेटर नोएडा क्षेत्र",
-    jurisdictionNoidaStatutory: "यूपी मोटर वाहन नियमावली 1998 एवं AIS-125 अनुसूची",
-    jurisdictionSouthDelhiName: "दक्षिण दिल्ली, दिल्ली (DL)",
-    jurisdictionSouthDelhiDistrict: "एम्स, साकेत एवं हौज खास क्षेत्र",
-    jurisdictionSouthDelhiStatutory: "दिल्ली परिवहन विभाग एंबुलेंस वैधानिक दर आदेश 2024",
+    jurisdictionSectionTitle: "पंजीकृत सेवा क्षेत्र",
+    jurisdictionChangeHint: "आपकी प्रोफ़ाइल से। बदलने के लिए टैप करें।",
+    serviceZoneLoading: "आपकी प्रोफ़ाइल लोड हो रही है…",
+    serviceZoneNotSet: "सेट नहीं - प्रोफ़ाइल में अपना सेवा क्षेत्र चुनें",
 
     // AIS-125 Tier Badge
     ais125TierTitle: "पंजीकृत एंबुलेंस वर्गीकरण",

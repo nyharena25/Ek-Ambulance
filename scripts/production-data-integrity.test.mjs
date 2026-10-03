@@ -24,6 +24,22 @@ const BANNED = [
   [/(\|\||\?\?) ?"chest_pain"|initialComplaint = "chest_pain"/, "chest_pain fallback"],
   [/DEFAULT_DISPATCH_DISTANCE_KM/, "fare/distance from a default distance"],
   [/^\s*etaMinutes: \d+,|distanceKmApprox/, "fixed ETA / distance"],
+  // Driver presentation-layer audit (static cards, canned copy and seeded values shown as if they were real).
+  [/A\. K\. Singhal|सिंघल/, "fake person"],
+  [/2237515/, "unverified phone number shown as a contact"],
+  [/07:30 AM|shiftStartedAt/, "fabricated shift clock"],
+  [/lastPingMs|ambulances:geo:/, "fabricated presence telemetry"],
+  [/Noida Sector 62|AIIMS, Saket|Hauz Khas Zone|Statutory Tariff 2024|currentJurisdiction/, "static jurisdiction card / client-side jurisdiction"],
+  [/26 bpm|Labored/, "fake vitals"],
+  [/Advant Navis|Metro Pillar|Noida-Gr\. Noida Expressway/, "canned turn-by-turn route / address"],
+  [/CODE 1 RED|कोड 1 रेड/, "fixed urgency code shown for every mission"],
+  [/delayBroadcastSuccessNotice|btnBroadcastDelay/, "delay 'broadcast' with no backend event"],
+  [/useState<EmergencyType>\("trauma"\)/, "triage default"],
+  [/\?\? 80\)|\?\? 95\)/, "vitals seeded with a typical value"],
+  [/\?\? "pending_verification"/, "assumed KYC status"],
+  [/: "0\.0000"/, "0,0 sent as a location"],
+  [/lastSyncMinutesAgo\(1\)/, "fabricated last-sync time"],
+  [/DEMO_(PICKUP|HOSPITAL) : driverPos/, "driver's own position shown as the destination"],
 ];
 
 // IS_TEST_RUNNER-only fixtures (never reached in a build on a phone): file -> patterns tolerated there.

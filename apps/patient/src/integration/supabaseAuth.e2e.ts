@@ -232,7 +232,7 @@ try {
   await driverApp.auth.signOut();
   const gone = (await driverApp.auth.getSession()).data.session;
   assert.strictEqual(verifiedDriverSession(gone), null);
-  assert.strictEqual(authRedirectTarget("signedOut", ["(shift)", "standby"], "unknown"), "/(auth)/phone-entry", "shift screens send the signed-out driver to phone entry");
+  assert.strictEqual(authRedirectTarget("signedOut", ["(shift)", "standby"], "unknown", "unknown"), "/(auth)/phone-entry", "shift screens send the signed-out driver to phone entry");
   const drvAfter = await driverApp.rpc("upsert_driver_application", { p_fields: {} });
   assert.ok(drvAfter.error, "driver RPCs refuse a signed-out client");
   console.log("✓ driver signed out\n");

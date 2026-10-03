@@ -44,7 +44,8 @@ export default function DriverVerificationScreen() {
     void check();
   }, []);
 
-  const kycStatus = profile?.kycStatus ?? "pending_verification";
+  // The server's status only: while it is being read (or could not be) that is what is shown, never an assumed "pending".
+  const kycStatus = profile?.kycStatus ?? null;
   const steps: { label: string; done: boolean; active: boolean }[] = [
     { label: t.stepSubmitted, done: true, active: false },
     { label: t.stepReview, done: false, active: true },
@@ -65,7 +66,9 @@ export default function DriverVerificationScreen() {
         <View style={styles.card}>
           <Text style={styles.label}>{t.statusLabel}</Text>
           <View style={styles.statusPill}>
-            <Text style={styles.statusText}>{t.status[kycStatus] ?? kycStatus}</Text>
+            <Text style={styles.statusText}>
+              {kycStatus ? (t.status[kycStatus] ?? kycStatus) : checkFailed ? t.checkFailed : t.loading}
+            </Text>
           </View>
           {profile?.phone ? (
             <Text style={styles.meta}>
