@@ -43,11 +43,8 @@ export interface DriverNavigationTranslation {
   serverConfirmingNotice: string;
 
   // Masked Virtual Calling (DPDP Act 2023)
-  callerAttendantName: string;
   callerRole: string;
-  maskedVirtualNumber: string;
   dpdpPrivacyNotice: string;
-  btnCallPatientMasked: string;
   btnCallDispatchDesk: string;
   callingConnectingModal: (number: string) => string;
 
@@ -116,11 +113,8 @@ export const driverNavigationStrings: Record<SupportedLanguage, DriverNavigation
     serverConfirmingNotice: "Broadcasting timestamp & GPS arrival to central dispatch...",
 
     // Masked Calling
-    callerAttendantName: "Amit Verma",
     callerRole: "Caller / Family Attendant",
-    maskedVirtualNumber: "+91 11 4084 3910 Ext: 8821",
     dpdpPrivacyNotice: "DPDP Act 2023 Compliant • Both caller and pilot numbers are masked via telecom gateway",
-    btnCallPatientMasked: "Call Attendant (Masked)",
     btnCallDispatchDesk: "Call Central Dispatch Desk",
     callingConnectingModal: (number) => `Connecting masked virtual telecom bridge to ${number}...`,
 
@@ -177,7 +171,7 @@ export const driverNavigationStrings: Record<SupportedLanguage, DriverNavigation
     btnBroadcastDelay: (mins) => `Broadcast +${mins} Mins Delay to Dispatch`,
     btnCancelDelay: "Cancel / No Delay",
     delayBroadcastSuccessNotice: (mins) =>
-      `Incident delay (+${mins} mins) broadcasted to dispatch radar & patient tracking screen.`,
+      `Delay of +${mins} min noted on this device only. It is not sent to the patient or dispatch; call them if needed.`,
 
     // On-Scene Modal
     arrivedSceneTitle: "Arrival on Scene Confirmed!",
@@ -233,11 +227,8 @@ export const driverNavigationStrings: Record<SupportedLanguage, DriverNavigation
     serverConfirmingNotice: "सेंट्रल डिस्पैच को जीपीएस लोकेशन व समय प्रसारित हो रहा है...",
 
     // Masked Calling
-    callerAttendantName: "अमित वर्मा",
     callerRole: "कॉलर / पारिवारिक परिचारक",
-    maskedVirtualNumber: "+91 11 4084 3910 Ext: 8821",
     dpdpPrivacyNotice: "DPDP अधिनियम 2023 अनुपालित • कॉलर व पायलट दोनों के फोन नंबर पूरी तरह सुरक्षित व मास्क हैं",
-    btnCallPatientMasked: "परिचारक को कॉल करें (मास्क नंबर)",
     btnCallDispatchDesk: "सेंट्रल डिस्पैच डेस्क को कॉल करें",
     callingConnectingModal: (number) => `मास्क वर्चुअल टेलीकॉम गेटवे द्वारा ${number} से संपर्क स्थापित हो रहा है...`,
 
@@ -294,7 +285,7 @@ export const driverNavigationStrings: Record<SupportedLanguage, DriverNavigation
     btnBroadcastDelay: (mins) => `डिस्पैच को +${mins} मिनट का विलंब भेजें`,
     btnCancelDelay: "रद्द करें / कोई विलंब नहीं",
     delayBroadcastSuccessNotice: (mins) =>
-      `विलंब सूचना (+${mins} मिनट) डिस्पैच रडार एवं मरीज ट्रैकिंग स्क्रीन पर प्रसारित कर दी गई है।`,
+      `+${mins} मिनट की देरी केवल इस फ़ोन पर दर्ज है। यह मरीज़ या डिस्पैच को नहीं भेजी जाती; ज़रूरत हो तो फ़ोन करें।`,
 
     // On-Scene Modal
     arrivedSceneTitle: "दृश्य स्थल पर आगमन सत्यापित!",

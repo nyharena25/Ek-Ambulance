@@ -150,6 +150,10 @@ update public.dispatch_waves set expires_at = now() - interval '1 second' where 
 select t.eq(public.dispatch_next_wave(:'mga'), 2, 'GA: wave 2 opens');
 select t.eq((select eligible_driver_ids from public.dispatch_waves where mission_id = :'mga' and wave_number = 2), array[:'db']::uuid[], 'B, now 4.4 km out, is asked in wave 2 (6 km)');
 
+-- B holds GA's open wave-2 offer, which reserves it (20261003000000). The staleness check below is about A, so GA's offer is
+-- set aside for it and reopened afterwards for B's accept.
+select t.ok(public._driver_reserved(:'db', gen_random_uuid()), 'B is reserved by its open GA offer');
+update public.dispatch_waves set status = 'expired' where mission_id = :'mga' and status = 'broadcasting';
 -- A stale heartbeat takes a driver out of dispatch, wherever it last was.
 update public.drivers set last_seen_at = now() - interval '31 seconds' where id = :'da';
 select t.mission('GC') as mgc \gset
@@ -158,6 +162,7 @@ select t.eq((select cardinality(eligible_driver_ids) from public.dispatch_waves 
 
 -- A busy driver stays out (G4.7-B).
 select id as wga2 from public.dispatch_waves where mission_id = :'mga' and wave_number = 2 \gset
+update public.dispatch_waves set status = 'broadcasting', expires_at = now() + interval '15 seconds' where id = :'wga2';
 select set_config('request.jwt.claims', :'jwt_db', false);
 set role authenticated;
 select t.eq((public.accept_offer(:'wga2')) ->> 'status', 'en_route', 'B takes GA');
@@ -197,7 +202,8 @@ select t.eq(t.at(:'db'), '28.6072,77.2100', 'the mission track never moves drive
 
 -- ---------------------------------------------------------------------------
 -- The fare. Quote: create_mission prices the distance the client sends. Final: COMPLETE measures the transport leg
--- (onboard -> hospital arrival, both times sent by the driver) from the track, else bills the quoted distance.
+-- (onboard -> hospital arrival, both times sent by the driver) from the track, else (20261003000000) the pickup -> hospital
+-- leg from canonical points, labelled an estimate.
 -- ---------------------------------------------------------------------------
 select (id) as aiims from public.hospitals where name = 'AIIMS New Delhi' \gset
 select set_config('request.jwt.claims', :'jwt_db', false);
@@ -211,11 +217,11 @@ select set_config('request.jwt.claims', :'jwt_db', false);
 set role authenticated;
 select t.eq((public.transition_mission(:'mga', 'COMPLETE', '{"handoff":{"physicianName":"Dr Test","registrationNumber":"REG-1","department":"ER"}}')) ->> 'status', 'completed', 'GA: completed');
 reset role;
-select t.eq((select metadata -> 'audit' ->> 'distanceSource' from public.mission_events where mission_id = :'mga' and event_type = 'MISSION_COMPLETED'), 'estimate', 'no track inside the window: the bill falls back to the quoted distance');
+select t.eq((select metadata -> 'audit' ->> 'distanceSource' from public.mission_events where mission_id = :'mga' and event_type = 'MISSION_COMPLETED'), 'estimate', 'no track inside the window: the bill falls back to an estimate');
 select t.eq((select metadata ->> 'distanceSource' from public.mission_events where mission_id = :'mga' and event_type = 'MISSION_COMPLETED'), 'estimate', 'the completion record says so as a first-class field (migration 20261001000001)');
 -- The same filter mission_events_publish applies before the wire: the patient-facing copy still carries the source.
 select t.eq((select (metadata - array['vitals', 'handoff', 'emergencyType', 'bypass', 'audit']) ->> 'distanceSource' from public.mission_events where mission_id = :'mga' and event_type = 'MISSION_COMPLETED'), 'estimate', 'and so does the copy the patient receives (audit stripped)');
-select t.eq((select final_fare_inr from public.missions where id = :'mga'), 500, 'GA had no quoted distance: a base-only ALS fare (recorded)');
+select t.eq((select final_fare_inr from public.missions where id = :'mga'), 500, 'GA''s pickup -> hospital leg is inside the 5 km included: a base-only ALS fare (recorded)');
 
 -- Neither the patient nor the driver can write a fare field.
 select set_config('request.jwt.claims', :'jwt_p1', false);

@@ -1,10 +1,10 @@
 import type { GeoPoint } from "@sahayak/domain";
-import { RANKED_TRAUMA_CENTRES, type TraumaCentreItem } from "../i18n/driverOnSceneStrings.ts";
+import type { CatalogHospital } from "../lib/driverServer.core.ts";
 
 export type EmergencyType = "trauma" | "cardiac" | "stroke" | "burns" | "general";
 export const EMERGENCY_TYPES: readonly EmergencyType[] = ["trauma", "cardiac", "stroke", "burns", "general"];
 
-// Matched against each centre's English speciality tags. "general" accepts every centre.
+// Matched against each hospital's registered speciality tags. "general" accepts every hospital.
 const KEYWORDS: Record<EmergencyType, RegExp> = {
   trauma: /trauma|orthop|surgery/i,
   cardiac: /cardiac/i,
@@ -14,8 +14,8 @@ const KEYWORDS: Record<EmergencyType, RegExp> = {
 };
 
 export interface NearbyHospital {
-  hospital: TraumaCentreItem;
-  /** Straight-line km from the pickup; Google Maps shows the road distance and ETA. */
+  hospital: CatalogHospital;
+  /** Straight-line km from the pickup, computed from the registered position; Google Maps shows the road distance and ETA. */
   km: number;
 }
 
@@ -27,10 +27,13 @@ export function distanceKm(a: GeoPoint, b: GeoPoint): number {
   return 6371 * 2 * Math.asin(Math.sqrt(h));
 }
 
-/** Centres that treat `emergency`, nearest to `from` first. */
-export function hospitalsFor(emergency: EmergencyType, from: GeoPoint, centres: readonly TraumaCentreItem[] = RANKED_TRAUMA_CENTRES): NearbyHospital[] {
-  return centres
-    .filter((h) => h.specialities.some((s) => KEYWORDS[emergency].test(s)))
+/**
+ * Registered hospitals for `emergency`, nearest to `from` first. A hospital with no specialities on record is kept: missing
+ * data is not evidence it cannot treat the patient, and the crew decides.
+ */
+export function hospitalsFor(emergency: EmergencyType, from: GeoPoint, catalog: readonly CatalogHospital[]): NearbyHospital[] {
+  return catalog
+    .filter((h) => h.specialities.length === 0 || h.specialities.some((s) => KEYWORDS[emergency].test(s)))
     .map((hospital) => ({ hospital, km: distanceKm(from, hospital.coordinates) }))
     .sort((a, b) => a.km - b.km);
 }

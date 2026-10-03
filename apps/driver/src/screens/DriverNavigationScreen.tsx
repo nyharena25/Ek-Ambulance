@@ -10,7 +10,6 @@ import {
   Platform,
   StatusBar,
   Modal,
-  Linking,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -46,7 +45,7 @@ const SLIDER_THUMB_SIZE = 58;
 const SLIDER_TRACK_PADDING = 4;
 
 export default function DriverNavigationScreen({
-  missionId = "MSN-2026-8819",
+  missionId = "",
   driverId,
   pickupCoordinates,
   initialLanguage = "en",
@@ -58,8 +57,6 @@ export default function DriverNavigationScreen({
   const [isDelayDrawerOpen, setIsDelayDrawerOpen] = useState(false);
   const [selectedDelay, setSelectedDelay] = useState<IncidentDelayOption | null>(null);
   const [activeDelayNotice, setActiveDelayNotice] = useState<string | null>(null);
-  const [isCallingModalOpen, setIsCallingModalOpen] = useState(false);
-  const [activeCallingNumber, setActiveCallingNumber] = useState("");
   const [isArrivedOnScene, setIsArrivedOnScene] = useState(false);
   const [isOnSceneModalOpen, setIsOnSceneModalOpen] = useState(false);
 
@@ -136,16 +133,6 @@ export default function DriverNavigationScreen({
       },
     })
   ).current;
-
-  // Handle Masked Phone Call Trigger
-  const handleInitiateCall = (phoneNumber: string) => {
-    setActiveCallingNumber(phoneNumber);
-    setIsCallingModalOpen(true);
-    const cleanNumber = phoneNumber.replace(/[^0-9+]/g, "");
-    Linking.openURL(`tel:${cleanNumber}`).catch(() => {
-      // Fallback if dialer not accessible
-    });
-  };
 
   // Broadcast Incident Delay
   const handleBroadcastDelay = () => {
@@ -239,42 +226,7 @@ export default function DriverNavigationScreen({
         </View>
       </View>
 
-      {/* QUICK-DIAL CONTACT BAR (MASKED VIRTUAL NUMBER & DISPATCH DESK) */}
-      <View style={styles.quickDialBar}>
-        <View style={styles.callerInfoBox}>
-          <View style={styles.callerIconCircle}>
-            <AppIcon icon={{ set: "ion", name: "person" }} size={14} color={colors.slate700} style={styles.callerIconEmoji} />
-          </View>
-          <View style={styles.callerTextWrap}>
-            <Text style={styles.callerName}>
-              {strings.callerAttendantName}
-            </Text>
-            <Text style={styles.callerSub}>
-              {strings.maskedVirtualNumber}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.dialActionsRow}>
-          {/* Masked Call Patient Button */}
-          <Pressable
-            style={styles.callPatientBtn}
-            onPress={() => handleInitiateCall(strings.maskedVirtualNumber)}
-          >
-            <Text style={styles.callPatientBtnText}>
-              <AppIcon icon={{ set: "ion", name: "call" }} size={11} />{" "}{strings.btnCallPatientMasked}
-            </Text>
-          </Pressable>
-
-          {/* Central Dispatch Desk Button */}
-          <Pressable
-            style={styles.callDispatchBtn}
-            onPress={() => handleInitiateCall("1800-AMBULANCE")}
-          >
-            <Text style={styles.callDispatchBtnText}><AppIcon icon={{ set: "mci", name: "car-emergency" }} size={11} />{" "}Desk</Text>
-          </Pressable>
-        </View>
-      </View>
+      {/* No patient relay number or dispatch-desk number is provisioned by the server, so no call bar is shown (no fake numbers). */}
 
       {/* PERSISTENT BOTTOM ACTION BAR: IRREVERSIBLE SLIDE TO CONFIRM ARRIVAL */}
       <View style={styles.bottomBar}>
@@ -424,36 +376,6 @@ export default function DriverNavigationScreen({
         </View>
       </Modal>
 
-      {/* MASKED CALLING CONNECTING DIALOG */}
-      <Modal
-        visible={isCallingModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsCallingModalOpen(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.callingModalCard}>
-            <View style={styles.callingIconCircle}>
-              <AppIcon icon={{ set: "ion", name: "call" }} size={24} color={colors.slate700} style={styles.callingIconEmoji} />
-            </View>
-            <Text style={styles.callingModalTitle}>
-              DPDP 2023 Masked Calling Bridge
-            </Text>
-            <Text style={styles.callingModalTarget}>
-              {activeCallingNumber}
-            </Text>
-            <Text style={styles.callingModalNotice}>
-              {strings.dpdpPrivacyNotice}
-            </Text>
-            <Pressable
-              style={styles.callingCloseBtn}
-              onPress={() => setIsCallingModalOpen(false)}
-            >
-              <Text style={styles.callingCloseBtnText}>{strings.btnCloseDialog}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
 
       {/* ARRIVAL ON SCENE CONFIRMED CELEBRATION MODAL */}
       <Modal

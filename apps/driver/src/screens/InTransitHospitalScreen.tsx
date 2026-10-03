@@ -49,17 +49,11 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const SLIDER_THUMB_SIZE = 58;
 const SLIDER_TRACK_PADDING = 4;
 
-// Sum of the two simulated legs (DriverNavigationScreen's initial 1.8km
-// en-route + this screen's initial 3.8km transport) - GPS is simulated
-// throughout the driver app, so this is the same class of demo constant as
-// DEFAULT_DISPATCH_DISTANCE_KM in the patient app's fare engine, not a
-// live-tracked odometer reading.
-
 export default function InTransitHospitalScreen({
-  missionId = "MSN-2026-8819",
+  missionId = "",
   driverId,
   initialLanguage = "en",
-  hospitalName = "Jaypee Hospital (Sector 128, Noida)",
+  hospitalName,
   hospitalCoordinates,
   onConfirmArrivalHospital,
   onCompleteMission,

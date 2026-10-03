@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { isNewerPing, type ParsedLifecycleMessage } from "@sahayak/domain";
+import {
+  gpsHealth,
+  initialRealtime,
+  isNewerPing,
+  realtimeHealth,
+  reduceRealtime,
+  trackingBadge,
+  type GpsHealth,
+  type ParsedLifecycleMessage,
+  type RealtimeEvent,
+  type RealtimeSnapshot,
+  type TrackingBadge,
+  type TransportHealth,
+} from "@sahayak/domain";
 import {
   mountMissionChannel,
   type CentrifugoConnectionStatus,
@@ -33,11 +46,9 @@ export interface UseMissionChannelOptions {
   onResubscribed?: (info: { recovered: boolean }) => void;
 }
 
-/** What the tracking UI may claim about the live feed (P-UX-06): never "live" without evidence. */
-export type TrackingConnection = "live" | "connecting" | "paused";
-
-/** GPS pings arrive about every 3 s, so a silent feed for this long is stale. */
-const STALE_FEED_MS = 20_000;
+/** What the tracking UI may claim (P-UX-06): "live" only with a healthy socket AND a fresh fix; "paused" only on a real
+ *  transport failure; a healthy socket with no recent fix is "awaitingGps", never "paused". */
+export type TrackingConnection = TrackingBadge;
 
 export interface UseMissionChannelReturn {
   status: CentrifugoConnectionStatus;
@@ -47,8 +58,12 @@ export interface UseMissionChannelReturn {
    *  than that does not force a re-render on every single ping. */
   throttledTelemetry: DriverTelemetry | null;
   error: Error | null;
-  /** `live` only while subscribed and pings are fresh; `paused` after a drop or a silent feed; never assumed. */
+  /** The tracking badge, derived from transport health and GPS health separately. */
   connection: TrackingConnection;
+  /** The one realtime connection state (SDK lifecycle only). */
+  realtime: RealtimeSnapshot;
+  transportHealth: TransportHealth;
+  gps: GpsHealth;
 }
 
 /**
@@ -81,6 +96,12 @@ export function useMissionChannel({
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [throttledTelemetry, setThrottledTelemetry] = useState<DriverTelemetry | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [realtime, setRealtime] = useState<RealtimeSnapshot>(initialRealtime);
+  // The session token is read on every (re)connect through this ref: a refreshed token is picked up without tearing the
+  // socket down, and the subscription is only remounted when a session appears or disappears.
+  const authTokenRef = useRef(authToken);
+  authTokenRef.current = authToken;
+  const hasSession = authToken !== null;
 
   // Latest-callback refs so the mount effect below doesn't need these
   // (typically inline arrows that change every render) in its deps array -
@@ -98,6 +119,7 @@ export function useMissionChannel({
     if (!missionId) return;
 
     setError(null);
+    setRealtime(initialRealtime());
     const flushTimer = setInterval(() => {
       if (pendingTelemetryRef.current) {
         setThrottledTelemetry(pendingTelemetryRef.current);
@@ -108,6 +130,7 @@ export function useMissionChannel({
 
     const callbacks = {
       onStatusChange: setStatus,
+      onTransportEvent: (event: RealtimeEvent) => setRealtime((s) => reduceRealtime(s, event, Date.now())),
       onSubscriptionStateChange: setIsSubscribed,
       onTelemetry: (telemetry: DriverTelemetry) => {
         // Rule 10: a flushed or recovered ping must never move the marker backwards.
@@ -130,7 +153,7 @@ export function useMissionChannel({
       onError: setError,
     };
 
-    if (!authToken) {
+    if (!hasSession) {
       // No real session (production build, Task 4.1 auth still a stub -
       // see HANDOVER D2): make this legible rather
       // than a silent, indistinguishable-from-network-failure permanent
@@ -141,22 +164,18 @@ export function useMissionChannel({
       return;
     }
 
-    const teardown = mountMissionChannel(missionId, authToken, callbacks);
+    // Exactly one logical subscription per mounted mission: the effect owns it and its cleanup tears it down.
+    const teardown = mountMissionChannel(missionId, () => authTokenRef.current, callbacks);
     return () => {
       clearInterval(flushTimer);
       teardown();
     };
-  }, [missionId, authToken]);
+  }, [missionId, hasSession]);
 
-  const fresh = lastPingAt !== null && Date.now() - lastPingAt < STALE_FEED_MS;
-  const connection: TrackingConnection =
-    status === "connected" && isSubscribed && (fresh || lastPingAt === null)
-      ? lastPingAt === null
-        ? "connecting"
-        : "live"
-      : status === "connecting"
-        ? "connecting"
-        : "paused";
+  const now = Date.now();
+  const transportHealth = realtimeHealth(realtime, now);
+  const gps = gpsHealth(lastPingAt, now);
+  const connection = trackingBadge(transportHealth, gps);
 
-  return { status, isSubscribed, throttledTelemetry, error, connection };
+  return { status, isSubscribed, throttledTelemetry, error, connection, realtime, transportHealth, gps };
 }

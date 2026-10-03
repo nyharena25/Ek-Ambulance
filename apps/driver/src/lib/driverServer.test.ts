@@ -4,9 +4,8 @@ import {
   batchFullyAcknowledged,
   buildServerCall,
   driverErrorMessage,
-  matchHospitalId,
   parseAssignedMissionRow,
-  parseHospitalRow,
+  parseCatalogHospital,
   routeMissionPublication,
   routeOfferPublication,
   sanitizeVitals,
@@ -110,26 +109,26 @@ for (const code of ["offer_taken", "offer_expired", "network", "hospital_at_capa
 assert.match(driverErrorMessage("network"), /NOT recorded/, "a network failure never implies success");
 console.log("✓ reasons + vitals\n");
 
-console.log("Test 4: hospital matching by position (fixtures have no ids)...");
+console.log("Test 4: hospital catalog keeps the canonical id (never a name or a position match)...");
 {
-  const rows = [
-    { id: H, latitude: 28.5672, longitude: 77.21 },
-    { id: "d2d2d2d2-0000-4000-8000-000000000008", latitude: 28.5694, longitude: 77.2075 },
-  ];
-  assert.strictEqual(matchHospitalId({ latitude: 28.5673, longitude: 77.2101 }, rows), H);
-  assert.strictEqual(matchHospitalId({ latitude: 28.6189, longitude: 77.3732 }, rows), null, "a hospital not in the table cannot take a hold");
-  assert.strictEqual(matchHospitalId({ latitude: 28.5, longitude: 77.2 }, []), null);
-  assert.deepStrictEqual(parseHospitalRow({ id: H, location: { type: "Point", coordinates: [77.21, 28.5672] } }), { id: H, longitude: 77.21, latitude: 28.5672 });
   // What a plain PostgREST select actually returns for geography: EWKB hex (little-endian, SRID 4326). Seeded AIIMS row.
   const aiims = "0101000020E61000003D0AD7A3704D53408C4AEA0434913C40";
-  assert.deepStrictEqual(parseHospitalRow({ id: H, location: aiims }), { id: H, longitude: 77.21, latitude: 28.5672 });
+  const row = { id: H, name: "AIIMS New Delhi", name_hi: null, zone: "DL", location: aiims, category: null, trauma_level: 1, specialities: [], available_capacity: 30 };
+  assert.deepStrictEqual(parseCatalogHospital(row), {
+    id: H, name: "AIIMS New Delhi", zone: "DL", coordinates: { longitude: 77.21, latitude: 28.5672 }, traumaLevel: 1, specialities: [], availableCapacity: 30,
+  }, "id, name and position from the row; unknown fields are omitted, not defaulted");
+  assert.deepStrictEqual(parseCatalogHospital({ ...row, location: { type: "Point", coordinates: [77.21, 28.5672] } })?.coordinates, { longitude: 77.21, latitude: 28.5672 }, "GeoJSON too");
+  assert.strictEqual(parseCatalogHospital({ ...row, id: "hosp_sharda_gnoida" }), null, "a non-uuid (client preset) id is never a catalog entry");
+  assert.strictEqual(parseCatalogHospital({ ...row, id: "AIIMS New Delhi" }), null, "a display name is never an id");
+  assert.strictEqual(parseCatalogHospital({ ...row, name: " " }), null, "no name, not shown");
+  assert.strictEqual(parseCatalogHospital({ ...row, location: "0102000020E61000003D0AD7A3704D53408C4AEA0434913C40" }), null, "not a point");
+  assert.strictEqual(parseCatalogHospital({ ...row, location: null }), null, "no position, not shown");
+  assert.strictEqual(parseCatalogHospital(null), null);
   assert.deepStrictEqual(parseAssignedMissionRow({ id: M, status: "en_route", pickup_location: aiims })?.pickup, { longitude: 77.21, latitude: 28.5672 });
-  assert.strictEqual(parseHospitalRow({ id: H, location: "0102000020E61000003D0AD7A3704D53408C4AEA0434913C40" }), null, "not a point");
-  assert.strictEqual(parseHospitalRow({ id: H, location: "zz" }), null);
-  assert.strictEqual(parseHospitalRow({ id: "x", location: null }), null);
-  assert.strictEqual(parseHospitalRow(null), null);
   assert.deepStrictEqual(parseAssignedMissionRow({ id: M, status: "on_scene", pickup_location: { type: "Point", coordinates: [77.21, 28.5672] } }), { missionId: M, status: "on_scene", pickup: { longitude: 77.21, latitude: 28.5672 } });
   assert.deepStrictEqual(parseAssignedMissionRow({ id: M, status: "en_route", pickup_location: null }), { missionId: M, status: "en_route", pickup: undefined });
+  assert.strictEqual(parseAssignedMissionRow({ id: M, status: "transporting", destination_hospital_id: H })?.destinationHospitalId, H, "resume reads the hospital foreign key");
+  assert.strictEqual(parseAssignedMissionRow({ id: M, status: "transporting", destination_hospital_id: "Sharda" })?.destinationHospitalId, undefined);
   for (const bad of [null, {}, { id: M, status: "flying" }, { id: 5, status: "en_route" }]) assert.strictEqual(parseAssignedMissionRow(bad), null);
 }
 console.log("✓ hospitals\n");

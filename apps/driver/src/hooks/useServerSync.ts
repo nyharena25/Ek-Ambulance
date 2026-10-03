@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { router } from "expo-router";
 import { driverStateForStatus, type DriverLifecycleState } from "@sahayak/domain";
@@ -9,6 +9,7 @@ import { useDriverAuthStore } from "../state/driverAuth.store";
 import {
   callServer,
   fetchAssignedMission,
+  fetchOpenOffers,
   fetchBoard,
   fetchDriverProfile,
   registerPushToken,
@@ -20,15 +21,46 @@ import {
   type ServerSession,
 } from "../lib/driverServer";
 import { getDevicePushToken } from "../services/dispatchNotifications";
-import { getServerAdapter, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
+import { getServerAdapter, setDriverRealtimeSession, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
+import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { heartbeatLocation, useDriverStandbyStore } from "../state/driverStandby.store";
 import { useDriverProfileStore } from "../state/driverProfile.store";
-import { mountMissionWatch, mountOffersChannel } from "../services/driverRealtime";
+import { createDriverRealtimeSession, devLog, mountMissionWatch, mountOffersChannel, type DriverRealtimeSession } from "../services/driverRealtime";
+import type { DispatchOffer } from "@sahayak/domain";
+import { telemetryQueueService } from "../services/telemetryQueue.service";
 import { dismissAllNotifications, notifyIncomingOffer } from "../services/dispatchNotifications";
-import { startTelemetryUploadLoop } from "../services/telemetryUpload";
+import { startTelemetryUploadLoop, syncQueuedPings } from "../services/telemetryUpload";
 
 const ACTIVE_STATES: readonly DriverLifecycleState[] = ["enRouteToPatient", "onScene", "transporting", "arrivedHospital"];
 const HEARTBEAT_MS = 10_000;
+/** How often the time-dependent connection health (grace period, failure threshold) is re-derived. */
+const HEALTH_EVALUATE_MS = 2_000;
+
+/** Shows a server offer, if this driver is free to take one. Shared by the live push and the reconnect recovery read. */
+function presentOffer(offer: DispatchOffer, clockOffsetMs: number): void {
+  const lifecycle = useDriverLifecycleStore.getState();
+  // Busy or mid-offer: the server expires this offer on its own; nothing to show.
+  if (lifecycle.currentState !== "standby") return;
+  devLog("OFFER_RECEIVED", { mission_id: offer.missionId, offer_id: offer.offerId });
+  lifecycle.send({ type: "SERVER_OFFER_RECEIVED", payload: { offerId: offer.offerId, missionId: offer.missionId } });
+  const params: Record<string, string> = {
+    missionId: offer.missionId,
+    offerId: offer.offerId,
+    expiresAt: offer.expiresAt,
+    clockOffsetMs: String(clockOffsetMs),
+    ...(offer.urgency ? { acuity: offer.urgency } : {}),
+    ...(offer.requiredVehicleType ? { requiredVehicleType: offer.requiredVehicleType } : {}),
+    ...(offer.pickup?.address ? { address: offer.pickup.address } : {}),
+    ...(offer.pickup?.landmark ? { landmark: offer.pickup.landmark } : {}),
+    ...(offer.pickup ? { pickupLat: String(offer.pickup.latitude), pickupLng: String(offer.pickup.longitude) } : {}),
+    ...(offer.distanceKm !== undefined ? { distanceKm: String(offer.distanceKm) } : {}),
+    ...(offer.etaMinutes !== undefined ? { etaMinutes: String(offer.etaMinutes) } : {}),
+    ...(offer.estimatedFareInr !== undefined ? { estimatedFareInr: String(offer.estimatedFareInr) } : {}),
+    ...(offer.patientSummary ? { patientSummary: JSON.stringify(offer.patientSummary) } : {}),
+  };
+  router.push({ pathname: "/(shift)/offer", params });
+  void notifyIncomingOffer(params as never);
+}
 
 /**
  * The driver app's connection to the server (DATA_AND_SYNC_SPECIFICATION.md 6, 7). Mounted once at the root. With a session the
@@ -39,6 +71,12 @@ const HEARTBEAT_MS = 10_000;
  */
 export function useServerSync(): void {
   const [session, setSession] = useState<ServerSession | null>(null);
+  // Effects key on the user, not the token: a refreshed token is read through this ref on every (re)connect, so a token
+  // refresh never tears down and re-creates the realtime subscriptions.
+  const tokenRef = useRef<string | null>(null);
+  tokenRef.current = session?.accessToken ?? null;
+  const userId = session?.userId ?? null;
+  const [realtime, setRealtime] = useState<DriverRealtimeSession | null>(null);
   const isOnline = useDriverStandbyStore((s) => s.isOnline);
   const currentState = useDriverLifecycleStore((s) => s.currentState);
   const activeMissionId = useDriverLifecycleStore((s) => s.activeMissionId);
@@ -94,45 +132,74 @@ export function useServerSync(): void {
     };
   }, []);
 
+  // One Centrifugo connection per signed-in driver; its SDK lifecycle is the app's connection state.
+  useEffect(() => {
+    if (!userId) return;
+    const connection = useDriverConnectionStore.getState();
+    connection.reset();
+    const rt = createDriverRealtimeSession(() => tokenRef.current, {
+      onTransportEvent: (event) => useDriverConnectionStore.getState().applyTransport(event),
+      onPublishRejected: (error) => devLog("PUBLISH_REJECTED", { error: error instanceof Error ? error.message : "unknown" }),
+    });
+    setDriverRealtimeSession(rt);
+    setRealtime(rt);
+    return () => {
+      setDriverRealtimeSession(null);
+      setRealtime(null);
+      rt.teardown();
+      useDriverConnectionStore.getState().reset();
+    };
+  }, [userId]);
+
+  // Health depends on elapsed time (grace period, failure threshold), so it is re-derived on a timer. Fallback appears only
+  // for an active mission on a socket that is really down, and clears itself - flushing the store-and-forward queue - when
+  // the socket is back.
+  useEffect(() => {
+    if (!userId) return;
+    const timer = setInterval(() => {
+      const lifecycle = useDriverLifecycleStore.getState();
+      const transition = useDriverConnectionStore.getState().evaluate(Date.now(), ACTIVE_STATES.includes(lifecycle.currentState));
+      if (transition) devLog(transition === "entered" ? "FALLBACK_ENTERED" : "FALLBACK_EXITED", { mission_id: lifecycle.activeMissionId ?? undefined });
+      const missionId = lifecycle.activeMissionId;
+      if (transition === "exited" && missionId) {
+        void telemetryQueueService.flushQueue((pings) => syncQueuedPings(missionId, pings)).then(({ syncedCount, remainingCount }) => {
+          const connection = useDriverConnectionStore.getState();
+          connection.setQueuedPingsCount(remainingCount);
+          if (syncedCount > 0) connection.markRestored(syncedCount);
+        });
+      }
+    }, HEALTH_EVALUATE_MS);
+    return () => clearInterval(timer);
+  }, [userId]);
+
   // Offers: server -> this driver only (never a broadcast channel that would expose every open mission).
   useEffect(() => {
-    if (!session || !isOnline) return;
-    return mountOffersChannel(session.userId, session.accessToken, {
-      onOffer: (offer, clockOffsetMs) => {
-        const lifecycle = useDriverLifecycleStore.getState();
-        // Busy or mid-offer: the server expires this offer on its own; nothing to show.
-        if (lifecycle.currentState !== "standby") return;
-        lifecycle.send({ type: "SERVER_OFFER_RECEIVED", payload: { offerId: offer.offerId, missionId: offer.missionId } });
-        const params: Record<string, string> = {
-          missionId: offer.missionId,
-          offerId: offer.offerId,
-          expiresAt: offer.expiresAt,
-          clockOffsetMs: String(clockOffsetMs),
-          ...(offer.urgency ? { acuity: offer.urgency } : {}),
-          ...(offer.requiredVehicleType ? { requiredVehicleType: offer.requiredVehicleType } : {}),
-          ...(offer.pickup?.address ? { address: offer.pickup.address } : {}),
-          ...(offer.pickup?.landmark ? { landmark: offer.pickup.landmark } : {}),
-          ...(offer.pickup ? { pickupLat: String(offer.pickup.latitude), pickupLng: String(offer.pickup.longitude) } : {}),
-          ...(offer.distanceKm !== undefined ? { distanceKm: String(offer.distanceKm) } : {}),
-          ...(offer.etaMinutes !== undefined ? { etaMinutes: String(offer.etaMinutes) } : {}),
-          ...(offer.patientSummary ? { patientSummary: JSON.stringify(offer.patientSummary) } : {}),
-        };
-        router.push({ pathname: "/(shift)/offer", params });
-        void notifyIncomingOffer(params as never);
-      },
+    if (!realtime || !userId || !isOnline) return;
+    return mountOffersChannel(userId, realtime, {
+      onOffer: presentOffer,
       onRevoked: (revoked) => {
         const lifecycle = useDriverLifecycleStore.getState();
         if (lifecycle.currentState !== "offered" || lifecycle.activeOfferId !== revoked.offerId) return;
+        devLog("OFFER_REVOKED", { offer_id: revoked.offerId, reason: revoked.reason });
         lifecycle.send({ type: "SERVER_OFFER_REVOKED", payload: { offerId: revoked.offerId, reason: revoked.reason } });
         dismissAllNotifications();
         router.replace("/(shift)/standby");
       },
+      // (Re)subscribed: an offer pushed while the socket was down is not replayed by the channel, so re-read the offers
+      // the server still holds open for this driver.
+      onSubscribed: () => {
+        devLog("RECONCILIATION", { scope: "offers" });
+        void fetchOpenOffers().then((result) => {
+          const first = result.ok ? result.data.offers[0] : undefined;
+          if (result.ok && first) presentOffer(first, result.data.clockOffsetMs);
+        });
+      },
     });
-  }, [session, isOnline]);
+  }, [realtime, userId, isOnline]);
 
   // Mission watch: the server ended the mission under a driver who is already driving.
   useEffect(() => {
-    if (!session || !activeMissionId || !ACTIVE_STATES.includes(currentState)) return;
+    if (!realtime || !activeMissionId || !ACTIVE_STATES.includes(currentState)) return;
     const missionId = activeMissionId;
     const end = (cancelledBy?: "patient" | "driver" | "system", reason?: string) => {
       const lifecycle = useDriverLifecycleStore.getState();
@@ -141,21 +208,23 @@ export function useServerSync(): void {
       router.replace("/(shift)/standby");
       Alert.alert("Mission ended", cancelledBy === "patient" ? "The patient cancelled this mission." : "This mission was ended by dispatch.");
     };
-    return mountMissionWatch(missionId, session.accessToken, {
+    return mountMissionWatch(missionId, realtime, {
       onCancelled: (info) => end(info.cancelledBy, info.reason),
       // Resubscribing may have skipped the cancellation: read the server's view (rule 3, 7.6 "mission ends while offline").
       onSubscribed: () => {
+        devLog("RECONCILIATION", { scope: "mission", mission_id: missionId });
         // Only a successful read that shows no such mission ends it; a network blip must never drop a live mission.
         void fetchAssignedMission().then((result) => {
           if (result.ok && (!result.data || result.data.missionId !== missionId)) end();
         });
       },
     });
-  }, [session, activeMissionId, currentState]);
+  }, [realtime, activeMissionId, currentState]);
 
   // Resume after a process kill: the machine is memory-only, the assignment is on the server (7.6).
   useEffect(() => {
     if (!session) return;
+    const driverId = session.userId;
     const lifecycle = useDriverLifecycleStore.getState();
     if (ACTIVE_STATES.includes(lifecycle.currentState)) return;
     void fetchAssignedMission().then((result) => {
@@ -163,29 +232,33 @@ export function useServerSync(): void {
       if (!row || driverStateForStatus(row.status) === null) return;
       const now = useDriverLifecycleStore.getState();
       if (ACTIVE_STATES.includes(now.currentState)) return;
-      now.send({ type: "HYDRATE", payload: { missionId: row.missionId, status: row.status, driverId: session.userId } });
+      now.send({ type: "HYDRATE", payload: { missionId: row.missionId, status: row.status, driverId } });
       router.replace({
         pathname: "/mission/[id]",
         params: { id: row.missionId, ...(row.pickup ? { pickupLat: String(row.pickup.latitude), pickupLng: String(row.pickup.longitude) } : {}) },
       });
     });
-  }, [session]);
+    // Keyed on the user: a token refresh is not a new session to resume.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // Live GPS is persisted server-side in acknowledged batches: the final fare is computed from the measured transport leg.
   useEffect(() => {
-    if (!session) return;
+    if (!userId) return;
     return startTelemetryUploadLoop(() => useDriverLifecycleStore.getState().activeMissionId);
-  }, [session]);
+  }, [userId]);
 
   // Presence heartbeat: the server treats a driver as present for 30 s after the last one (dispatch_config / 6.6).
   useEffect(() => {
-    if (!session || !isOnline) return;
+    if (!userId || !isOnline) return;
     const beat = async () => {
       // No real fix yet: send nothing. A beat without a position would still refresh last_seen_at on whatever position
       // the server holds from an earlier session, and the city preset is not a position at all.
       const location = heartbeatLocation(useDriverStandbyStore.getState());
       if (!location) return;
-      const result = await setPresence(true, location);
+      // The fix time travels with the position: re-sending an old fix never makes it look fresh to the dispatcher.
+      const result = await setPresence(true, location, location.fixedAt);
+      if (result.ok) useDriverConnectionStore.getState().recordHeartbeat();
       if (!result.ok && result.error.code === "not_verified" && getServerAdapter()) {
         // Not (or no longer) approved: never keep showing "online" for a driver the dispatcher cannot see.
         useDriverStandbyStore.getState().confirmGoOffline();
@@ -194,5 +267,5 @@ export function useServerSync(): void {
     void beat();
     const timer = setInterval(() => void beat(), HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [session, isOnline]);
+  }, [userId, isOnline]);
 }

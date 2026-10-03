@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { useRouter, useLocalSearchParams, Redirect } from "expo-router";
 import {
@@ -12,9 +12,8 @@ import {
   useDriverLifecycleStore,
   type DriverLifecycleStoreState,
 } from "../../src/state/driverLifecycle.store";
-import { TraumaCentreItem } from "../../src/i18n/driverOnSceneStrings";
-import { driverErrorMessage, matchHospitalId } from "../../src/lib/driverServer.core";
-import { fetchAssignedMission, fetchHospitals } from "../../src/lib/driverServer";
+import { driverErrorMessage, type CatalogHospital } from "../../src/lib/driverServer.core";
+import { fetchAssignedMission, fetchHospitalCatalog } from "../../src/lib/driverServer";
 import { flushLivePings } from "../../src/services/telemetryUpload";
 import type { DriverLifecycleMachineEvent, DriverLifecycleState, GeoPoint } from "@sahayak/domain";
 
@@ -82,7 +81,33 @@ interface MissionExecutionScreensProps {
 function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, pickupCoordinates, submit, send }: MissionExecutionScreensProps) {
   const router = useRouter();
   const [phase, setPhase] = useState<MissionPhase>(phaseForLifecycleState(initialLifecycleState));
-  const [selectedHospital, setSelectedHospital] = useState<TraumaCentreItem | null>(null);
+  const [selectedHospital, setSelectedHospital] = useState<CatalogHospital | null>(null);
+  // The registered catalog (canonical ids). null = loading; an error is shown, never replaced by a built-in list.
+  const [hospitals, setHospitals] = useState<CatalogHospital[] | null>(null);
+  const [hospitalsError, setHospitalsError] = useState(false);
+  const loadHospitals = useCallback(async () => {
+    setHospitalsError(false);
+    const result = await fetchHospitalCatalog();
+    if (result.ok) setHospitals(result.data);
+    else setHospitalsError(true);
+    return result.ok ? result.data : null;
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const catalog = await loadHospitals();
+      // Resumed mid-transport (process kill, reconnect): the destination comes back from missions.destination_hospital_id.
+      if (!alive || !catalog || phaseForLifecycleState(initialLifecycleState) !== "transporting") return;
+      const row = await fetchAssignedMission();
+      const id = row.ok ? row.data?.destinationHospitalId : undefined;
+      const hospital = id ? catalog.find((h) => h.id === id) : undefined;
+      if (alive && hospital) setSelectedHospital((current) => current ?? hospital);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [loadHospitals, initialLifecycleState]);
 
   // After a refusal that means "your view of the mission is out of date", ask the server what the mission is now.
   const refreshFromServer = async () => {
@@ -153,12 +178,12 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
         missionId={missionId}
         driverId={driverId}
         pickupCoordinates={pickupCoordinates}
+        hospitals={hospitals}
+        hospitalsError={hospitalsError}
+        onRetryHospitals={() => void loadHospitals()}
         onConfirmPatientOnboard={async (payload) => {
-          // The client's hospital list has no ids and the table has four rows (4.5): match the chosen destination to a
-          // registered hospital, which is also what takes the bed hold. No match means the server cannot start transport.
-          const rows = isServerAuthoritative() ? await fetchHospitals() : [];
-          const hospitalId = matchHospitalId(payload.destination, rows) ?? undefined;
-          await run({ type: "CONFIRM_PATIENT_ONBOARD", payload: { ...payload, hospitalId } });
+          // payload.hospitalId is the chosen catalog row's canonical id; the server validates it and takes the bed hold.
+          return run({ type: "CONFIRM_PATIENT_ONBOARD", payload });
         }}
         onProceedToTransportNavigation={(hospital) => {
           if (!machineIs("transporting")) return;

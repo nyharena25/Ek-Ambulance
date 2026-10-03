@@ -24,7 +24,7 @@ import { AppIcon } from "../components";
 // LayoutAnimation.configureNext below still works without it.
 
 export interface StatutoryFareBottomSheetProps {
-  vehicleType?: AIS125VehicleType;
+  vehicleType: AIS125VehicleType;
   // Known only once the server has created the mission (R-12); before that the sheet names no state.
   jurisdiction?: Jurisdiction | null;
   distanceKm?: number;
@@ -35,7 +35,7 @@ export interface StatutoryFareBottomSheetProps {
 
 
 export default function StatutoryFareBottomSheet({
-  vehicleType = "TYPE_D_ALS",
+  vehicleType,
   jurisdiction = null,
   distanceKm = 12.4,
   initialExpanded = true,

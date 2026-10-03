@@ -16,7 +16,8 @@
     "services:down": "docker compose down",
     "test:schema": "node --experimental-strip-types supabase/tests/schema_validation.test.ts && node --experimental-strip-types supabase/tests/data_sync_schema.test.ts",
     "test:gateway": "node --experimental-strip-types docker/mock-gateway/gateway.test.mjs && node docker/kong.config.test.mjs",
-    "preflight": "turbo run typecheck lint test --force && pnpm test:schema && pnpm test:gateway"
+    "preflight": "turbo run typecheck lint test --force && pnpm test:schema && pnpm test:gateway && pnpm test:integrity",
+    "test:integrity": "node scripts/production-data-integrity.test.mjs"
   },
   "devDependencies": {
     "turbo": "^2.1.3",

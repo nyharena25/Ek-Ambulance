@@ -39,15 +39,16 @@ export default function TriageScreen({
   onConfirmTriage,
   onBack,
   initialLanguage = "en",
-  initialComplaint = "chest_pain",
+  initialComplaint,
   authToken,
 }: TriageScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = triageStrings[language];
 
   // Selected primary complaint (defaults to chest pain for rapid emergency launch)
+  // Nothing is pre-selected: an unanswered triage must not become a chest-pain (CAT 1, ALS) request by default.
   const [selectedComplaint, setSelectedComplaint] =
-    useState<PrimaryComplaintType>(initialComplaint);
+    useState<PrimaryComplaintType | null>(initialComplaint ?? null);
 
   // START Trauma Binary Assessment State
   const [traumaVitals, setTraumaVitals] = useState<TraumaBinaryAssessment>({
@@ -57,7 +58,8 @@ export default function TriageScreen({
   });
 
   // Dynamically compute urgency tier based on START & ESI protocols
-  const triageResult = useMemo<TriageResult>(() => {
+  const triageResult = useMemo<TriageResult | null>(() => {
+    if (!selectedComplaint) return null;
     const input: TriageInput = {
       primaryComplaint: selectedComplaint,
       traumaAssessment:
@@ -79,7 +81,7 @@ export default function TriageScreen({
   };
 
   const handleConfirm = () => {
-    if (onConfirmTriage) {
+    if (triageResult && onConfirmTriage) {
       onConfirmTriage(triageResult);
     }
   };
@@ -165,7 +167,12 @@ export default function TriageScreen({
         </View>
       </View>
 
-      {/* DYNAMIC TOP URGENCY TIER BANNER */}
+      {/* DYNAMIC TOP URGENCY TIER BANNER (only once a symptom is chosen) */}
+      {!triageResult ? (
+        <View style={[styles.urgencyTierBanner, { backgroundColor: colors.white, borderColor: colors.slate300 }]}>
+          <Text style={styles.rationaleText}>{strings.selectComplaintPrompt}</Text>
+        </View>
+      ) : (
       <View
         style={[
           styles.urgencyTierBanner,
@@ -221,6 +228,7 @@ export default function TriageScreen({
           </View>
         )}
       </View>
+      )}
 
       {/* SCROLLABLE QUESTIONNAIRE */}
       <ScrollView
@@ -524,19 +532,21 @@ export default function TriageScreen({
       <View style={styles.actionDock}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${strings.confirmButtonText(
+          accessibilityLabel={triageResult ? `${strings.confirmButtonText(
             triageResult.recommendedCareLevel
-          )}. ${strings.confirmButtonSubtitle}`}
+          )}. ${strings.confirmButtonSubtitle}` : strings.selectComplaintPrompt}
+          accessibilityState={{ disabled: !triageResult }}
+          disabled={!triageResult}
           style={({ pressed }) => [
             styles.confirmDispatchButton,
-            { backgroundColor: triageResult.tierColorHex },
+            { backgroundColor: triageResult?.tierColorHex ?? colors.slate300 },
             pressed && styles.confirmDispatchButtonPressed,
           ]}
           onPress={handleConfirm}
         >
           <View style={styles.confirmButtonContent}>
             <Text style={styles.confirmDispatchButtonText}>
-              {strings.confirmButtonText(triageResult.recommendedCareLevel)}
+              {triageResult ? strings.confirmButtonText(triageResult.recommendedCareLevel) : strings.selectComplaintPrompt}
             </Text>
             <Text style={styles.confirmDispatchButtonSubtitle}>
               {strings.confirmButtonSubtitle}

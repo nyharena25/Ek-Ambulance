@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { DISPATCH_HUB, findHospital, nearestDispatchHub, formatAddress, formatCoordinates, isFittable, parseCoordinate } from "./mapGeo.core.ts";
+import { DISPATCH_HUB, nearestDispatchHub, formatAddress, formatCoordinates, isFittable, parseCoordinate } from "./mapGeo.core.ts";
 
 const FALLBACK = { latitude: 28.5672, longitude: 77.21 };
 
@@ -10,15 +10,6 @@ for (const [a, b] of [[undefined, "77.2"], ["28.6", undefined], ["abc", "77.2"],
 }
 console.log("✓ parse\n");
 
-console.log("Test 3: hospital lookup uses the seeded coordinates...");
-assert.deepStrictEqual(findHospital("Jai Prakash Narayan Apex Trauma Center, AIIMS").coordinate, { latitude: 28.5672, longitude: 77.21 });
-assert.strictEqual(findHospital("Sharda Hospital Greater Noida").label, "Sharda Hospital");
-assert.deepStrictEqual(findHospital("SHARDA").coordinate, { latitude: 28.4732, longitude: 77.482 });
-const unknown = findHospital("Some Clinic");
-assert.strictEqual(unknown.matched, false);
-assert.strictEqual(unknown.label, "Some Clinic");
-console.log("✓ hospitals\n");
-
 console.log("Test 4: dispatch hubs cover both jurisdictions...");
 assert.ok(DISPATCH_HUB.DL && DISPATCH_HUB.UP);
 // Straight-line nearest hub, independent of any jurisdiction guess.
@@ -27,7 +18,7 @@ assert.deepStrictEqual(nearestDispatchHub({ latitude: 28.5708, longitude: 77.326
 console.log("✓ hubs\n");
 
 console.log("Test 5: route fitting is skipped for coincident points...");
-const AIIMS = findHospital("AIIMS").coordinate;
+const AIIMS = { latitude: 28.5672, longitude: 77.21 };
 assert.strictEqual(isFittable([AIIMS, AIIMS]), false, "AIIMS -> AIIMS demo route must not max-zoom");
 assert.strictEqual(isFittable([AIIMS]), false);
 assert.strictEqual(isFittable([]), false);

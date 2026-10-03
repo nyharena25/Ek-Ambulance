@@ -114,7 +114,7 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
     retry: "Try again",
     fieldError: {
       name: "Enter your full name (2 to 80 characters).",
-      plate: "Enter a valid registration number, for example DL 01 AB 1234.",
+      plate: "Enter a valid registration number, in the format SS 00 XX 0000.",
       makeModel: "Make and model can be at most 80 characters.",
       color: "Colour can be at most 30 characters.",
       crew: "Crew size must be between 1 and 12.",
@@ -190,7 +190,7 @@ export const driverProfileStrings: Record<SupportedLanguage, DriverProfileTransl
     retry: "फिर कोशिश करें",
     fieldError: {
       name: "अपना पूरा नाम लिखें (2 से 80 अक्षर)।",
-      plate: "सही पंजीकरण संख्या लिखें, जैसे DL 01 AB 1234।",
+      plate: "सही पंजीकरण संख्या लिखें, प्रारूप SS 00 XX 0000 में।",
       makeModel: "मेक और मॉडल अधिकतम 80 अक्षर का हो सकता है।",
       color: "रंग अधिकतम 30 अक्षर का हो सकता है।",
       crew: "टीम का आकार 1 से 12 के बीच होना चाहिए।",

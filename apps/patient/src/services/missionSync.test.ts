@@ -81,7 +81,27 @@ console.log("Test 1: in-order messages apply, duplicates drop, legacy (no seq) m
   assert.deepStrictEqual(h.applied, [["DRIVER_ACCEPTED", 7]], "no baseline yet: the first message establishes it");
   assert.strictEqual(h.sync.getLastSeq(), 7);
 }
-console.log("✓ apply / duplicate / legacy\n");
+{
+  // Out of order (invariant 9): a delayed DRIVER_ACCEPTED (seq 2) arriving after DRIVER_ARRIVED (seq 3) never moves the UI back.
+  const h = harness({ lastSeq: 1 });
+  const fetched: number[] = [];
+  const replay = harness({
+    lastSeq: 1,
+    fetchEventsAfter: async (seq) => {
+      fetched.push(seq);
+      return [msg("DRIVER_ACCEPTED", 2), msg("DRIVER_ARRIVED", 3)];
+    },
+  });
+  replay.sync.handle(msg("DRIVER_ARRIVED", 3)); // seq 2 not seen yet: a gap, replayed from the server in order
+  await tick();
+  await tick();
+  replay.sync.handle(msg("DRIVER_ACCEPTED", 2)); // the late original finally arrives
+  assert.deepStrictEqual(replay.applied, [["DRIVER_ACCEPTED", 2], ["DRIVER_ARRIVED", 3]], "replayed in server order, the late one dropped");
+  assert.deepStrictEqual(fetched, [1], "the gap was filled from the database event log");
+  assert.strictEqual(replay.sync.getLastSeq(), 3, "state never regresses");
+  void h;
+}
+console.log("✓ apply / duplicate / legacy / out-of-order\n");
 
 console.log("Test 2: a gap replays the missed events in order (G-12: TRANSPORT_STARTED lost while offline)...");
 {

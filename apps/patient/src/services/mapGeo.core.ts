@@ -45,21 +45,6 @@ export function nearestDispatchHub(pickup: GeoPoint): GeoPoint {
   return hubs.reduce((best, hub) => (haversineKm(hub, pickup) < haversineKm(best, pickup) ? hub : best), hubs[0]!);
 }
 
-// Coordinates are the four trauma centres seeded in supabase/migrations/20260924000000_core_ems_schema.sql.
-const HOSPITALS: ReadonlyArray<{ keyword: string; label: string; coordinate: GeoPoint }> = [
-  { keyword: "aiims", label: "AIIMS New Delhi", coordinate: { latitude: 28.5672, longitude: 77.21 } },
-  { keyword: "safdarjung", label: "Safdarjung Hospital", coordinate: { latitude: 28.5694, longitude: 77.2075 } },
-  { keyword: "sharda", label: "Sharda Hospital", coordinate: { latitude: 28.4732, longitude: 77.482 } },
-  { keyword: "fortis", label: "Fortis Hospital Noida", coordinate: { latitude: 28.6189, longitude: 77.3732 } },
-];
-
-/** ponytail: keyword match on the display name until missions carry a hospital id; unknown names fall back to AIIMS coordinates. */
-export function findHospital(name: string): { label: string; coordinate: GeoPoint; matched: boolean } {
-  const lower = name.toLowerCase();
-  const hit = HOSPITALS.find((h) => lower.includes(h.keyword));
-  return hit ? { label: hit.label, coordinate: hit.coordinate, matched: true } : { label: name, coordinate: HOSPITALS[0]!.coordinate, matched: false };
-}
-
 export const formatCoordinates = (p: GeoPoint) => `${p.latitude.toFixed(4)}° N, ${p.longitude.toFixed(4)}° E`;
 
 export interface GeocodedPlace {

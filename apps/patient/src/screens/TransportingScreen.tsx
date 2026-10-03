@@ -33,7 +33,7 @@ export interface TransportingScreenProps {
   etaMinutes?: number;
   /** The driver reached the hospital and is completing the handoff. */
   hospitalArrived?: boolean;
-  connection?: "live" | "connecting" | "paused";
+  connection?: "live" | "connecting" | "awaitingGps" | "paused";
   initialLanguage?: SupportedLanguage;
   onCallCrew?: () => void;
   onCall108?: () => void;
@@ -66,7 +66,7 @@ export interface TransportingScreenProps {
 export default function TransportingScreen({
   missionId = "",
   vehicleRegistration,
-  vehicleType = "TYPE_D_ALS",
+  vehicleType,
   hospitalName,
   wardStatus,
   etaMinutes,
@@ -248,7 +248,7 @@ export default function TransportingScreen({
               <View style={styles.centrifugoBadge}>
                 <View style={styles.centrifugoPulseDot} />
                 <Text style={styles.centrifugoBadgeText}>
-                  {connection === "live" ? strings.centrifugoLiveBadge : connection === "connecting" ? strings.trackingConnectingBadge : strings.trackingPausedBadge}
+                  {connection === "live" ? strings.centrifugoLiveBadge : connection === "connecting" ? strings.trackingConnectingBadge : connection === "awaitingGps" ? strings.trackingAwaitingGpsBadge : strings.trackingPausedBadge}
                 </Text>
               </View>
 
@@ -384,7 +384,7 @@ export default function TransportingScreen({
 
               <View style={styles.careTierPill}>
                 <Text style={styles.careTierPillText}>
-                  {vehicleType.replace(/_/g, " ")}
+                  {vehicleType?.replace(/_/g, " ") ?? "—"}
                 </Text>
               </View>
             </View>

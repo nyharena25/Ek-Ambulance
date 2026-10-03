@@ -247,7 +247,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     step3Description:
       "Register the emergency vehicle you will operate. Its AIS-125 classification was chosen in Step 1.",
     vehicleRegLabel: "Vehicle Registration Number (License Plate)",
-    vehicleRegPlaceholder: "e.g. DL 01 AB 1234 or UP 16 CD 5678",
+    vehicleRegPlaceholder: "Format: SS 00 XX 0000 (state, district, series, number)",
     vehicleRegHelp: "Must be registered as a Commercial Emergency Vehicle (Ambulance) with RTO.",
     makeModelLabel: "Vehicle Make & Model",
     makeModelPlaceholder: "e.g. Force Traveller 3350 / Tata Winger / Mahindra Bolero Maxx",
@@ -464,7 +464,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     errorExpiredDL: "License expiry date is invalid or expired. Please check.",
     errorMissingPSV: "PSV Commercial Badge number is required for ambulance operations.",
     errorMissingEMT: "EMT certificate number and issuing council are required.",
-    errorInvalidVehicleReg: "Please enter a valid Indian vehicle registration number (e.g. DL 01 AB 1234).",
+    errorInvalidVehicleReg: "Please enter a valid Indian vehicle registration number (format SS 00 XX 0000).",
     errorMissingAIS125: "Please select an AIS-125 vehicle classification tier.",
     errorMissingARAI: "ARAI AIS-125 Inspection Certificate is required by law.",
     errorMissingFitness: "Vehicle Fitness Permit (Form 38) is mandatory to operate on public roads.",
@@ -476,7 +476,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     applicationIdLabel: "Application Tracking Reference",
     categoryRegisteredLabel: "Registered AIS-125 Classification",
     reviewTimeNotice: "Digital document verification is typically processed within 2 to 4 business hours. You will receive an SMS and push notification once your ambulance is approved for dispatch.",
-    helplineNotice: "For expedited hospital-network onboarding assistance, call the Ek-Ambulance Fleet Desk at 1800-AMBULANCE (toll-free).",
+    helplineNotice: "The review result will appear on this screen and on your Profile.",
     goToDashboardButton: "Proceed to Dispatch Standby",
   },
 
@@ -564,7 +564,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     step3Description:
       "जिस आपातकालीन वाहन को आप चलाएंगे उसका पंजीकरण करें। इसका AIS-125 वर्गीकरण चरण 1 में चुना गया था।",
     vehicleRegLabel: "वाहन पंजीकरण संख्या (नंबर प्लेट)",
-    vehicleRegPlaceholder: "उदा. DL 01 AB 1234 या UP 16 CD 5678",
+    vehicleRegPlaceholder: "प्रारूप: SS 00 XX 0000 (राज्य, ज़िला, सीरीज़, नंबर)",
     vehicleRegHelp: "RTO में वाणिज्यिक आपातकालीन वाहन (एंबुलेंस) के रूप में पंजीकृत होना आवश्यक है।",
     makeModelLabel: "वाहन निर्माता एवं मॉडल",
     makeModelPlaceholder: "उदा. फोर्स ट्रैवलर 3350 / टाटा विंगर / महिंद्रा बोलेरो मैक्स",
@@ -781,7 +781,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     errorExpiredDL: "ड्राइविंग लाइसेंस की वैधता तिथि समाप्त हो चुकी है या अमान्य है।",
     errorMissingPSV: "एंबुलेंस संचालन हेतु PSV वाणिज्यिक बैज नंबर अनिवार्य है।",
     errorMissingEMT: "EMT प्रमाण पत्र नंबर एवं काउंसिल नाम अनिवार्य है।",
-    errorInvalidVehicleReg: "कृपया सही भारतीय वाहन पंजीकरण संख्या दर्ज करें (उदा. DL 01 AB 1234)।",
+    errorInvalidVehicleReg: "कृपया सही भारतीय वाहन पंजीकरण संख्या दर्ज करें (प्रारूप SS 00 XX 0000)।",
     errorMissingAIS125: "कृपया AIS-125 वाहन श्रेणी का चयन करें।",
     errorMissingARAI: "कानूनी रूप से ARAI AIS-125 निरीक्षण प्रमाण पत्र अनिवार्य है।",
     errorMissingFitness: "सड़क पर वाहन संचालन हेतु वाहन फिटनेस परमिट (फॉर्म 38) अनिवार्य है।",
@@ -793,7 +793,7 @@ export const driverOnboardingStrings: Record<SupportedLanguage, DriverOnboarding
     applicationIdLabel: "आवेदन ट्रैकिंग संदर्भ",
     categoryRegisteredLabel: "पंजीकृत AIS-125 श्रेणी",
     reviewTimeNotice: "डिजिटल दस्तावेज सत्यापन आमतौर पर 2 से 4 कार्य घंटों के भीतर पूरा होता है। एंबुलेंस को डिस्पैच के लिए स्वीकृति मिलते ही आपको SMS और ऐप सूचना प्राप्त होगी।",
-    helplineNotice: "त्वरित अस्पताल-नेटवर्क ऑनबोर्डिंग सहायता के लिए, Ek-Ambulance फ्लीट डेस्क से 1800-AMBULANCE (टोल-फ्री) पर संपर्क करें।",
+    helplineNotice: "समीक्षा का परिणाम इसी स्क्रीन और आपकी प्रोफ़ाइल पर दिखेगा।",
     goToDashboardButton: "डिस्पैच स्टैंडबाय पर जाएं",
   },
 };

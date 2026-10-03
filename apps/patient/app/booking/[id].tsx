@@ -10,11 +10,8 @@ import {
 import {
   AIS125VehicleType,
   ItemizedStatutoryFare,
-  Jurisdiction,
   PatientLifecycleState,
   TriageSymptomFlag,
-  DEFAULT_DISPATCH_DISTANCE_KM,
-  computeItemizedStatutoryFare,
   type GeoPoint,
 } from "@sahayak/domain";
 import { returnHome } from "../../src/navigation/returnHome";
@@ -23,7 +20,7 @@ import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAut
 import { useMissionSync } from "../../src/hooks/useMissionSync";
 import type { DriverMarkerHandle } from "../../src/components";
 import { useDrivingRoute } from "../../src/hooks/useDrivingRoute";
-import { DEFAULT_PICKUP, findHospital, formatCoordinates, parseCoordinate } from "../../src/services/mapGeo.core";
+import { DEFAULT_PICKUP, formatCoordinates, parseCoordinate } from "../../src/services/mapGeo.core";
 import { confirmReceipt, fetchMissionCreatedAt, requestErasure } from "../../src/lib/missionApi";
 import { matchingStrings } from "../../src/i18n/matchingStrings";
 
@@ -52,7 +49,6 @@ export default function BookingMissionTrackingRoute() {
     lon?: string;
     symptom?: string;
     state?: string;
-    hospitalName?: string;
     wardStatus?: string;
   }>();
   const currentState = usePatientLifecycleStore((s) => s.currentState);
@@ -111,26 +107,18 @@ export default function BookingMissionTrackingRoute() {
       driverMarkerRef.current?.moveTo(telemetry, telemetry.heading);
     },
   });
-  const vehicleType: AIS125VehicleType =
-    context.vehicleType || (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
-  // Server-decided (create_mission / mission row); unknown stays null rather than defaulting to a state.
-  const jurisdiction: Jurisdiction | null =
-    context.jurisdiction ?? (params.jurisdiction === "DL" || params.jurisdiction === "UP" ? params.jurisdiction : null);
-  // Every computeTriageUrgency() branch returns >=1 symptomFlags entry, so
-  // symptomFlags[0] cannot actually be undefined for a real triage result -
-  // this optional chain and the "chest_pain" terminal only matter for a raw
-  // deep link with no context and no params at all, where any value here is
-  // an arbitrary placeholder, not a clinical default.
-  const triagedSymptom: TriageSymptomFlag =
-    context.triageResult?.symptomFlags[0] ||
-    (params.symptom as TriageSymptomFlag) ||
-    "chest_pain";
+  // The type the request carried (machine, else the route link); undefined is shown as "—", never a default type.
+  const vehicleType: AIS125VehicleType | undefined =
+    context.vehicleType || (params.vehicleType as AIS125VehicleType | undefined) || undefined;
+  // Only a symptom the patient really reported; unknown (resumed after a restart) shows the general first-aid guide.
+  const triagedSymptom: TriageSymptomFlag | undefined =
+    context.triageResult?.symptomFlags[0] || (params.symptom as TriageSymptomFlag | undefined) || undefined;
   const missionState: PatientLifecycleState = isStoreWarm
     ? currentState
     : (params.state as PatientLifecycleState) || "tracking";
 
   // context.pickup is the server-synced real location (once the store is warm); params.lat/lon are the
-  // cold-store fallback for a direct deep link, same pattern as vehicleType/jurisdiction above - real data
+  // cold-store fallback for a direct deep link, same pattern as vehicleType above - real data
   // always wins over both. If neither exists (a malformed deep link that bypassed matching.tsx entirely,
   // which always carries a real pickup by the time it hands off here), the map still needs *a* coordinate to
   // center on, but the address shown to the patient must never claim that placeholder is their real location.
@@ -139,16 +127,12 @@ export default function BookingMissionTrackingRoute() {
     (params.lat != null && params.lon != null && Number.isFinite(Number(params.lat)) && Number.isFinite(Number(params.lon)));
   const pickup = context.pickup ?? parseCoordinate(params.lat, params.lon, DEFAULT_PICKUP);
   const pickupAddress = params.address || (hasRealPickup ? formatCoordinates(pickup) : "");
-  // The hospital is whatever the driver actually selected (TRANSPORT_STARTED.destination); a route param is only a
-  // dev/deep-link hint, and with neither there is no hospital to show (P10: nothing sets it today).
-  const hospitalName = context.destination?.name ?? params.hospitalName;
-  // Only a real coordinate: the server's destination, or a deep-link name that matches a known hospital - never a fallback.
-  const knownHospital = hospitalName ? findHospital(hospitalName) : null;
+  // The hospital is only the server's record (TRANSPORT_STARTED.destination, written from missions.destination_hospital_id
+  // and reloaded from the stored event after a reconnect). Never a name from a link, never a name-to-coordinate guess.
+  const hospitalName = context.destination?.name;
   const hospitalCoordinate = context.destination
     ? { latitude: context.destination.latitude, longitude: context.destination.longitude }
-    : knownHospital?.matched
-      ? knownHospital.coordinate
-      : null;
+    : null;
   const isTransportLeg = missionState === "transporting";
   // The patient app is not sent the ambulance's position before its first live ping, so no route or marker is drawn
   // from a made-up start (a fixed hub) on the way to the pickup; the transport leg is pickup -> real hospital.
@@ -183,15 +167,11 @@ export default function BookingMissionTrackingRoute() {
         hospitalName={hospitalName}
         completedAt={context.completion?.completedAt}
         distanceSource={context.completion?.distanceSource}
-        fareDetails={
-          (context.completion?.fareDetails as ItemizedStatutoryFare | undefined) ||
-          context.fareDetails ||
-          computeItemizedStatutoryFare({
-            vehicleType,
-            jurisdiction,
-            distanceKm: DEFAULT_DISPATCH_DISTANCE_KM,
-          })
-        }
+        // Only the server's final fare (live MISSION_COMPLETED, or the stored one after a reconnect): never the booking
+        // quote and never a fare from a default distance.
+        fareDetails={context.completion?.fareDetails as ItemizedStatutoryFare | undefined}
+        crewName={context.assignedDriver?.displayName}
+        vehicleType={vehicleType}
         initialLanguage="en"
         onReturnHome={handleCompletionReturnHome}
         onDisputeFare={handleDisputeFare}
@@ -253,6 +233,7 @@ export default function BookingMissionTrackingRoute() {
       assignedDriver={context.assignedDriver ?? undefined}
       maskedCall={context.maskedCall ?? undefined}
       etaMinutes={context.etaMinutes ?? undefined}
+      estimatedFareInr={context.fareDetails?.estimatedTotalInr}
       connection={connection}
     />
   );

@@ -88,6 +88,8 @@ export interface DispatchOffer {
   pickup?: { latitude: number; longitude: number; address?: string; landmark?: string };
   distanceKm?: number;
   etaMinutes?: number;
+  /** The mission's statutory booking estimate (server fare_details); absent when the server sent none. */
+  estimatedFareInr?: number;
   /** The only clinical content a driver sees. ageBand/sex depend on decision D-6 and are absent when not captured. */
   patientSummary?: { primaryComplaint?: string; derivedFlags?: string[]; ageBand?: string; sex?: string };
 }
@@ -137,6 +139,7 @@ export function parseDispatchOffer(data: unknown): DispatchOffer | null {
         : undefined,
     distanceKm: num(data.distanceKm),
     etaMinutes: num(data.etaMinutes),
+    estimatedFareInr: num(data.estimatedFareInr),
     patientSummary: summary
       ? {
           primaryComplaint: str(summary.primaryComplaint),

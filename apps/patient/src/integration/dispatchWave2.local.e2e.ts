@@ -8,7 +8,7 @@ import { buildCreateMissionParams, mapRpcError, parseCreateMissionResult } from 
 /**
  * G4.6-B: wave-2 escalation on the LOCAL stack, driven only by the production scheduler. The patient books; wave 1
  * (dispatch_config radiiKm[0]) reaches driver A, who never answers; the offer TTL runs out, then the wave window; pg_cron's
- * `dispatch_tick` job (migration 20260928000000, every minute) revokes wave 1 and opens wave 2 (radiiKm[1]), which reaches
+ * `dispatch_tick` job (every 5 s since 20261003000000; a wave now expires with its offer) revokes wave 1 and opens wave 2 (radiiKm[1]), which reaches
  * driver B, who sits outside wave 1's radius; B accepts. Nothing here inserts a wave, offer or event, updates a status,
  * calls dispatch_tick / dispatch_next_wave, or publishes. The service key only creates the throwaway users and reads
  * dispatch_waves (a driver cannot read another driver's wave under RLS).
@@ -215,7 +215,7 @@ try {
   assert.strictEqual(offer1.o.waveNumber, 1);
   assert.ok(Math.abs(ms(w1.created_at, offer1.o.issuedAt!)) < 1, "offer issuedAt is the wave's creation instant");
   assert.strictEqual(ms(offer1.o.issuedAt!, offer1.o.expiresAt), cfg.offerTtlSeconds * 1000, "offer TTL");
-  assert.ok(Math.abs(ms(w1.created_at, w1.expires_at) - cfg.waveWindowSeconds * 1000) < 1, "wave window");
+  assert.ok(Math.abs(ms(w1.created_at, w1.expires_at) - cfg.offerTtlSeconds * 1000) < 1, "a wave expires with its offer (no dead window, 20261003000000)");
   mark("wave 1 created (dispatch_waves.created_at)", w1.created_at);
   mark("wave 1 offer issuedAt", offer1.o.issuedAt!);
   mark("wave 1 offer received by A", offer1.at);
@@ -240,12 +240,12 @@ try {
     }));
   });
 
-  step("7. Offer TTL passes: A's own offer can no longer be accepted (wave still open, before any tick)");
+  step("7. Offer TTL passes: A's own offer can no longer be accepted (the wave expires with it)");
   await sleepUntil(Date.parse(offer1.o.expiresAt) + 1000);
   const w1Now = await admin.from("dispatch_waves").select("status").eq("id", w1.id).single();
   await refuse(`driver A accept_offer(own wave 1 after TTL, wave still ${w1Now.data?.status})`, A.db, "accept_offer", { p_offer_id: w1.id, p_client_event_id: randomUUID() }, ["offer_expired"]);
 
-  step(`8. Waiting for the real pg_cron dispatch_tick (wave window ${cfg.waveWindowSeconds} s, job every minute)`);
+  step(`8. Waiting for the real pg_cron dispatch_tick (wave = offer TTL ${cfg.offerTtlSeconds} s, job every 5 s)`);
   const offer2 = await inboxB.until("WAVE2_OFFER_REALTIME_FAILURE (no escalation observed)", cfg.waveWindowSeconds * 1000 + 75_000, () => inboxB.offers.find((x) => x.o.missionId === MID));
   const revokedA = await inboxA.until("A_REVOKE_REALTIME_FAILURE", 10_000, () => inboxA.revoked.find((x) => x.r.offerId === w1.id));
   const waves = await admin.from("dispatch_waves").select("*").eq("mission_id", MID).order("wave_number");

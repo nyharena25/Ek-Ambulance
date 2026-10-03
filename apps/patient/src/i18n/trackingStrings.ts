@@ -22,6 +22,8 @@ export interface TrackingTranslation {
   centrifugoLiveBadge: string;
   trackingConnectingBadge: string;
   trackingPausedBadge: string;
+  /** Socket healthy, no recent position from the ambulance yet: not a connection problem. */
+  trackingAwaitingGpsBadge: string;
   etaOnlyLabel: (mins: number) => string;
   languageToggleLabel: string;
 
@@ -49,6 +51,8 @@ export interface TrackingTranslation {
   driverLabel: string;
   vehicleLabel: string;
   etaLabel: string;
+  /** The booking-time statutory estimate; the final fare is measured from the trip and shown at completion. */
+  estimatedFareLabel: string;
 
   // Expandable Preparation Guide
   guideHeaderTitle: string;
@@ -72,6 +76,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     centrifugoLiveBadge: "Live tracking",
     trackingConnectingBadge: "Connecting to live tracking...",
     trackingPausedBadge: "Live tracking paused - last position shown",
+    trackingAwaitingGpsBadge: "Connected - waiting for the ambulance's position",
     etaOnlyLabel: (mins: number) => `${mins} MINS`,
     languageToggleLabel: "Language Switch",
 
@@ -93,6 +98,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     driverLabel: "Driver",
     vehicleLabel: "Vehicle",
     etaLabel: "Arriving in",
+    estimatedFareLabel: "Estimated fare",
 
     guideHeaderTitle: "Pre-Arrival Preparation Guide",
     guideHeaderSubtitle: "Critical first-aid actions while ambulance is en route",
@@ -287,6 +293,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     centrifugoLiveBadge: "लाइव ट्रैकिंग",
     trackingConnectingBadge: "लाइव ट्रैकिंग से जुड़ रहा है...",
     trackingPausedBadge: "लाइव ट्रैकिंग रुकी है - आख़िरी स्थिति दिखाई गई",
+    trackingAwaitingGpsBadge: "जुड़ा हुआ - एंबुलेंस की स्थिति का इंतज़ार",
     etaOnlyLabel: (mins: number) => `${mins} मिनट`,
     languageToggleLabel: "भाषा चयन",
 
@@ -308,6 +315,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     driverLabel: "ड्राइवर",
     vehicleLabel: "वाहन",
     etaLabel: "पहुँचने में",
+    estimatedFareLabel: "अनुमानित किराया",
 
     guideHeaderTitle: "आगमन पूर्व तैयारी निर्देश",
     guideHeaderSubtitle: "एंबुलेंस आने तक अत्यंत महत्वपूर्ण प्राथमिक उपचार कदम",

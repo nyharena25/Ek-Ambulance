@@ -49,8 +49,10 @@ export interface MissionTrackingScreenProps {
   maskedCall?: { number: string; extension?: string };
   /** Routed ETA from the server; absent => the ETA card is not shown. */
   etaMinutes?: number;
+  /** The mission's statutory booking estimate (server fare_details); omitted when unknown. */
+  estimatedFareInr?: number;
   /** Feed health from useMissionChannel: the "live" badge is only shown when this is `live`. */
-  connection?: "live" | "connecting" | "paused";
+  connection?: "live" | "connecting" | "awaitingGps" | "paused";
 }
 
 /**
@@ -71,8 +73,8 @@ export interface MissionTrackingScreenProps {
  */
 export default function MissionTrackingScreen({
   missionId = "",
-  vehicleType = "TYPE_D_ALS",
-  triagedSymptom = "chest_pain",
+  vehicleType,
+  triagedSymptom,
   initialLanguage = "en",
   onCallDriver,
   onCall108,
@@ -86,6 +88,7 @@ export default function MissionTrackingScreen({
   assignedDriver,
   maskedCall,
   etaMinutes,
+  estimatedFareInr,
   connection = "connecting",
 }: MissionTrackingScreenProps) {
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
@@ -95,7 +98,8 @@ export default function MissionTrackingScreen({
 
   // Resolve symptom guide
   const symptomKey =
-    triagedSymptom in strings.guidesBySymptom
+    // Unknown symptom (e.g. resumed after a restart): the general guide, never another condition's instructions.
+    triagedSymptom && triagedSymptom in strings.guidesBySymptom
       ? (triagedSymptom as keyof typeof strings.guidesBySymptom)
       : "default";
   const guideData = strings.guidesBySymptom[symptomKey] || strings.guidesBySymptom.default;
@@ -221,7 +225,10 @@ export default function MissionTrackingScreen({
         <View style={styles.heroCard} accessibilityRole="summary">
           <Text style={styles.heroStatus}>{driverHasArrived ? strings.arrivedTitle : strings.matchedTitle}</Text>
           <Text style={styles.heroType} numberOfLines={2}>
-            {strings.vehicleTypeName[assignedDriver?.ais125Type ?? vehicleType] ?? vehicleType}
+            {(() => {
+              const t = assignedDriver?.ais125Type ?? vehicleType;
+              return t ? (strings.vehicleTypeName[t] ?? t) : "—";
+            })()}
           </Text>
           {etaMinutes !== undefined && !driverHasArrived && (
             <View style={styles.heroEtaRow}>
@@ -250,6 +257,12 @@ export default function MissionTrackingScreen({
             </View>
           )}
           {assignedDriver?.crewCount !== undefined && <Text style={styles.heroDetail}>{strings.crewSize(assignedDriver.crewCount)}</Text>}
+          {estimatedFareInr !== undefined && (
+            <View style={styles.heroRow}>
+              <Text style={styles.heroLabel}>{strings.estimatedFareLabel}</Text>
+              <Text style={styles.heroValue} numberOfLines={1}>₹{Math.round(estimatedFareInr)}</Text>
+            </View>
+          )}
           {/* Only when the server provisioned a relay number for this mission. */}
           {(maskedCall || onCallDriver) && (
             <Pressable
@@ -281,7 +294,7 @@ export default function MissionTrackingScreen({
               <View style={styles.centrifugoBadge}>
                 <View style={styles.centrifugoPulseDot} />
                 <Text style={styles.centrifugoBadgeText}>
-                  {connection === "live" ? strings.centrifugoLiveBadge : connection === "connecting" ? strings.trackingConnectingBadge : strings.trackingPausedBadge}
+                  {connection === "live" ? strings.centrifugoLiveBadge : connection === "connecting" ? strings.trackingConnectingBadge : connection === "awaitingGps" ? strings.trackingAwaitingGpsBadge : strings.trackingPausedBadge}
                 </Text>
               </View>
 

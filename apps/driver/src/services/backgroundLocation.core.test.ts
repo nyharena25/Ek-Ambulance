@@ -57,7 +57,8 @@ handleLocationFix(loc, deps);
 assert.deepStrictEqual(published[0], {
   latitude: 28.5, longitude: 77.4, heading: 90, speed: 36, timestamp: "2026-09-24T00:00:00.000Z",
 });
-assert.deepStrictEqual(gps[0], { latitude: 28.5, longitude: 77.4, accuracyMeters: 4, heading: 90, speedKmh: 36, altitudeMeters: 200 });
+assert.deepStrictEqual(gps[0], { latitude: 28.5, longitude: 77.4, accuracyMeters: 4, heading: 90, speedKmh: 36, altitudeMeters: 200, fixedAt: "2026-09-24T00:00:00.000Z" },
+  "the stored fix carries the device's own fix time (the server judges GPS freshness from it)");
 
 handleLocationFix({ ...loc, coords: { ...loc.coords, heading: -1, speed: null } }, deps);
 const unknown = published[1] as Record<string, unknown>;

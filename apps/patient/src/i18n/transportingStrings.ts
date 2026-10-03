@@ -15,6 +15,8 @@ export interface TransportingTranslation {
   centrifugoLiveBadge: string;
   trackingConnectingBadge: string;
   trackingPausedBadge: string;
+  /** Socket healthy, no recent position from the ambulance yet: not a connection problem. */
+  trackingAwaitingGpsBadge: string;
   etaOnlyLabel: (mins: number) => string;
   hospitalPendingText: string;
   hospitalArrivedNotice: string;
@@ -58,6 +60,7 @@ export const transportingStrings: Record<
     centrifugoLiveBadge: "Live tracking",
     trackingConnectingBadge: "Connecting to live tracking...",
     trackingPausedBadge: "Live tracking paused - last position shown",
+    trackingAwaitingGpsBadge: "Connected - waiting for the ambulance's position",
     etaOnlyLabel: (mins: number) => `${mins} MINS`,
     hospitalPendingText: "Destination hospital not confirmed yet",
     hospitalArrivedNotice: "The ambulance has reached the hospital. The crew is completing the handoff.",
@@ -95,6 +98,7 @@ export const transportingStrings: Record<
     centrifugoLiveBadge: "लाइव ट्रैकिंग",
     trackingConnectingBadge: "लाइव ट्रैकिंग से जुड़ रहा है...",
     trackingPausedBadge: "लाइव ट्रैकिंग रुकी है - आख़िरी स्थिति दिखाई गई",
+    trackingAwaitingGpsBadge: "जुड़ा हुआ - एंबुलेंस की स्थिति का इंतज़ार",
     etaOnlyLabel: (mins: number) => `${mins} मिनट`,
     hospitalPendingText: "गंतव्य अस्पताल की पुष्टि अभी नहीं हुई",
     hospitalArrivedNotice: "एम्बुलेंस अस्पताल पहुँच गई है। क्रू हैंडऑफ पूरा कर रहा है।",

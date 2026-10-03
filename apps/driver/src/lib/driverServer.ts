@@ -1,12 +1,14 @@
-import { isUuid, mapRpcError, newIdempotencyKey, parseBoardResponse, type ApiResult, type BoardSnapshot, type GeoPoint } from "@sahayak/domain";
+import { isUuid, mapRpcError, newIdempotencyKey, parseBoardResponse, type ApiResult, type BoardSnapshot, type DispatchOffer, type GeoPoint } from "@sahayak/domain";
 import { supabase } from "./supabaseClient";
 import { parseDriverProfile, type DriverProfile, type DriverProfilePatch, type ServiceZone } from "./driverProfile.core";
 import {
   parseAssignedMissionRow,
-  parseHospitalRow,
+  HOSPITAL_CATALOG_COLUMNS,
+  parseCatalogHospital,
+  parseOpenOffers,
   toIngestPings,
   type AssignedMissionRow,
-  type HospitalRow,
+  type CatalogHospital,
   type ServerCall,
 } from "./driverServer.core";
 import type { QueuedTelemetryPing } from "../types/driverConnection.types";
@@ -39,13 +41,20 @@ export async function callServer(call: ServerCall): Promise<ApiResult<{ status?:
   }
 }
 
-/** Go online / heartbeat / go offline (R-05): the server validates verification and owns the position write. */
-export async function setPresence(isOnline: boolean, location?: GeoPoint): Promise<ApiResult<true>> {
+/** Go online / heartbeat / go offline (R-05): the server validates verification and owns the position write. `fixAt` is when
+ *  the device measured `location`; its AGE is sent (device clock on both ends, so clock skew cancels) and the server judges
+ *  GPS freshness from it, so an old fix re-sent by a heartbeat stays old. */
+export async function setPresence(isOnline: boolean, location?: GeoPoint, fixAt?: string): Promise<ApiResult<true>> {
+  const fixAgeMs = fixAt && !Number.isNaN(Date.parse(fixAt)) ? Math.max(0, Date.now() - Date.parse(fixAt)) : undefined;
+  const base = { p_online: isOnline, ...(location ? { p_lat: location.latitude, p_lng: location.longitude } : {}) };
   try {
-    const { data, error } = await supabase.rpc("set_driver_presence", {
-      p_online: isOnline,
-      ...(location ? { p_lat: location.latitude, p_lng: location.longitude } : {}),
+    let { data, error } = await supabase.rpc("set_driver_presence", {
+      ...base,
+      ...(location && fixAgeMs !== undefined ? { p_fix_age_ms: fixAgeMs } : {}),
     });
+    // PGRST202: a database that has not run 20261003000000 yet has no p_fix_age_ms. Presence must keep working across that
+    // deploy gap, so retry once with the old signature (the server then treats the fix as measured now, as before).
+    if (error?.code === "PGRST202" && fixAgeMs !== undefined) ({ data, error } = await supabase.rpc("set_driver_presence", base));
     if (error) return { ok: false, error: mapRpcError(error) };
     return (data as { ok?: boolean } | null)?.ok ? { ok: true, data: true } : { ok: false, error: { code: "invalid_response", status: 0, retryable: false } };
   } catch (e) {
@@ -72,7 +81,7 @@ export async function fetchAssignedMission(): Promise<ApiResult<AssignedMissionR
   try {
     const { data, error } = await supabase
       .from("missions")
-      .select("id,status,pickup_location")
+      .select("id,status,pickup_location,destination_hospital_id")
       .not("status", "in", "(completed,cancelled)")
       .order("created_at", { ascending: false })
       .limit(1);
@@ -86,6 +95,18 @@ export async function fetchAssignedMission(): Promise<ApiResult<AssignedMissionR
 }
 
 const INVALID: { ok: false; error: ReturnType<typeof mapRpcError> } = { ok: false, error: { code: "invalid_response", status: 0, retryable: true } };
+
+/** Offers still open for this driver (a reconnect may have missed their push). A failed read is an error, not "none". */
+export async function fetchOpenOffers(): Promise<ApiResult<{ offers: DispatchOffer[]; clockOffsetMs: number }>> {
+  try {
+    const { data, error } = await supabase.rpc("list_open_offers");
+    if (error) return { ok: false, error: mapRpcError(error) };
+    const parsed = parseOpenOffers(data, Date.now());
+    return parsed ? { ok: true, data: parsed } : INVALID;
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 /** The caller's Booking board. A per-driver pull: the server decides which emergencies this driver may see (never a broadcast). */
 export async function fetchBoard(): Promise<ApiResult<BoardSnapshot>> {
@@ -184,14 +205,15 @@ export async function changePassword(password: string): Promise<ApiResult<true>>
   }
 }
 
-/** Active hospitals (RLS `hospitals_select_active`). */
-export async function fetchHospitals(): Promise<HospitalRow[]> {
+/** The registered hospital catalog (RLS `hospitals_select_active`), canonical ids included. A failed read is an error, not "no hospitals". */
+export async function fetchHospitalCatalog(): Promise<ApiResult<CatalogHospital[]>> {
   try {
-    const { data, error } = await supabase.from("hospitals").select("id,location").eq("is_active", true);
-    if (error || !data) return [];
-    return data.map(parseHospitalRow).filter((h): h is HospitalRow => h !== null);
-  } catch {
-    return [];
+    const { data, error } = await supabase.from("hospitals").select(HOSPITAL_CATALOG_COLUMNS).eq("is_active", true).order("name");
+    if (error) return { ok: false, error: mapRpcError(error) };
+    if (!data) return { ok: false, error: { code: "invalid_response", status: 0, retryable: true } };
+    return { ok: true, data: data.map(parseCatalogHospital).filter((h): h is CatalogHospital => h !== null) };
+  } catch (e) {
+    return fail(e);
   }
 }
 

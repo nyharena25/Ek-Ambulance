@@ -110,7 +110,7 @@ export const completionStrings: Record<
     finalDistanceRow: (km: number) =>
       `Route Traveled, GPS-measured (${km.toFixed(1)} km)`,
     estimatedDistanceRow: (km: number) =>
-      `Booking Estimate, not GPS-measured (${km.toFixed(1)} km)`,
+      `Estimated, pickup to hospital in a straight line, not GPS-measured (${km.toFixed(1)} km)`,
     baseFareRow: (initialKm: number) =>
       `Base Ambulance Tariff (Includes initial ${initialKm.toFixed(1)} km)`,
     additionalDistanceRow: (km: number, rate: number) =>
@@ -227,7 +227,7 @@ export const completionStrings: Record<
     finalDistanceRow: (km: number) =>
       `तय की गई दूरी, GPS द्वारा मापी गई (${km.toFixed(1)} किमी)`,
     estimatedDistanceRow: (km: number) =>
-      `बुकिंग के समय का अनुमान, GPS द्वारा मापी नहीं गई (${km.toFixed(1)} किमी)`,
+      `अनुमान, पिकअप से अस्पताल सीधी दूरी, GPS द्वारा मापी नहीं गई (${km.toFixed(1)} किमी)`,
     baseFareRow: (initialKm: number) =>
       `मूल एंबुलेंस किराया (प्रारंभिक ${initialKm.toFixed(1)} किमी सम्मिलित)`,
     additionalDistanceRow: (km: number, rate: number) =>
@@ -324,8 +324,8 @@ export const completionStrings: Record<
 
 /**
  * The receipt's distance row names where the billed distance came from. Only a server-confirmed `measured` distance is
- * called GPS-measured; the quote fallback, an older publisher and a receipt rebuilt without the completion record all read
- * as the booking estimate. The amount itself is the server's either way.
+ * called GPS-measured; the server's no-track fallback (the pickup -> hospital leg, 20261003000000) and an older publisher
+ * read as an estimate. The amount itself is the server's either way.
  */
 export function distanceRowLabel(strings: CompletionTranslation, km: number, source: "measured" | "estimate" | undefined): string {
   return source === "measured" ? strings.finalDistanceRow(km) : strings.estimatedDistanceRow(km);

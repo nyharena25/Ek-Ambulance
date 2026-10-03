@@ -130,6 +130,17 @@ export const patientLifecycleMachine = setup({
         fareDetails: p.fareDetails ?? context.fareDetails,
         // Back to `requesting` (driver released): nobody is assigned any more. ETA is never restored: it was only true when sent.
         assignedDriver: p.status === "requesting" ? null : (p.driver ?? context.assignedDriver),
+        // Destination and final fare only exist from transport / completion on; a reconnect reloads them from the stored events.
+        destination: p.status === "requesting" || p.status === "en_route" || p.status === "on_scene" ? null : (p.destination ?? context.destination),
+        completion: p.completion ?? context.completion,
+        cancellation: p.cancellation
+          ? {
+              cancelledBy: p.cancellation.cancelledBy ?? null,
+              reason: p.cancellation.reason ?? null,
+              note: p.cancellation.note ?? null,
+              fromState: p.cancellation.fromState ?? null,
+            }
+          : context.cancellation,
         driverHasArrived: p.status === "on_scene",
         hospitalArrived: p.status === "arrived_hospital",
         error: null,

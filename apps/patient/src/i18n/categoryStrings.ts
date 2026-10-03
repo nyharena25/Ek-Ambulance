@@ -14,8 +14,6 @@ export interface VehicleCategoryMetadata {
   hindiSubtitle: string;
   equipment: string[];
   hindiEquipment: string[];
-  etaMinutes: number;
-  distanceKmApprox: number;
   baseFareInr: number;
   perKmRateInr: number;
   minimumTierRequired: "CAT_1_IMMEDIATE" | "CAT_2_URGENT" | "CAT_3_DELAYED" | "CAT_4_MFR";
@@ -29,11 +27,12 @@ export interface CategoryTranslation {
   triageMandateNotice: (level: string) => string;
   equipmentHeading: string;
   statutoryFareLabel: string;
-  etaLabel: (mins: number, dist: number) => string;
   lockoutCat1: string;
   lockoutCat2: string;
   lockoutCat3: string;
   statutoryRegulationFootnote: string;
+  /** Before a route exists the card shows the statutory starting fare (first 5 km), prefixed with this. */
+  fareFromPrefix: string;
   confirmButtonText: (name: string, fare: number) => string;
   confirmButtonSubtitle: string;
 }
@@ -67,8 +66,6 @@ export const AIS125_VEHICLES: VehicleCategoryMetadata[] = [
       "आपातकालीन दवाएं",
       "प्रमाणित पैरामेडिक",
     ],
-    etaMinutes: 4,
-    distanceKmApprox: 1.2,
     baseFareInr: 500,
     perKmRateInr: 25,
     minimumTierRequired: "CAT_1_IMMEDIATE",
@@ -99,8 +96,6 @@ export const AIS125_VEHICLES: VehicleCategoryMetadata[] = [
       "स्पाइन बोर्ड व स्प्लिंट",
       "प्रशिक्षित EMT क्रू",
     ],
-    etaMinutes: 6,
-    distanceKmApprox: 2.4,
     baseFareInr: 300,
     perKmRateInr: 15,
     minimumTierRequired: "CAT_2_URGENT",
@@ -129,8 +124,6 @@ export const AIS125_VEHICLES: VehicleCategoryMetadata[] = [
       "पोर्टेबल ऑक्सीजन टैंक",
       "प्राथमिक चिकित्सा किट",
     ],
-    etaMinutes: 8,
-    distanceKmApprox: 3.5,
     baseFareInr: 200,
     perKmRateInr: 12,
     minimumTierRequired: "CAT_3_DELAYED",
@@ -159,8 +152,6 @@ export const AIS125_VEHICLES: VehicleCategoryMetadata[] = [
       "बैग-वाल्व-मास्क रिससिटेटर",
       "रक्तस्राव नियंत्रण किट",
     ],
-    etaMinutes: 2,
-    distanceKmApprox: 0.8,
     baseFareInr: 150,
     perKmRateInr: 8,
     minimumTierRequired: "CAT_4_MFR",
@@ -177,8 +168,6 @@ export const categoryStrings: Record<SupportedLanguage, CategoryTranslation> = {
       `Clinical safety protocol mandates minimum ${level} specification. Lower vehicle tiers are locked out for patient safety.`,
     equipmentHeading: "Mandatory AIS-125 Equipment Onboard",
     statutoryFareLabel: "Statutory Regulated Tariff",
-    etaLabel: (mins: number, dist: number) =>
-      `${mins} mins away (${dist} km)`,
     lockoutCat1:
       "Clinical Lockout: Triage mandates Advanced Life Support (ALS) with mechanical ventilator & paramedic.",
     lockoutCat2:
@@ -187,8 +176,9 @@ export const categoryStrings: Record<SupportedLanguage, CategoryTranslation> = {
       "Clinical Lockout: Stretcher transport required; two-wheeler first responder unavailable.",
     statutoryRegulationFootnote:
       "Statutory fares strictly regulated under MoRTH AIS-125 Tariff Rules. Zero surge gouging.",
+    fareFromPrefix: "from ",
     confirmButtonText: (name: string, fare: number) =>
-      `Confirm ${name} (₹${fare})`,
+      `Confirm ${name} (from ₹${fare})`,
     confirmButtonSubtitle: "Review final fare breakdown & dispatch driver",
   },
   hi: {
@@ -200,8 +190,6 @@ export const categoryStrings: Record<SupportedLanguage, CategoryTranslation> = {
       `मरीज की सुरक्षा हेतु न्यूनतम ${level} एंबुलेंस अनिवार्य है। निचले स्तर के वाहन लॉक कर दिए गए हैं।`,
     equipmentHeading: "वाहन में अनिवार्य AIS-125 उपकरण",
     statutoryFareLabel: "शासकीय निर्धारित किराया",
-    etaLabel: (mins: number, dist: number) =>
-      `${mins} मिनट में आगमन (${dist} किमी)`,
     lockoutCat1:
       "चिकित्सीय लॉकआउट: मरीज को वेंटिलेटर एवं पैरामेडिक युक्त ALS एंबुलेंस अनिवार्य है।",
     lockoutCat2:
@@ -210,8 +198,9 @@ export const categoryStrings: Record<SupportedLanguage, CategoryTranslation> = {
       "चिकित्सीय लॉकआउट: मरीज को स्ट्रेचर वाहन आवश्यक है; फर्स्ट रिस्पॉन्डर अनुपयुक्त है।",
     statutoryRegulationFootnote:
       "MoRTH AIS-125 नियमों के तहत सरकारी नियंत्रित दरें। कोई आपातकालीन सर्ज शुल्क नहीं।",
+    fareFromPrefix: "से शुरू ",
     confirmButtonText: (name: string, fare: number) =>
-      `${name} सुनिश्चित करें (₹${fare})`,
+      `${name} सुनिश्चित करें (₹${fare} से शुरू)`,
     confirmButtonSubtitle: "किराया विवरण देखें और एंबुलेंस बुक करें",
   },
 };

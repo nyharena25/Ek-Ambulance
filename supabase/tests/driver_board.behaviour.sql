@@ -83,10 +83,11 @@ create function t.mission(p_lat_offset double precision, p_age_s integer, p_type
 language plpgsql as $$
 declare v uuid;
 begin
-  insert into public.missions (patient_id, urgency, vehicle_type, pickup_location, jurisdiction, pickup_address, triage, idempotency_key, created_at)
+  -- search_started_at (20261003000000) is the band clock; for a mission never released it equals created_at.
+  insert into public.missions (patient_id, urgency, vehicle_type, pickup_location, jurisdiction, pickup_address, triage, idempotency_key, created_at, search_started_at)
   values ('00000000-0000-4000-8000-000000000a01', 'CAT_1_IMMEDIATE', p_type,
-          extensions.st_geogfromtext('SRID=4326;POINT(77.3910 ' || (28.5355 + p_lat_offset) || ')'), 'DL', p_label,
-          '{"primary_complaint":"chest_pain","derived_flags":["cardiac"]}', gen_random_uuid(), now() - make_interval(secs => p_age_s))
+          extensions.st_geogfromtext('SRID=4326;POINT(77.3910 ' || (28.5355 + p_lat_offset) || ')'), 'UP', p_label, -- Noida
+          '{"primary_complaint":"chest_pain","derived_flags":["cardiac"]}', gen_random_uuid(), now() - make_interval(secs => p_age_s), now() - make_interval(secs => p_age_s))
   returning id into v;
   return v;
 end $$;
@@ -280,7 +281,7 @@ set role authenticated;
 select t.eq((select b ->> 'band' from jsonb_array_elements((public.list_nearby_emergencies()) -> 'items') b where b ->> 'missionId' = :'ms1'), 'green', 'it is on the caller''s board, still green, long after its designed time');
 reset role;
 select t.eq(public.dispatch_tick(), 0, 'inside the window the tick leaves it alone');
-update public.missions set created_at = now() - interval '11 minutes' where id = :'ms1';
+update public.missions set created_at = now() - interval '11 minutes', search_started_at = now() - interval '11 minutes' where id = :'ms1';
 select t.ok(public.dispatch_tick() >= 1, 'once the window is over the tick ends it');
 select t.eq((select status::text from public.missions where id = :'ms1'), 'cancelled', 'cancelled');
 select t.eq((select cancelled_by from public.missions where id = :'ms1'), 'system', 'by the system');
@@ -298,7 +299,11 @@ select t.eq((select status::text from public.missions where id = :'ms2'), 'cance
 select t.mission(0.009, 0, 'TYPE_D_ALS', 'BA') as mba \gset
 select t.mission(0.009, 0, 'TYPE_D_ALS', 'BB') as mbb \gset
 select t.eq(public.dispatch_next_wave(:'mba'), 1, 'BA: wave 1 opens');
-select t.eq(public.dispatch_next_wave(:'mbb'), 1, 'BB: wave 1 opens');
+-- Since 20261003000000 dispatch never offers a driver two missions at once (an open offer reserves them), so BB's offer to the
+-- still-free d1 and d3 is written directly: it stands for one sent before that rule, the case the accept-time check guards.
+select t.ok(public._driver_reserved(:'d1', :'mbb') and public._driver_reserved(:'d3', :'mbb'), 'd1 and d3 are reserved by their BA offer');
+insert into public.dispatch_waves (mission_id, wave_number, radius_km, eligible_driver_ids, status, expires_at)
+  values (:'mbb', 1, 3, array[:'d1', :'d3']::uuid[], 'broadcasting', now() + interval '15 seconds');
 select id as wba from public.dispatch_waves where mission_id = :'mba' and wave_number = 1 \gset
 select id as wbb from public.dispatch_waves where mission_id = :'mbb' and wave_number = 1 \gset
 select t.ok((select eligible_driver_ids @> array[:'d1', :'d3']::uuid[] and cardinality(eligible_driver_ids) = 2 from public.dispatch_waves where id = :'wbb'), 'while d1 is free it is asked for BB as well');

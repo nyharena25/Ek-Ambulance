@@ -403,10 +403,11 @@ reset role;
 select t.ok(exists (select 1 from public.mission_events where mission_id = :'m6' and event_type = 'DRIVER_RELEASED'), 'DRIVER_RELEASED emitted before re-dispatch (D-3)');
 select t.eq((select status::text from public.missions where id = :'m6'), 'requesting', 'the last wave finding nobody new does not cancel: the request stays on the Booking board');
 select t.ok((select driver_id is null from public.missions where id = :'m6'), 'driver cleared on release');
-select t.eq((select max(wave_number) from public.dispatch_waves where mission_id = :'m6'), 3, 'all three waves were walked');
-select t.eq((select status from public.dispatch_waves where mission_id = :'m6' and wave_number = 3), 'exhausted', 'last wave marked exhausted');
--- Only when the search window closes does the system end it.
-update public.missions set created_at = now() - interval '11 minutes' where id = :'m6';
+-- 20261003000000: a release starts a new dispatch round (waves from the smallest radius again), never re-offering the releaser.
+select t.eq((select max(round)::int from public.dispatch_waves where mission_id = :'m6'), 2, 'release opens a second dispatch round');
+select t.ok(not exists (select 1 from public.dispatch_waves where mission_id = :'m6' and round = 2 and :'d1' = any (eligible_driver_ids)), 'the releasing driver is not re-offered');
+-- Only when the search window (from the release) closes does the system end it.
+update public.missions set search_started_at = now() - interval '11 minutes' where id = :'m6';
 select t.ok(public.dispatch_tick() >= 1, 'dispatch_tick ends a request nobody took once the search window is over');
 select t.eq((select event_type from public.mission_events where mission_id = :'m6' order by seq desc limit 1), 'MISSION_CANCELLED', 'the end is a system MISSION_CANCELLED');
 select t.eq((select cancelled_by from public.missions where id = :'m6'), 'system', 'cancelled_by = system');
@@ -439,7 +440,7 @@ select set_config('request.jwt.claims', :'jwt_p1', false);
 set role authenticated;
 select (public.create_mission('00000000-0000-4000-8000-0000000000e8', 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 6.0)) -> 'mission' ->> 'id' as m8 \gset
 reset role;
-update public.dispatch_waves set created_at = now() - interval '20 seconds' where mission_id = :'m8';
+update public.dispatch_waves set created_at = now() - interval '20 seconds', expires_at = now() - interval '5 seconds' where mission_id = :'m8';
 select id as offer8 from public.dispatch_waves where mission_id = :'m8' \gset
 select set_config('request.jwt.claims', :'jwt_d3', false);
 set role authenticated;

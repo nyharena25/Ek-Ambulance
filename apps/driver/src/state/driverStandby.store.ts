@@ -27,6 +27,8 @@ export interface GpsCoordinates {
   heading: number;
   speedKmh: number;
   altitudeMeters: number;
+  /** When the device measured this fix (ISO 8601). The server judges GPS freshness from it, not from when it was sent. */
+  fixedAt?: string;
 }
 
 export interface RedisPresenceTelemetry {
@@ -44,7 +46,8 @@ export interface DriverStandbyStoreState {
   language: SupportedLanguage;
   currentJurisdiction: JurisdictionCode;
   gps: GpsCoordinates;
-  registeredAis125Type: AIS125VehicleType;
+  /** The server profile's registered tier; null until it has loaded (never assumed). */
+  registeredAis125Type: AIS125VehicleType | null;
   redisPresence: RedisPresenceTelemetry;
   isOfflineModalOpen: boolean;
   /** True only once a real GPS fix has come in via setGps (useDriverLocation). Until then, `gps` is a city
@@ -126,7 +129,7 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   language: "en",
   currentJurisdiction: "UP_NOIDA",
   gps: NOIDA_COORDS,
-  registeredAis125Type: "TYPE_D_ALS",
+  registeredAis125Type: IS_TEST_RUNNER ? "TYPE_D_ALS" : null,
   redisPresence: {
     geoKey: "ambulances:geo:tier_d",
     isIndexed: true,
@@ -147,6 +150,10 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       set({ isTogglingPresence: true, presenceErrorCode: null });
       const { registeredAis125Type, gps, hasRealFix } = get();
       const server = getServerAdapter();
+      if (!registeredAis125Type) {
+        set({ isTogglingPresence: false, presenceErrorCode: "profile_loading" });
+        return;
+      }
       if (server) {
         // A real session must never send the NOIDA_COORDS placeholder as if it were the driver's actual
         // position - refused client-side before it ever reaches set_driver_presence.
@@ -155,7 +162,7 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
           return;
         }
         // The server decides: an unverified driver, or one whose request cannot be recorded, does NOT become dispatchable.
-        const result = await server.setPresence(true, gps);
+        const result = await server.setPresence(true, gps, gps.fixedAt);
         if (!result.ok) {
           set({ isTogglingPresence: false, presenceErrorCode: result.error.code });
           return;

@@ -58,7 +58,7 @@ export const fareStrings: Record<SupportedLanguage, FareTranslation> = {
     totalFareRow: "Total estimated fare",
 
     indicativeDisclaimer:
-      "Statutory estimate is indicative. The authoritative fare is computed and locked server-side upon dispatch request.",
+      "This is an estimate at the government-set rate. Your final fare uses the same rate and the distance actually travelled, and is shown when the trip ends.",
     statutoryAuthorityNotice: (ref: string) =>
       `Tariff strictly enforced under ${ref}.`,
     zeroSurgeLawGuarantee:
@@ -91,7 +91,7 @@ export const fareStrings: Record<SupportedLanguage, FareTranslation> = {
     totalFareRow: "कुल अनुमानित शासकीय किराया",
 
     indicativeDisclaimer:
-      "शासकीय अनुमान सांकेतिक है। वास्तविक अधिकृत किराया सर्वर द्वारा बुकिंग अनुरोध के समय लॉक किया जाएगा।",
+      "यह सरकारी दर पर अनुमान है। अंतिम किराया इसी दर और वास्तव में तय की गई दूरी से बनता है, और यात्रा पूरी होने पर दिखाया जाता है।",
     statutoryAuthorityNotice: (ref: string) =>
       `किराया ${ref} के तहत सख्ती से लागू है।`,
     zeroSurgeLawGuarantee:

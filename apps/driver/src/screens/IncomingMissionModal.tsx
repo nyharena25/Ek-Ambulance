@@ -42,6 +42,8 @@ export interface IncomingMissionModalProps {
   pickupLandmark?: string;
   distanceKm?: number;
   etaMinutes?: number;
+  /** The mission's statutory booking estimate from the offer; the row is hidden when absent. */
+  estimatedFareInr?: number;
   /** Server time this offer expires (offer.expiresAt). The countdown is derived from it, not from a local counter (rule 11). */
   expiresAt?: string;
   /** serverNow - localNow measured when the offer arrived. */
@@ -60,14 +62,15 @@ const SLIDER_THUMB_SIZE = 56;
 export default function IncomingMissionModal({
   visible = true,
   initialLanguage = "en",
-  initialAcuity = "CAT_1_IMMEDIATE",
+  initialAcuity,
   missionId = "",
-  requiredVehicleType = "TYPE_D_ALS",
-  registeredVehicleType = "TYPE_D_ALS",
+  requiredVehicleType,
+  registeredVehicleType,
   pickupAddress,
   pickupLandmark,
   distanceKm,
   etaMinutes,
+  estimatedFareInr,
   expiresAt,
   clockOffsetMs = 0,
   patientSummary,
@@ -84,19 +87,21 @@ export default function IncomingMissionModal({
   const [selectedDeclineReason, setSelectedDeclineReason] = useState<string>("");
 
   const strings = driverMissionOfferStrings[language];
-  const triageInfo: TriageBadgeDetails = strings.triageBadges[acuity];
+  // An offer without an urgency shows "—", never a default tier.
+  const triageInfo: TriageBadgeDetails | null = acuity ? strings.triageBadges[acuity] : null;
   const isCat1 = acuity === "CAT_1_IMMEDIATE";
   const isCat3 = acuity === "CAT_3_DELAYED";
 
   // Vehicle-tier eligibility gate: a mismatch disables Swipe-to-Accept
   // outright rather than silently auto-declining (a driver-visible block,
   // not a background system action).
-  const isTierEligible = isVehicleTierEligible(requiredVehicleType, registeredVehicleType);
+  // Unknown on either side: the server, which only offers matching types and re-checks on accept, decides.
+  const isTierEligible = !requiredVehicleType || !registeredVehicleType || isVehicleTierEligible(requiredVehicleType, registeredVehicleType);
   const ais125Categories = driverOnboardingStrings[language].ais125Categories;
-  const requiredVehicleLabel =
-    ais125Categories.find((c) => c.id === requiredVehicleType)?.name ?? requiredVehicleType;
-  const registeredVehicleLabel =
-    ais125Categories.find((c) => c.id === registeredVehicleType)?.name ?? registeredVehicleType;
+  const tierLabel = (type: AIS125VehicleType | undefined | null) =>
+    type ? ais125Categories.find((c) => c.id === type)?.name ?? type : "—";
+  const requiredVehicleLabel = tierLabel(requiredVehicleType);
+  const registeredVehicleLabel = tierLabel(registeredVehicleType);
 
   // Dynamic slider track width
   const sliderWidth = SCREEN_WIDTH - spacing.base * 2;
@@ -350,7 +355,7 @@ export default function IncomingMissionModal({
                     styles.triagePillTextOnFill,
                   ]}
                 >
-                  {triageInfo.badge}
+                  {triageInfo?.badge ?? "—"}
                 </Text>
               </View>
               <Text style={styles.missionIdTag}>#{missionId}</Text>
@@ -366,15 +371,17 @@ export default function IncomingMissionModal({
                     : styles.triageTitleYellow,
               ]}
             >
-              {triageInfo.title}
+              {triageInfo?.title ?? "—"}
             </Text>
-            <Text style={styles.triageDesc}>{triageInfo.description}</Text>
+            {triageInfo && <Text style={styles.triageDesc}>{triageInfo.description}</Text>}
 
             {/* Crew Requirement Pill */}
-            <View style={styles.crewNoticeBox}>
-              <AppIcon icon={{ set: "ion", name: "people" }} size={14} color={colors.slate700} style={styles.crewIcon} />
-              <Text style={styles.crewText}>{triageInfo.crewRequirement}</Text>
-            </View>
+            {triageInfo && (
+              <View style={styles.crewNoticeBox}>
+                <AppIcon icon={{ set: "ion", name: "people" }} size={14} color={colors.slate700} style={styles.crewIcon} />
+                <Text style={styles.crewText}>{triageInfo.crewRequirement}</Text>
+              </View>
+            )}
 
           </View>
 
@@ -444,6 +451,12 @@ export default function IncomingMissionModal({
                 {registeredVehicleLabel}
               </Text>
             </View>
+            {estimatedFareInr !== undefined && (
+              <View style={styles.vehicleTierRow}>
+                <Text style={styles.vehicleTierLabel}>{language === "hi" ? "अनुमानित किराया" : "Estimated fare"}:</Text>
+                <Text style={styles.vehicleTierValue}>₹{Math.round(estimatedFareInr)}</Text>
+              </View>
+            )}
             {!isTierEligible && (
               <View style={styles.tierMismatchBanner}>
                 <AppIcon icon={{ set: "ion", name: "warning" }} size={16} color={colors.slate700} style={styles.tierMismatchIcon} />

@@ -12,7 +12,6 @@ import {
   AIS125VehicleType,
   ItemizedStatutoryFare,
   type Jurisdiction,
-  DEFAULT_DISPATCH_DISTANCE_KM,
   careLevelFromVehicleType,
   getDrivingRoute,
 } from "@sahayak/domain";
@@ -20,6 +19,7 @@ import { StatutoryFareBottomSheet } from "../../src/screens";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 import { usePatientAuthStore, realAccessToken } from "../../src/state/patientAuth.store";
 import { confirmStrings } from "../../src/i18n/confirmStrings";
+import { matchingStrings } from "../../src/i18n/matchingStrings";
 import { SupportedLanguage } from "../../src/i18n/onboardingStrings";
 import { useEffect, useRef, useState } from "react";
 import { Linking } from "react-native";
@@ -58,7 +58,8 @@ export default function BookingConfirmScreen() {
     lon?: string;
   }>();
 
-  const vehicleType = (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
+  // Only the type the patient chose on the previous screen; a link without one cannot book (never a default type).
+  const vehicleType: AIS125VehicleType | undefined = (params.vehicleType as AIS125VehicleType | undefined) || undefined;
 
   // A missing or non-finite lat/lon means this screen was reached without a real pickup location (e.g. a
   // stale deep link past PickupLocationScreen's real geolocation flow). It must never be silently replaced
@@ -69,7 +70,8 @@ export default function BookingConfirmScreen() {
   const pickupLon = hasRealPickup ? Number(params.lon) : NaN;
   const pickupAddress = params.address || (hasRealPickup ? formatCoordinates({ latitude: pickupLat, longitude: pickupLon }) : "");
 
-  const [routedDistanceKm, setRoutedDistanceKm] = useState(DEFAULT_DISPATCH_DISTANCE_KM);
+  // null until the route is known: the quote (and the distance sent to create_mission) is never a built-in default.
+  const [routedDistanceKm, setRoutedDistanceKm] = useState<number | null>(null);
   useEffect(() => {
     if (!hasRealPickup) return;
     let cancelled = false;
@@ -86,12 +88,17 @@ export default function BookingConfirmScreen() {
   // sheet below is never shown without a real pickup point.
   useEffect(() => {
     if (!hasRealPickup) setSubmitError(strings.pickupLocationMissing);
-  }, [hasRealPickup]);
+    else if (!vehicleType) setSubmitError(strings.vehicleTypeMissing);
+  }, [hasRealPickup, vehicleType]);
 
   const handleConfirmAndRequest = async (fareDetails: ItemizedStatutoryFare) => {
     if (submitting) return;
     if (!hasRealPickup) {
       setSubmitError(strings.pickupLocationMissing);
+      return;
+    }
+    if (!vehicleType) {
+      setSubmitError(strings.vehicleTypeMissing);
       return;
     }
     setSubmitError(null);
@@ -183,7 +190,7 @@ export default function BookingConfirmScreen() {
         <View style={styles.topBarTitleGroup}>
           <Text style={styles.topBarTitle}>{strings.screenTitle}</Text>
           <Text style={styles.topBarTagline}>
-            Step 4 of 4 • Statutory Fare Lock
+            Step 4 of 4 • Review fare
           </Text>
         </View>
       </View>
@@ -217,7 +224,7 @@ export default function BookingConfirmScreen() {
           <View style={styles.cardTextGroup}>
             <Text style={styles.cardSectionLabel}>{strings.fleetVehicleLabel}</Text>
             <Text style={styles.cardMainText}>
-              {vehicleType.replace(/_/g, " ")}
+              {vehicleType ? (matchingStrings.en.vehicleTypeName[vehicleType] ?? vehicleType) : "—"}
             </Text>
           </View>
         </View>
@@ -234,7 +241,10 @@ export default function BookingConfirmScreen() {
 
       {/* EXPANDABLE STATUTORY FARE BOTTOM SHEET: withheld without a real pickup point - a fare quote and
           "Confirm & Request" action must never be offered against a location the app made up. */}
-      {hasRealPickup && (
+      {hasRealPickup && vehicleType && routedDistanceKm === null && (
+        <Text style={styles.topBarTagline}>{strings.calculatingFare}</Text>
+      )}
+      {hasRealPickup && vehicleType && routedDistanceKm !== null && (
         <StatutoryFareBottomSheet
           vehicleType={vehicleType}
           distanceKm={routedDistanceKm}

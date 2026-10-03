@@ -218,6 +218,26 @@ assert.strictEqual(arrived.getSnapshot().context.driverHasArrived, false, "Clear
 arrived.stop();
 console.log("✓ SERVER_DRIVER_ARRIVED is context-only; transport start clears the flag.\n");
 
+console.log("Test: a reconnect (HYDRATE) restores the server's terminal reason, hospital and final fare...");
+{
+  const M = "6f0c1e9a-0000-4000-8000-0000000000aa";
+  const cancelled = createActor(patientLifecycleMachine).start();
+  cancelled.send({ type: "HYDRATE", payload: { missionId: M, status: "cancelled", cancellation: { cancelledBy: "system", reason: "no_ambulance_available", fromState: "requesting" } } });
+  assert.strictEqual(cancelled.getSnapshot().value, "cancelled", "the authoritative terminal state, not 'searching'");
+  assert.deepStrictEqual(cancelled.getSnapshot().context.cancellation, { cancelledBy: "system", reason: "no_ambulance_available", note: null, fromState: "requesting" });
+
+  const transporting = createActor(patientLifecycleMachine).start();
+  const destination = { hospitalId: "a5337fd7-d641-4ce9-9b6c-820518d2ab9c", name: "Sharda Hospital Greater Noida", latitude: 28.4732, longitude: 77.482 };
+  transporting.send({ type: "HYDRATE", payload: { missionId: M, status: "transporting", destination } });
+  assert.strictEqual(transporting.getSnapshot().value, "transporting");
+  assert.deepStrictEqual(transporting.getSnapshot().context.destination, destination, "the hospital comes back from the server record (canonical id)");
+
+  const searching = createActor(patientLifecycleMachine).start();
+  searching.send({ type: "HYDRATE", payload: { missionId: M, status: "requesting", destination } });
+  assert.strictEqual(searching.getSnapshot().context.destination, null, "no destination while searching, whatever is passed");
+}
+console.log("✓ HYDRATE restores what the server recorded.\n");
+
 console.log("=================================================");
 console.log("ALL PATIENT LIFECYCLE MACHINE TESTS PASSED (100% GREEN)");
 console.log("=================================================");

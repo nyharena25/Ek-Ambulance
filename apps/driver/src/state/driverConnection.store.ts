@@ -1,8 +1,26 @@
 import { create } from "zustand";
+import {
+  initialRealtime,
+  realtimeHealth,
+  reduceRealtime,
+  type RealtimeEvent,
+  type RealtimeSnapshot,
+  type TransportHealth,
+} from "@sahayak/domain";
 import type { CentrifugoConnectionStatus } from "../types/driverConnection.types";
 import type { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 
+/**
+ * The driver app's one realtime connection state. Written only by the shared Centrifugo session's SDK callbacks
+ * (applyTransport) and a confirmed presence heartbeat (recordHeartbeat); everything else is derived:
+ *   health            from @sahayak/domain realtimeHealth (grace period, failure threshold)
+ *   isFallbackActive  an active mission AND health "disconnected" - never a failed ping, a quiet channel, or a timer alone
+ * Business availability (online/offline) lives in driverStandby.store and is never inferred from this.
+ */
 export interface DriverConnectionStoreState {
+  realtime: RealtimeSnapshot;
+  health: TransportHealth;
+  /** For the existing UI: connected / connecting / disconnected, or fallback while the store-and-forward path is active. */
   status: CentrifugoConnectionStatus;
   isFallbackActive: boolean;
   queuedPingsCount: number;
@@ -12,8 +30,10 @@ export interface DriverConnectionStoreState {
   language: SupportedLanguage;
   error: string | null;
 
-  setConnectionStatus: (status: CentrifugoConnectionStatus) => void;
-  setFallbackActive: (active: boolean) => void;
+  applyTransport: (event: RealtimeEvent, now?: number) => void;
+  recordHeartbeat: (now?: number) => void;
+  /** Re-derives health (it depends on elapsed time). Returns the fallback transition, if any, so the caller can flush. */
+  evaluate: (now: number, missionActive: boolean) => "entered" | "exited" | null;
   setQueuedPingsCount: (count: number) => void;
   markRestored: (syncedCount: number) => void;
   dismissRestoredBanner: () => void;
@@ -22,42 +42,57 @@ export interface DriverConnectionStoreState {
   reset: () => void;
 }
 
-export const useDriverConnectionStore = create<DriverConnectionStoreState>((set) => ({
-  status: "connected",
+const statusFor = (health: TransportHealth, fallback: boolean): CentrifugoConnectionStatus =>
+  fallback ? "fallback" : health === "healthy" ? "connected" : health === "disconnected" ? "disconnected" : "connecting";
+
+const initial = () => ({
+  realtime: initialRealtime(),
+  health: "disconnected" as TransportHealth,
+  status: "disconnected" as CentrifugoConnectionStatus,
   isFallbackActive: false,
   queuedPingsCount: 0,
   lastSyncedCount: 0,
   showRestoredBanner: false,
   lastConnectedAt: null,
-  language: "en",
+  language: "en" as SupportedLanguage,
   error: null,
+});
 
-  setConnectionStatus: (status) =>
+let missionActiveFlag = false;
+
+export const useDriverConnectionStore = create<DriverConnectionStoreState>((set, get) => ({
+  ...initial(),
+
+  applyTransport: (event, now = Date.now()) =>
     set((state) => {
-      const isFallback = status === "disconnected" || status === "fallback";
+      const realtime = reduceRealtime(state.realtime, event, now);
+      const health = realtimeHealth(realtime, now);
+      const isFallbackActive = missionActiveFlag && health === "disconnected";
       return {
-        status,
-        isFallbackActive: isFallback,
-        lastConnectedAt: status === "connected" ? new Date().toISOString() : state.lastConnectedAt,
+        realtime,
+        health,
+        isFallbackActive,
+        status: statusFor(health, isFallbackActive),
+        lastConnectedAt: realtime.lastConnectedAt ? new Date(realtime.lastConnectedAt).toISOString() : state.lastConnectedAt,
+        error: event.type === "error" ? event.message : state.error,
       };
     }),
 
-  setFallbackActive: (isFallbackActive) =>
-    set({
-      isFallbackActive,
-      status: isFallbackActive ? "fallback" : "connected",
-    }),
+  recordHeartbeat: (now = Date.now()) => set((state) => ({ realtime: reduceRealtime(state.realtime, { type: "heartbeat" }, now) })),
+
+  evaluate: (now, missionActive) => {
+    missionActiveFlag = missionActive;
+    const state = get();
+    const health = realtimeHealth(state.realtime, now);
+    const isFallbackActive = missionActive && health === "disconnected";
+    const transition = isFallbackActive === state.isFallbackActive ? null : isFallbackActive ? "entered" : "exited";
+    if (health !== state.health || transition) set({ health, isFallbackActive, status: statusFor(health, isFallbackActive) });
+    return transition;
+  },
 
   setQueuedPingsCount: (queuedPingsCount) => set({ queuedPingsCount }),
 
-  markRestored: (syncedCount) =>
-    set({
-      status: "connected",
-      isFallbackActive: false,
-      lastSyncedCount: syncedCount,
-      showRestoredBanner: true,
-      lastConnectedAt: new Date().toISOString(),
-    }),
+  markRestored: (syncedCount) => set({ lastSyncedCount: syncedCount, showRestoredBanner: true }),
 
   dismissRestoredBanner: () => set({ showRestoredBanner: false, lastSyncedCount: 0 }),
 
@@ -65,15 +100,8 @@ export const useDriverConnectionStore = create<DriverConnectionStoreState>((set)
 
   setError: (error) => set({ error }),
 
-  reset: () =>
-    set({
-      status: "connected",
-      isFallbackActive: false,
-      queuedPingsCount: 0,
-      lastSyncedCount: 0,
-      showRestoredBanner: false,
-      lastConnectedAt: null,
-      language: "en",
-      error: null,
-    }),
+  reset: () => {
+    missionActiveFlag = false;
+    set(initial());
+  },
 }));

@@ -4,7 +4,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radii, spacing, touchTargets, typography } from "@sahayak/ui";
 import { AppIcon } from "../components";
 import { driverProfileStrings } from "../i18n/driverProfileStrings";
-import { RANKED_TRAUMA_CENTRES } from "../i18n/driverOnSceneStrings";
 import { useDriverProfileStore } from "../state/driverProfile.store";
 import { getServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
@@ -39,7 +38,7 @@ const ZONES: readonly ServiceZone[] = ["DL", "UP"];
 export default function DriverProfileScreen({ onBack, onOpenApplication }: DriverProfileScreenProps) {
   const language = useDriverStandbyStore((s) => s.language);
   const currentState = useDriverLifecycleStore((s) => s.currentState);
-  const { profile, status, errorCode, load, save } = useDriverProfileStore();
+  const { profile, status, errorCode, errorDetail, load, save } = useDriverProfileStore();
   const isOnline = useDriverStandbyStore((s) => s.isOnline);
   const t = driverProfileStrings[language];
   const locked = isProfileLocked(currentState);
@@ -94,8 +93,9 @@ export default function DriverProfileScreen({ onBack, onOpenApplication }: Drive
   }, [profile, draft]);
   useEffect(() => {
     let alive = true;
+    // Only the registered catalog: without a server session there are no hospitals to choose (no built-in list).
     if (getServerAdapter()) void fetchHospitalOptions().then((h) => alive && setHospitals(h));
-    else setHospitals(RANKED_TRAUMA_CENTRES.map((h) => ({ id: h.id, name: h.name })));
+    else setHospitals([]);
     return () => {
       alive = false;
     };
@@ -122,6 +122,9 @@ export default function DriverProfileScreen({ onBack, onOpenApplication }: Drive
           ) : status === "error" ? (
             <>
               <Text style={styles.body}>{t.loadError}</Text>
+              {/* The real cause (expired session, no connection, server error), not a generic line: this is what support asks for. */}
+              {errorCode === "network" || errorCode === "unauthenticated" ? <Text style={styles.body}>{driverErrorMessage(errorCode)}</Text> : null}
+              <Text style={styles.body} selectable>{[errorCode, errorDetail].filter(Boolean).join(": ")}</Text>
               <Pressable style={styles.secondaryBtn} onPress={() => void load()} accessibilityRole="button">
                 <Text style={styles.secondaryText}>{t.retry}</Text>
               </Pressable>

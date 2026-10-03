@@ -121,6 +121,9 @@ export function driverErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     offer_taken: "Another crew accepted this mission first.",
     offer_expired: "This offer has expired.",
+    offer_declined: "You declined this offer.",
+    mission_cancelled: "This request was cancelled.",
+    profile_loading: "Your profile is still loading. Try again in a moment.",
     not_eligible: "You were not offered this mission.",
     not_verified: "Your KYC is not approved yet. You can go online once it is approved.",
     driver_profile_missing: "Finish your driver application first (Profile → Complete driver application).",
@@ -148,32 +151,26 @@ export function driverErrorMessage(code: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Hospitals: the client fixtures carry no ids and the table has four rows (4.5), so the destination is matched by position.
+// Hospitals: the registered catalog (`hospitals`, RLS hospitals_select_active). The canonical `id` is what the server takes
+// for the handoff; the name and position are for display and distance only.
 // ---------------------------------------------------------------------------
 
-export interface HospitalRow {
+export interface CatalogHospital {
   id: string;
-  latitude: number;
-  longitude: number;
+  name: string;
+  nameHi?: string;
+  zone?: "DL" | "UP";
+  coordinates: GeoPoint;
+  category?: "GOVERNMENT" | "PRIVATE";
+  /** 1-3 as registered; absent when unknown. */
+  traumaLevel?: number;
+  /** As registered; empty means not recorded, never "treats nothing". */
+  specialities: string[];
+  /** Server-computed total - held beds. */
+  availableCapacity?: number;
 }
 
-function haversineKm(a: GeoPoint, b: GeoPoint): number {
-  const rad = (d: number) => (d * Math.PI) / 180;
-  const dLat = rad(b.latitude - a.latitude);
-  const dLon = rad(b.longitude - a.longitude);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLon / 2) ** 2;
-  return 6371 * 2 * Math.asin(Math.sqrt(h));
-}
-
-/** The registered hospital within `maxKm` of the selected destination, or null: a hospital not in the table cannot take a hold. */
-export function matchHospitalId(destination: GeoPoint, rows: HospitalRow[], maxKm = 1): string | null {
-  let best: { id: string; km: number } | null = null;
-  for (const row of rows) {
-    const km = haversineKm(destination, row);
-    if (km <= maxKm && (!best || km < best.km)) best = { id: row.id, km };
-  }
-  return best?.id ?? null;
-}
+export const HOSPITAL_CATALOG_COLUMNS = "id,name,name_hi,zone,location,category,trauma_level,specialities,available_capacity";
 
 /**
  * A geography POINT as PostgREST returns it: EWKB hex by default (what a plain `select` gets), GeoJSON when asked for.
@@ -197,25 +194,44 @@ export function readPoint(value: unknown): GeoPoint | null {
   return Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number" ? { longitude: c[0], latitude: c[1] } : null;
 }
 
-export function parseHospitalRow(row: unknown): HospitalRow | null {
+/** One catalog row, or null when it has no canonical id, name or position (never shown, so never submitted). */
+export function parseCatalogHospital(row: unknown): CatalogHospital | null {
   if (typeof row !== "object" || row === null) return null;
-  const r = row as { id?: unknown; location?: unknown };
-  const p = readPoint(r.location);
-  return isUuid(r.id) && p ? { id: r.id, ...p } : null;
+  const r = row as Record<string, unknown>;
+  const coordinates = readPoint(r.location);
+  if (!isUuid(r.id) || typeof r.name !== "string" || r.name.trim() === "" || !coordinates) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    ...(typeof r.name_hi === "string" && r.name_hi.trim() !== "" ? { nameHi: r.name_hi } : {}),
+    ...(r.zone === "DL" || r.zone === "UP" ? { zone: r.zone } : {}),
+    coordinates,
+    ...(r.category === "GOVERNMENT" || r.category === "PRIVATE" ? { category: r.category } : {}),
+    ...(typeof r.trauma_level === "number" ? { traumaLevel: r.trauma_level } : {}),
+    specialities: Array.isArray(r.specialities) ? r.specialities.filter((x): x is string => typeof x === "string") : [],
+    ...(typeof r.available_capacity === "number" ? { availableCapacity: r.available_capacity } : {}),
+  };
 }
 
 export interface AssignedMissionRow {
   missionId: string;
   status: MissionStatus;
   pickup?: GeoPoint;
+  /** missions.destination_hospital_id once transport started: the hospital is reloaded from this, never from a name. */
+  destinationHospitalId?: string;
 }
 
 /** A `missions` row read through RLS (`missions_select_driver`: only the caller's own assigned mission). */
 export function parseAssignedMissionRow(row: unknown): AssignedMissionRow | null {
   if (typeof row !== "object" || row === null) return null;
-  const r = row as { id?: unknown; status?: unknown; pickup_location?: unknown };
+  const r = row as { id?: unknown; status?: unknown; pickup_location?: unknown; destination_hospital_id?: unknown };
   if (typeof r.id !== "string" || !isMissionStatus(r.status)) return null;
-  return { missionId: r.id, status: r.status, pickup: readPoint(r.pickup_location) ?? undefined };
+  return {
+    missionId: r.id,
+    status: r.status,
+    pickup: readPoint(r.pickup_location) ?? undefined,
+    ...(isUuid(r.destination_hospital_id) ? { destinationHospitalId: r.destination_hospital_id } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +276,18 @@ export function routeOfferPublication(data: unknown, nowMs: number, handlers: Of
   } catch {
     // ignored by design
   }
+}
+
+/** list_open_offers(): the offers still open for this driver, plus the server/device clock offset to count them down with. */
+export function parseOpenOffers(data: unknown, nowMs: number): { offers: DispatchOffer[]; clockOffsetMs: number } | null {
+  if (typeof data !== "object" || data === null) return null;
+  const d = data as { ok?: unknown; serverNow?: unknown; items?: unknown };
+  if (d.ok !== true || !Array.isArray(d.items)) return null;
+  const serverNow = typeof d.serverNow === "string" ? Date.parse(d.serverNow) : NaN;
+  return {
+    offers: d.items.map(parseDispatchOffer).filter((o): o is DispatchOffer => o !== null),
+    clockOffsetMs: Number.isNaN(serverNow) ? 0 : serverNow - nowMs,
+  };
 }
 
 export interface MissionWatchHandlers {

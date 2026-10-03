@@ -21,6 +21,7 @@ export default function DispatchOfferRoute() {
     landmark?: string;
     distanceKm?: string;
     etaMinutes?: string;
+    estimatedFareInr?: string;
     pickupLat?: string;
     pickupLng?: string;
     expiresAt?: string;
@@ -49,10 +50,13 @@ export default function DispatchOfferRoute() {
   const missionId = p.missionId ?? "";
   const offerId = p.offerId ?? "";
   const actingDriverId = getServerAdapter()?.userId ?? driverId ?? undefined;
-  const acuity: UrgencyTier = VALID_TIERS.includes(p.acuity as UrgencyTier) ? (p.acuity as UrgencyTier) : "CAT_1_IMMEDIATE";
-  const requiredVehicleType: AIS125VehicleType = VALID_VEHICLE_TYPES.includes(p.requiredVehicleType as AIS125VehicleType)
+  // What the offer carried, or undefined (shown as "—"): never a default urgency and never the driver's own type standing in
+  // for the mission's. The server only offers a mission whose type matches this driver's registered one.
+  const acuity: UrgencyTier | undefined = VALID_TIERS.includes(p.acuity as UrgencyTier) ? (p.acuity as UrgencyTier) : undefined;
+  const requiredVehicleType: AIS125VehicleType | undefined = VALID_VEHICLE_TYPES.includes(p.requiredVehicleType as AIS125VehicleType)
     ? (p.requiredVehicleType as AIS125VehicleType)
-    : registeredVehicleType;
+    : undefined;
+  const estimatedFareInr = p.estimatedFareInr !== undefined && Number.isFinite(Number(p.estimatedFareInr)) ? Number(p.estimatedFareInr) : undefined;
   // Only the clinical content the offer actually carried (D-UX-02).
   const patientSummary = useMemo(() => {
     try {
@@ -75,11 +79,12 @@ export default function DispatchOfferRoute() {
       missionId={missionId}
       initialAcuity={acuity}
       requiredVehicleType={requiredVehicleType}
-      registeredVehicleType={registeredVehicleType}
+      registeredVehicleType={registeredVehicleType ?? undefined}
       pickupAddress={p.address}
       pickupLandmark={p.landmark}
       distanceKm={route?.distanceKm ?? (p.distanceKm ? Number(p.distanceKm) : undefined)}
       etaMinutes={route?.etaMinutes ?? (p.etaMinutes ? Number(p.etaMinutes) : undefined)}
+      estimatedFareInr={estimatedFareInr}
       expiresAt={p.expiresAt}
       clockOffsetMs={p.clockOffsetMs ? Number(p.clockOffsetMs) : 0}
       patientSummary={patientSummary}

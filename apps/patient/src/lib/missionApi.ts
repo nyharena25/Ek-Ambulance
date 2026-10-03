@@ -93,25 +93,30 @@ export async function fetchMissionSnapshot(missionId: string): Promise<MissionSn
   return error || !data ? null : parseMissionRow(data);
 }
 
-/**
- * Who accepted, from the mission's own stored DRIVER_ACCEPTED event (RLS: the patient's own mission) - the same record and
- * parser as the live event, so a reopened app shows the crew without replaying the realtime message. The latest one wins
- * (a released mission can be accepted again). Undefined when none can be read.
- */
-export async function fetchAssignedDriver(missionId: string): Promise<AssignedDriverInfo | undefined> {
+/** The latest stored event of `eventType` for this mission (RLS: the patient's own mission), or null when none can be read. */
+export async function fetchLatestEvent(missionId: string, eventType: string): Promise<ParsedLifecycleMessage | null> {
   try {
     const { data, error } = await supabase
       .from("mission_events")
       .select("id,seq,event_type,to_status,metadata,created_at")
       .eq("mission_id", missionId)
-      .eq("event_type", "DRIVER_ACCEPTED")
+      .eq("event_type", eventType)
       .order("seq", { ascending: false })
       .limit(1);
-    const message = error || !data?.[0] ? null : parseEventRow(data[0]);
-    return message ? assignedDriverOf(message.data ?? {}) : undefined;
+    return error || !data?.[0] ? null : parseEventRow(data[0]);
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+/**
+ * Who accepted, from the mission's own stored DRIVER_ACCEPTED event - the same record and parser as the live event, so a
+ * reopened app shows the crew without replaying the realtime message. The latest one wins (a released mission can be
+ * accepted again). Undefined when none can be read.
+ */
+export async function fetchAssignedDriver(missionId: string): Promise<AssignedDriverInfo | undefined> {
+  const message = await fetchLatestEvent(missionId, "DRIVER_ACCEPTED");
+  return message ? assignedDriverOf(message.data ?? {}) : undefined;
 }
 
 /** Events after `seq`, in order; null if any row could not be read or is unknown to this build (caller falls back to the snapshot). */

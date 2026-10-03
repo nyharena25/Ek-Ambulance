@@ -91,7 +91,7 @@ export const draftFrom = (p: DriverProfile): ProfileDraft => ({
   vehicle: { registrationNumber: p.vehicle.registrationNumber, makeModel: p.vehicle.makeModel, color: p.vehicle.color, crewCount: p.vehicle.crewCount },
 });
 
-/** "dl 01  ab 1234" and "DL 01 AB 1234" are the same plate. */
+/** Spacing and case do not make two plates different ("dl 01  ab 0000" == "DL 01 AB 0000"). */
 export const normalizePlate = (plate: string): string => plate.trim().replace(/\s+/g, " ").toUpperCase();
 
 /** Only what changed, so an unchanged field is never re-sent (and a locked one never trips `kyc_locked`). Empty when nothing changed. */

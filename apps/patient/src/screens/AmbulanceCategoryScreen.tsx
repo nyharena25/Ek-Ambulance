@@ -16,7 +16,6 @@ import {
   UrgencyTier,
   computeVehiclePricingEstimate,
   VehiclePricingEstimateResponse,
-  DEFAULT_DISPATCH_DISTANCE_KM,
 } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import {
@@ -29,6 +28,7 @@ import { AppIcon } from "../components";
 export interface AmbulanceCategoryScreenProps {
   triageCareLevel?: CareLevel; // e.g. "ALS" | "BLS" | "PTA"
   urgencyTier?: UrgencyTier;   // e.g. "CAT_1_IMMEDIATE" | "CAT_2_URGENT" | "CAT_3_DELAYED"
+  /** Known routed distance; omitted before a route exists, and the cards then show the statutory starting fare. */
   estimatedDistanceKm?: number;
   initialLanguage?: SupportedLanguage;
   onConfirmCategory?: (selection: {
@@ -42,7 +42,7 @@ export interface AmbulanceCategoryScreenProps {
 export default function AmbulanceCategoryScreen({
   triageCareLevel = "ALS",
   urgencyTier = "CAT_1_IMMEDIATE",
-  estimatedDistanceKm = DEFAULT_DISPATCH_DISTANCE_KM,
+  estimatedDistanceKm,
   initialLanguage = "en",
   onConfirmCategory,
   onBack,
@@ -82,22 +82,22 @@ export default function AmbulanceCategoryScreen({
       TYPE_D_ALS: computeVehiclePricingEstimate({
         vehicleType: "TYPE_D_ALS",
         jurisdiction: null,
-        distanceKm: estimatedDistanceKm,
+        distanceKm: estimatedDistanceKm ?? 0,
       }),
       TYPE_C_BLS: computeVehiclePricingEstimate({
         vehicleType: "TYPE_C_BLS",
         jurisdiction: null,
-        distanceKm: estimatedDistanceKm,
+        distanceKm: estimatedDistanceKm ?? 0,
       }),
       TYPE_B_PTA: computeVehiclePricingEstimate({
         vehicleType: "TYPE_B_PTA",
         jurisdiction: null,
-        distanceKm: estimatedDistanceKm,
+        distanceKm: estimatedDistanceKm ?? 0,
       }),
       TYPE_A_MFR: computeVehiclePricingEstimate({
         vehicleType: "TYPE_A_MFR",
         jurisdiction: null,
-        distanceKm: estimatedDistanceKm,
+        distanceKm: estimatedDistanceKm ?? 0,
       }),
     };
     return map;
@@ -341,22 +341,13 @@ export default function AmbulanceCategoryScreen({
                   </View>
                 )}
 
-                {/* METRICS ROW: Live ETA & Regulated Fare */}
+                {/* METRICS ROW: Regulated Fare. No ETA or distance here: nothing is known about the nearest ambulance until the
+                    server matches one, so none is invented. */}
                 <View style={styles.metricsRow}>
-                  {/* Live Dispatch ETA */}
-                  <View style={styles.etaBadge}>
-                    <Text style={styles.etaText}>
-                      {strings.etaLabel(
-                        vehicle.etaMinutes,
-                        vehicle.distanceKmApprox
-                      )}
-                    </Text>
-                  </View>
-
                   {/* Statutory Regulated Fare */}
                   <View style={styles.fareContainer}>
                     <Text style={styles.fareTotalText}>
-                      ₹{pricing.estimatedTotalInr}
+                      {estimatedDistanceKm === undefined ? strings.fareFromPrefix : ""}₹{pricing.estimatedTotalInr}
                     </Text>
                     <Text style={styles.fareBreakdownText}>
                       (₹{pricing.baseFareInr} + ₹{pricing.perKmRateInr}/km)

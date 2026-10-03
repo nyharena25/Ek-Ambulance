@@ -6,8 +6,8 @@ import {
   type DriverLifecycleMachineEvent,
   type DriverLifecycleState,
 } from "@sahayak/domain";
-import { mountDriverTelemetryPublisher, type DriverTelemetryPublisher } from "../services/driverTelemetry.ts";
-import { useDriverConnectionStore } from "./driverConnection.store.ts";
+import { isMissionTelemetryPing, missionChannelName, type MissionTelemetryPing } from "@sahayak/domain";
+import type { DriverRealtimeSession } from "../services/driverRealtime.ts";
 import { newIdempotencyKey, type ApiError, type ApiResult } from "@sahayak/domain";
 import { buildServerCall, type ServerCall } from "../lib/driverServer.core.ts";
 import type { BoardSnapshot, DriverMissionEnd } from "@sahayak/domain";
@@ -26,7 +26,7 @@ export interface ServerAdapter {
   accessToken: string;
   call: (call: ServerCall) => Promise<ApiResult<{ status?: string; seq?: number }>>;
   /** Go online / heartbeat / go offline. The server checks verification and writes the position (R-05). */
-  setPresence: (isOnline: boolean, location?: { latitude: number; longitude: number }) => Promise<ApiResult<true>>;
+  setPresence: (isOnline: boolean, location?: { latitude: number; longitude: number }, fixAt?: string) => Promise<ApiResult<true>>;
   /** The Booking board: a per-driver read, so this driver only ever receives what the server allows them to see. */
   fetchBoard: () => Promise<ApiResult<BoardSnapshot>>;
   fetchProfile: () => Promise<ApiResult<DriverProfile>>;
@@ -88,32 +88,21 @@ export interface DriverLifecycleStoreState {
 // already reads/writes `activeMissionId` at the top level.
 let actor: Actor<typeof driverLifecycleMachine>;
 
-// One GPS publisher, mounted for whichever mission is currently active and torn down when none is.
-let publisher: DriverTelemetryPublisher | null = null;
-let publisherMissionId: string | null = null;
-
-function ensurePublisherFor(missionId: string | null) {
-  if (missionId === publisherMissionId) return;
-  const previous = publisher;
-  // Only a verified driver session may publish: without one there is no publisher (never a placeholder bearer).
-  const accessToken = serverAdapter?.accessToken;
-  publisher = missionId && accessToken
-    ? mountDriverTelemetryPublisher(missionId, accessToken, {
-        onPublishError: () => {
-          // A failed GPS publish surfaces the existing low-connectivity indicator (OfflineConnectivityOverlay) and
-          // switches pings to the acknowledged upload queue.
-          useDriverConnectionStore.getState().setConnectionStatus("fallback");
-          useDriverConnectionStore.getState().setFallbackActive(true);
-        },
-      })
-    : null;
-  publisherMissionId = missionId;
-  previous?.teardown();
+// GPS pings go out on the driver's one shared realtime session (useServerSync owns it); none without a verified session.
+let realtimeSession: DriverRealtimeSession | null = null;
+export function setDriverRealtimeSession(session: DriverRealtimeSession | null): void {
+  realtimeSession = session;
 }
 
-/** Live GPS pings; a no-op when no mission is active. */
-export function publishDriverTelemetry(ping: Parameters<DriverTelemetryPublisher["publish"]>[0]): void {
-  publisher?.publish(ping);
+/**
+ * Live GPS ping for the active mission: published only while the socket is connected (never a rejected publish that flips
+ * the UI into fallback). Returns false when it was not sent; the caller's acknowledged upload buffer still has it.
+ */
+export function publishDriverTelemetry(ping: MissionTelemetryPing): boolean {
+  const missionId = useDriverLifecycleStore.getState().activeMissionId;
+  // Same shape the publish proxy admits: coordinates, no `event`.
+  if (!realtimeSession || !missionId || !isMissionTelemetryPing(ping) || "event" in ping) return false;
+  return realtimeSession.publish(missionChannelName(missionId), ping);
 }
 
 function contextFields(context: DriverLifecycleContext) {
@@ -146,14 +135,9 @@ export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) =
     ...contextFields(actor.getSnapshot().context),
     send: (event) => {
       actor.send(event);
-      const after = actor.getSnapshot();
-
       // Lifecycle events are server-published only (6.1 Design A): the server records the transition in mission_events and
-      // its publish_realtime trigger sends the wire event. The driver publishes GPS pings, nothing else.
-
-      // Reconcile which mission (if any) the GPS publisher should be connected to. Mounts as soon as an offer sets
-      // activeMissionId (SERVER_OFFER_RECEIVED), giving the connection time to establish before the first ping.
-      ensurePublisherFor(after.context.activeMissionId);
+      // its publish_realtime trigger sends the wire event. The driver publishes GPS pings (publishDriverTelemetry), nothing
+      // else, on the shared session that is already connected - no per-mission socket to set up.
     },
     submit: async (event) => {
       const server = serverAdapter;
@@ -174,7 +158,6 @@ export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) =
     },
     reset: () => {
       mount();
-      ensurePublisherFor(null);
       set({
         currentState: actor.getSnapshot().value as DriverLifecycleState,
         ...contextFields(actor.getSnapshot().context),

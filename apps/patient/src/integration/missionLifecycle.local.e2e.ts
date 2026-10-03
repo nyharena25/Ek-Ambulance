@@ -13,7 +13,7 @@ import { assignedDriverOf, buildCreateMissionParams, mapRpcError, parseCreateMis
  * key for a patient/driver/staff business call (the service key only creates the throwaway users and reads waves).
  *
  * Driver calls are built by the driver app's own buildServerCall (apps/driver/src/lib/driverServer.core.ts) and the
- * destination hospital is resolved the driver app's way (RLS read of hospitals -> parseHospitalRow -> matchHospitalId).
+ * destination hospital is chosen the driver app's way (RLS read of the hospitals catalog -> parseCatalogHospital -> its canonical id).
  *
  * Missions (each ends terminal before the next is booked, so the driver is free and wave 1 finds them):
  *   M1  accept -> ON_SCENE -> PATIENT_ON_BOARD -> ARRIVED_HOSPITAL -> COMPLETE, then confirm_receipt   (full lifecycle)
@@ -59,7 +59,7 @@ registerHooks({
 });
 const { mountMissionChannel, fetchChannelToken, fetchConnectionToken } = await import("../services/missionChannel.service.ts");
 const { mountOffersChannel, mountMissionWatch } = await import("../../../driver/src/services/driverRealtime.ts");
-const { buildServerCall, matchHospitalId, parseHospitalRow } = await import("../../../driver/src/lib/driverServer.core.ts");
+const { buildServerCall, parseCatalogHospital, HOSPITAL_CATALOG_COLUMNS } = await import("../../../driver/src/lib/driverServer.core.ts");
 
 const admin = createClient(URL_, env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
 const anon = createClient(URL_, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -68,8 +68,8 @@ const tag = randomUUID().slice(0, 6).toUpperCase();
 // Inside NCT of Delhi (the server decides that); the driver's presence fix is ~0.9 km north, inside wave 1's 3 km.
 const PICKUP = { latitude: 28.5672, longitude: 77.21 };
 const DRIVER_FIX = { latitude: 28.5752, longitude: 77.21 };
-// Safdarjung Hospital's seeded position: the destination the crew picks, matched to a hospitals row like the driver app does.
-const DESTINATION = { latitude: 28.5694, longitude: 77.2075 };
+// The crew picks Safdarjung Hospital from the registered catalog; its row's canonical id is what is submitted.
+const DESTINATION_NAME = "Safdarjung Hospital";
 const HANDOFF = {
   physicianName: `Dr G46A ${tag}`, registrationNumber: `DMC-G46A-${tag}`, department: "Emergency", emtSigned: true,
   checklist: { bedReady: true, ventilatorReady: false, emrHanded: true },
@@ -326,12 +326,14 @@ try {
     }));
   });
   timing["driver offers subscribe"] = since(tSub);
-  const hospRows = await driver.db.from("hospitals").select("id,location").eq("is_active", true);
+  const hospRows = await driver.db.from("hospitals").select(HOSPITAL_CATALOG_COLUMNS).eq("is_active", true);
   assert.ifError(hospRows.error);
-  const hospitals = hospRows.data.map(parseHospitalRow).filter((h) => h !== null);
-  assert.ok(hospitals.length > 0, `driver app cannot parse hospitals.location (${JSON.stringify(hospRows.data[0]?.location)})`);
-  const hospitalId = matchHospitalId(DESTINATION, hospitals);
-  assert.ok(hospitalId, "destination matches a registered hospital");
+  const hospitals = hospRows.data.map(parseCatalogHospital).filter((h) => h !== null);
+  assert.ok(hospitals.length > 0, `driver app cannot parse the hospital catalog (${JSON.stringify(hospRows.data[0])})`);
+  const destination = hospitals.find((h) => h.name === DESTINATION_NAME);
+  assert.ok(destination, "the destination is a registered catalog hospital");
+  const hospitalId = destination.id;
+  const DESTINATION = destination.coordinates;
   const held0 = await heldCapacity(hospitalId);
   assert.ok((await fetchConnectionToken(patient.token)).length > 0, "D patient connection token");
   console.log(`✓ offers subscribed (${timing["driver offers subscribe"]}); ${hospitals.length} hospitals parsed, destination ${hospitalId} held_capacity ${held0}`);
@@ -476,7 +478,7 @@ try {
   await refuse("driver COMPLETE on cancelled", M2, driver.db, c2Complete.rpc, c2Complete.args, ["invalid_transition"]);
   const c2Scene = onScene(M2);
   await refuse("driver ON_SCENE on cancelled", M2, driver.db, c2Scene.rpc, c2Scene.args, ["invalid_transition"]);
-  await refuse("driver accept_offer on cancelled", M2, driver.db, "accept_offer", { p_offer_id: m2.offer.offerId, p_client_event_id: randomUUID() }, ["offer_taken", "offer_expired"]);
+  await refuse("driver accept_offer on cancelled", M2, driver.db, "accept_offer", { p_offer_id: m2.offer.offerId, p_client_event_id: randomUUID() }, ["mission_cancelled"]);
   await refuse("patient confirm_receipt on cancelled", M2, patient.db, "confirm_receipt", { p_mission_id: M2 }, ["invalid_transition"]);
   const before15 = await snap(M2);
   const again = await patient.db.rpc("cancel_mission", { p_mission_id: M2, p_reason: "other" });

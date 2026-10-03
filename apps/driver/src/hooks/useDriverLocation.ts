@@ -42,7 +42,7 @@ export function useDriverLocation(): void {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted" || cancelled) return;
-      // A stationary driver may not move the 50 m the watcher waits for: take one real fix now so Go online works.
+      // Seed one real fix at once so Go online does not wait for the watcher's first interval.
       if (!missionActive) {
         // Location services off: no seed, the watcher below still starts and delivers once they are on.
         const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
@@ -52,7 +52,9 @@ export function useDriverLocation(): void {
       const sub = await Location.watchPositionAsync(
         missionActive
           ? { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 }
-          : { accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 50 },
+          // Time-based on standby (distanceInterval 0): a parked ambulance must keep producing fresh fixes, or the server
+          // (gpsFreshSeconds = 30) correctly stops dispatching it. Balanced accuracy keeps the battery cost moderate.
+          : { accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 0 },
         (loc) => handleLocationFix(loc, liveFixDeps, missionActive && !isBackgroundTrackingActive())
       );
       if (cancelled) sub.remove();

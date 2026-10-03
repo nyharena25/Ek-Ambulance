@@ -51,6 +51,7 @@ export interface LocationFixDeps {
     heading: number;
     speedKmh: number;
     altitudeMeters: number;
+    fixedAt: string;
   }) => void;
   getActiveMissionId: () => string | null;
   isFallbackActive: () => boolean;
@@ -73,6 +74,7 @@ export function handleLocationFix(loc: LocationObjectLike, deps: LocationFixDeps
     heading: ping.heading ?? 0,
     speedKmh: ping.speed ?? 0,
     altitudeMeters: coords.altitude ?? 0,
+    fixedAt: ping.timestamp,
   });
 
   const missionId = deps.getActiveMissionId();

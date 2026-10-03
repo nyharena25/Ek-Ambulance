@@ -24,10 +24,13 @@ export interface MissionCompletionScreenProps {
   completedAt?: string;
   /** Present only once the server has generated a real EMR handoff PDF (bucket `emr-handoffs`); none exists yet. */
   onDownloadEmr?: () => void;
-  /** Statutory receipt breakdown, computed once at booking time (never recomputed here) - the same shared
-   *  domain contract StatutoryFareBottomSheet emits via onConfirmAndRequest. Required: a receipt screen must
-   *  never silently substitute an invented fare when the real one is missing. */
-  fareDetails: ItemizedStatutoryFare;
+  /** The server's final fare (MISSION_COMPLETED.fareDetails). Absent until it has been read: the breakdown then shows
+   *  "—" and is never filled from the booking quote or a default distance. */
+  fareDetails?: ItemizedStatutoryFare;
+  /** The accepting crew's display name from DRIVER_ACCEPTED; "—" when the server sent none. */
+  crewName?: string;
+  /** The requested ambulance type, shown when the final fare (which also names it) is not available yet. */
+  vehicleType?: string;
   /** MISSION_COMPLETED.data.distanceSource. Only `measured` is shown as a GPS-measured distance; anything else
    *  (the quote fallback, unknown, or a receipt rebuilt without the completion record) is shown as the booking estimate. */
   distanceSource?: "measured" | "estimate";
@@ -63,6 +66,8 @@ export default function MissionCompletionScreen({
   completedAt,
   onDownloadEmr,
   fareDetails,
+  crewName,
+  vehicleType,
   distanceSource,
   initialLanguage = "en",
   onReturnHome,
@@ -286,21 +291,22 @@ export default function MissionCompletionScreen({
                 {strings.vehicleLabel}
               </Text>
               <Text style={styles.contextItemValue}>
-                {fareDetails.vehicleType.replace(/_/g, " ")}
+                {(fareDetails?.vehicleType ?? vehicleType)?.replace(/_/g, " ") ?? "—"}
               </Text>
             </View>
 
             <View style={styles.contextItemHalf}>
               <Text style={styles.contextItemLabel}>{strings.crewLabel}</Text>
               <Text style={styles.contextItemValue}>
-                Rajesh Kumar (Govt. EMT)
+                {crewName ?? "—"}
               </Text>
             </View>
           </View>
 
           <View style={styles.divider} />
 
-          {/* Itemized Statutory Breakdown Table */}
+          {/* Itemized Statutory Breakdown Table: only the server's final fare */}
+          {fareDetails ? (
           <View style={styles.tableContainer}>
             {/* Final Distance Row */}
             <View style={styles.tableRow}>
@@ -371,6 +377,14 @@ export default function MissionCompletionScreen({
               </Text>
             </View>
           </View>
+          ) : (
+            <View style={styles.tableContainer}>
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>{strings.totalFareRow}</Text>
+                <Text style={styles.totalAmount}>—</Text>
+              </View>
+            </View>
+          )}
 
           {/* Payment Status Badge */}
           <View style={styles.paymentStatusCard}>

@@ -41,9 +41,7 @@ export default function OfflineConnectivityOverlay({
     showRestoredBanner,
     lastSyncedCount,
     language: storeLanguage,
-    setConnectionStatus,
-    setFallbackActive,
-    markRestored,
+    setQueuedPingsCount,
     dismissRestoredBanner,
   } = useDriverConnectionStore();
 
@@ -109,17 +107,13 @@ export default function OfflineConnectivityOverlay({
       );
 
       setIsSyncingManually(false);
-      // Not acknowledged by the server: stay in fallback with the queue intact rather than claim a restore.
+      setQueuedPingsCount(remainingCount);
+      // Not acknowledged by the server: the queue stays intact.
       if (remainingCount > 0) return;
-      setConnectionStatus("connected");
-      setFallbackActive(false);
-      markRestored(syncedCount);
+      // The pings reached the database, but that says nothing about the realtime socket: the fallback state is left to the
+      // connection state, which clears it only when Centrifugo is really back.
       setIsDrawerOpen(false);
       onSyncComplete?.(syncedCount);
-
-      setTimeout(() => {
-        dismissRestoredBanner();
-      }, 3500);
     } catch {
       setIsSyncingManually(false);
     }

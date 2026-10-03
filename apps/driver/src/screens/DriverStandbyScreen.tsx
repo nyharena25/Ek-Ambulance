@@ -17,6 +17,7 @@ import { useDriverStandbyStore } from "../state/driverStandby.store";
 import { driverBookingStrings } from "../i18n/driverBookingStrings";
 import { useDriverProfileStore } from "../state/driverProfile.store";
 import { useDriverLifecycleStore } from "../state/driverLifecycle.store";
+import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { isProfileLocked } from "../state/driverAvailability.core";
 
 import { AppIcon, DriverMap, StandbyBookingSection } from "../components";
@@ -33,6 +34,7 @@ export default function DriverStandbyScreen({
   onOpenBooking,
   onOpenProfile,
 }: DriverStandbyScreenProps) {
+  const transportHealth = useDriverConnectionStore((c) => c.health);
   const {
     isOnline,
     isTogglingPresence,
@@ -179,6 +181,16 @@ export default function DriverStandbyScreen({
             <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]}>{strings.offlineBannerStatus}</Text>
           )}
 
+          {/* Online (business state) but the realtime socket is really down (transport state, past the grace period): offers
+              cannot arrive until it reconnects. Shown only on that evidence, never because the channel is quiet. */}
+          {isOnline && transportHealth === "disconnected" && (
+            <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]} accessibilityRole="alert">
+              {language === "hi"
+                ? "डिस्पैच से कनेक्शन नहीं है - दोबारा जुड़ने तक नए अनुरोध नहीं आ सकते। फिर से जुड़ रहा है…"
+                : "Not connected to dispatch - new requests cannot reach you until it reconnects. Reconnecting…"}
+            </Text>
+          )}
+
           {/* Go-online refusal, real (not_verified, kyc pending, ...) or local (no GPS fix yet) - never silent. */}
           {presenceErrorCode && (
             <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline]} accessibilityRole="alert">
@@ -216,7 +228,7 @@ export default function DriverStandbyScreen({
                     isOnline ? styles.toggleBtnTitleOnline : styles.toggleBtnTitleOffline,
                   ]}
                 >
-                  Updating Redis GEOADD...
+                  {language === "hi" ? "स्थिति अपडेट हो रही है…" : "Updating status…"}
                 </Text>
               </View>
             ) : (

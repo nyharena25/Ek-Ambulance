@@ -46,7 +46,8 @@ export default function BookingMatchingRoute() {
     };
   }, [accessToken, missionId]);
 
-  const vehicleType = (params.vehicleType as AIS125VehicleType) || "TYPE_D_ALS";
+  // The type the request really carried; undefined (not a made-up type) if neither the machine nor the link has one.
+  const vehicleType = context.vehicleType ?? ((params.vehicleType as AIS125VehicleType | undefined) || undefined);
   // context.pickup is the real coordinate confirm.tsx sent to create_mission, hydrated into the machine the
   // moment the mission was created - always present in the same-session flow that reaches this screen. Route
   // params are a real (not fabricated) fallback only for a cold re-entry deep link. No fabricated coordinate:

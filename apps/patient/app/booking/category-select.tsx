@@ -5,7 +5,6 @@ import {
   CareLevel,
   UrgencyTier,
   VehiclePricingEstimateResponse,
-  DEFAULT_DISPATCH_DISTANCE_KM,
 } from "@sahayak/domain";
 import { usePatientLifecycleStore } from "../../src/state/patientLifecycle.store";
 
@@ -58,7 +57,6 @@ export default function BookingCategorySelectRoute() {
     <AmbulanceCategoryScreen
       triageCareLevel={triageCareLevel}
       urgencyTier={urgencyTier}
-      estimatedDistanceKm={DEFAULT_DISPATCH_DISTANCE_KM}
       onConfirmCategory={handleConfirmCategory}
       onBack={handleBack}
     />

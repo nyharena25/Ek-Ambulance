@@ -98,5 +98,74 @@ assert.strictEqual(second.calls.disconnect, 1, "Second mount's own teardown disc
 console.log("✓ Independent mounts have independent, non-interfering teardown.\n");
 
 console.log("=================================================");
+console.log("Test 6: first subscribe reconciles; a recovered resubscribe does not...");
+{
+  const handlers: Record<string, (ctx?: unknown) => void> = {};
+  const sub: SubscriptionLike = { subscribe: noop, unsubscribe: noop, on: (e: string, cb: (ctx?: unknown) => void) => ((handlers[e] = cb), sub) } as SubscriptionLike;
+  const client: ClientLike = { connect: noop, disconnect: noop, on: () => client, newSubscription: () => sub };
+  const seen: boolean[] = [];
+  mountMissionChannel("MSN-TEST-0003", "t", { ...silentCallbacks, onResubscribed: (i) => seen.push(i.recovered) }, () => client);
+  handlers.subscribed!({ wasRecovering: false });
+  assert.deepStrictEqual(seen, [false], "first subscribe: an event before it would otherwise be lost");
+  handlers.subscribed!({ wasRecovering: true, recovered: true });
+  assert.deepStrictEqual(seen, [false], "fully recovered: nothing missed");
+  handlers.subscribed!({ wasRecovering: true, recovered: false });
+  assert.deepStrictEqual(seen, [false, false], "recovery failed: reconcile");
+}
+console.log("✓ Subscribe reconcile.\n");
+
+console.log("Test 7: SDK lifecycle feeds the one connection state; token refresh needs no remount; no session refuses...");
+{
+  const clientHandlers: Record<string, (ctx?: unknown) => void> = {};
+  const subHandlers: Record<string, (ctx?: unknown) => void> = {};
+  let clientOptions: Record<string, unknown> = {};
+  let subOptions: { getToken: () => Promise<string> } | null = null;
+  const sub = { subscribe: noop, unsubscribe: noop, on: (e: string, cb: (ctx?: unknown) => void) => ((subHandlers[e] = cb), sub) } as unknown as SubscriptionLike;
+  const client = {
+    connect: noop,
+    disconnect: noop,
+    on: (e: string, cb: (ctx?: unknown) => void) => ((clientHandlers[e] = cb), client),
+    newSubscription: (_c: string, o: { getToken: () => Promise<string> }) => ((subOptions = o), sub),
+  } as unknown as ClientLike;
+  const events: string[] = [];
+  let token: string | null = "token-1";
+  const seenTokens: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init: { headers: Record<string, string> }) => {
+    seenTokens.push(init.headers.Authorization ?? "");
+    return { ok: true, status: 200, json: async () => ({ token: "centrifugo-token", channel: "x" }) };
+  }) as unknown as typeof fetch;
+  try {
+    const teardown = mountMissionChannel(
+      "MSN-TEST-0004",
+      () => token,
+      { ...silentCallbacks, onTransportEvent: (e) => events.push(e.type) },
+      (_endpoint, options) => ((clientOptions = options), client)
+    );
+    clientHandlers.connecting!({ reason: "connect called" });
+    clientHandlers.connected!();
+    subHandlers.subscribing!();
+    subHandlers.subscribed!({ wasRecovering: false });
+    subHandlers.publication!({ data: { event: "DRIVER_ACCEPTED", seq: 2, data: {} } });
+    clientHandlers.disconnected!({ reason: "transport closed" });
+    subHandlers.unsubscribed!();
+    assert.deepStrictEqual(events, ["connecting", "connected", "subscribing", "subscribed", "message", "disconnected", "unsubscribed"],
+      "every SDK callback reaches the connection state, in order");
+
+    await (clientOptions.getToken as () => Promise<string>)();
+    token = "token-2"; // the session refreshed while connected
+    await (clientOptions.getToken as () => Promise<string>)();
+    await subOptions!.getToken();
+    assert.deepStrictEqual(seenTokens, ["Bearer token-1", "Bearer token-2", "Bearer token-2"], "each (re)connect reads the current session token");
+
+    token = null; // signed out
+    await assert.rejects((clientOptions.getToken as () => Promise<string>)(), /No authenticated session/, "no session: a permanent refusal, not a retry loop");
+    teardown();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+console.log("✓ lifecycle + token refresh.\n");
+
 console.log("ALL MISSION CHANNEL SERVICE TESTS PASSED (100% GREEN)");
 console.log("=================================================");

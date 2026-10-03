@@ -14,9 +14,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { ConfirmPatientOnboardPayload, type GeoPoint } from "@sahayak/domain";
-import { driverOnSceneStrings, TraumaCentreItem } from "../i18n/driverOnSceneStrings";
+import { driverOnSceneStrings } from "../i18n/driverOnSceneStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import { EMERGENCY_TYPES, hospitalsFor, type EmergencyType } from "../hooks/hospitalSelection.core";
+import type { CatalogHospital } from "../lib/driverServer.core";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
 import { AppIcon, openGoogleMapsNavigation } from "../components";
@@ -39,15 +40,24 @@ export interface OnSceneCareScreenProps {
   driverId?: string;
   pickupCoordinates?: GeoPoint;
   initialLanguage?: SupportedLanguage;
-  onConfirmPatientOnboard?: (payload: ConfirmPatientOnboardPayload) => void;
-  onProceedToTransportNavigation?: (hospital: TraumaCentreItem) => void;
+  /** The registered hospital catalog (hospitals table); null while it loads. Only these can be chosen. */
+  hospitals?: readonly CatalogHospital[] | null;
+  /** The catalog could not be read: no hospital can be chosen, so transport cannot start from here. */
+  hospitalsError?: boolean;
+  onRetryHospitals?: () => void;
+  /** Resolves to whether the server accepted the handoff; the "on board" confirmation only follows a `true`. */
+  onConfirmPatientOnboard?: (payload: ConfirmPatientOnboardPayload) => Promise<boolean> | boolean;
+  onProceedToTransportNavigation?: (hospital: CatalogHospital) => void;
   onBack?: () => void;
 }
 
 export default function OnSceneCareScreen({
-  missionId = "MSN-2026-8819",
+  missionId = "",
   driverId,
   pickupCoordinates: pickupCoordinatesProp,
+  hospitals = null,
+  hospitalsError = false,
+  onRetryHospitals,
   initialLanguage = "en",
   onConfirmPatientOnboard,
   onProceedToTransportNavigation,
@@ -69,22 +79,29 @@ export default function OnSceneCareScreen({
   // Immediate Departure Bypass (Load & Go)
   const [isBypassActive, setIsBypassActive] = useState(false);
 
-  // Hospital selection: only centres that treat the chosen emergency, nearest to the pickup first
+  // Hospital selection: registered hospitals for the chosen emergency, nearest to the pickup first. Nothing is pre-selected:
+  // the crew picks the destination, and only its canonical id is sent.
   const [emergency, setEmergency] = useState<EmergencyType>("trauma");
   const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(null);
 
   // Handoff Alert Modal
   const [isHandoffModalOpen, setIsHandoffModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const strings = driverOnSceneStrings[language];
-  const nearby = useMemo(() => hospitalsFor(emergency, pickupCoordinates), [emergency, pickupCoordinates.latitude, pickupCoordinates.longitude]);
-  const selectedHospital = (nearby.find((n) => n.hospital.id === selectedHospitalId) ?? nearby[0])!.hospital;
+  const nearby = useMemo(
+    () => hospitalsFor(emergency, pickupCoordinates, hospitals ?? []),
+    [emergency, pickupCoordinates.latitude, pickupCoordinates.longitude, hospitals]
+  );
+  const selectedHospital = nearby.find((n) => n.hospital.id === selectedHospitalId)?.hospital ?? null;
+  const hospitalLabel = (h: CatalogHospital) => (language === "hi" ? h.nameHi ?? h.name : h.name);
 
   // Mean Arterial Pressure (MAP) computation
   const mapValue = systolic !== null && diastolic !== null ? Math.round(diastolic + (systolic - diastolic) / 3) : null;
   const toNumberOrNull = (val: string): number | null => (val.trim() === "" || !Number.isFinite(Number(val)) ? null : Number(val));
 
-  const handleStartTransport = () => {
+  const handleStartTransport = async () => {
+    if (!selectedHospital || isSubmitting) return;
     const entered = {
       ...(pulse !== null ? { pulse } : {}),
       ...(spO2 !== null ? { spO2 } : {}),
@@ -96,17 +113,19 @@ export default function OnSceneCareScreen({
       missionId,
       driverId: driverId ?? "",
       destination: selectedHospital.coordinates,
+      hospitalId: selectedHospital.id,
       onboardAt: new Date().toISOString(),
       ...(Object.keys(entered).length > 0 ? { vitals: entered } : {}),
       emergencyType: emergency,
       bypass: isBypassActive,
     };
 
-    if (onConfirmPatientOnboard) {
-      onConfirmPatientOnboard(payload);
-    }
-
-    setIsHandoffModalOpen(true);
+    // Server first: the bed hold and the transporting state exist only once the server accepted this hospital. A refusal
+    // (invalid_hospital, hospital_at_capacity, ...) is shown by the caller, and no "on board" confirmation appears.
+    setIsSubmitting(true);
+    const accepted = onConfirmPatientOnboard ? await onConfirmPatientOnboard(payload) : false;
+    setIsSubmitting(false);
+    if (accepted) setIsHandoffModalOpen(true);
   };
 
   return (
@@ -121,7 +140,7 @@ export default function OnSceneCareScreen({
             <Text style={styles.stateBadgeText}>{strings.stateBadge}</Text>
           </View>
           <Text style={styles.headerTitle}>{strings.screenTitle}</Text>
-          <Text style={styles.headerSub}>{strings.patientIdLabel(missionId)}</Text>
+          <Text style={styles.headerSub}>{strings.patientIdLabel(missionId || "—")}</Text>
         </View>
 
         <Pressable
@@ -372,8 +391,19 @@ export default function OnSceneCareScreen({
           </Text>
 
           <View style={styles.hospitalsList}>
+            {hospitalsError ? (
+              <Pressable onPress={onRetryHospitals} accessibilityRole="button">
+                <Text style={styles.sectionSub}>
+                  {language === "hi" ? "अस्पताल सूची लोड नहीं हुई। फिर से कोशिश करें।" : "Could not load the hospital list. Tap to retry."}
+                </Text>
+              </Pressable>
+            ) : hospitals === null ? (
+              <Text style={styles.sectionSub}>{language === "hi" ? "अस्पताल सूची लोड हो रही है…" : "Loading registered hospitals…"}</Text>
+            ) : nearby.length === 0 ? (
+              <Text style={styles.sectionSub}>{language === "hi" ? "कोई पंजीकृत अस्पताल नहीं मिला।" : "No registered hospital found."}</Text>
+            ) : null}
             {nearby.map(({ hospital, km }, index) => {
-              const isSelected = hospital.id === selectedHospital.id;
+              const isSelected = hospital.id === selectedHospital?.id;
               return (
                 <Pressable
                   key={hospital.id}
@@ -388,10 +418,11 @@ export default function OnSceneCareScreen({
                     </View>
                     <View style={styles.hospNameBox}>
                       <Text style={[styles.hospNameText, isSelected && styles.hospNameTextSelected]}>
-                        {language === "hi" ? hospital.hindiName : hospital.name}
+                        {hospitalLabel(hospital)}
                       </Text>
                       <Text style={styles.hospLevelText}>
-                        {km.toFixed(1)} km · {language === "hi" ? hospital.hindiTraumaLevel : hospital.traumaLevel}
+                        {/* Straight-line distance from the registered position; road distance and ETA are in Google Maps. */}
+                        {km.toFixed(1)} km{hospital.traumaLevel !== undefined ? ` · ${language === "hi" ? "ट्रॉमा लेवल" : "Trauma level"} ${hospital.traumaLevel}` : ""}
                       </Text>
                     </View>
                     <View style={styles.radioOuter}>{isSelected && <View style={styles.radioInner} />}</View>
@@ -418,13 +449,15 @@ export default function OnSceneCareScreen({
       {/* STICKY BOTTOM ACTION BAR */}
       <View style={styles.bottomBar}>
         <Text style={styles.destinationSummaryHospital}>
-          {language === "hi" ? selectedHospital.hindiName : selectedHospital.name}
+          {selectedHospital ? hospitalLabel(selectedHospital) : strings.btnStartTransportDisabledWarning}
         </Text>
 
         <Pressable
-          style={styles.startTransportBtn}
-          onPress={handleStartTransport}
+          style={[styles.startTransportBtn, (!selectedHospital || isSubmitting) && { opacity: 0.5 }]}
+          onPress={() => void handleStartTransport()}
+          disabled={!selectedHospital || isSubmitting}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !selectedHospital || isSubmitting, busy: isSubmitting }}
         >
           <Text style={styles.startTransportBtnText}>
             {strings.btnStartTransport}
@@ -454,9 +487,7 @@ export default function OnSceneCareScreen({
 
             <View style={styles.wardReservationBox}>
               <Text style={styles.reservedHospitalName}>
-                {language === "hi"
-                  ? selectedHospital.hindiName
-                  : selectedHospital.name}
+                {selectedHospital ? hospitalLabel(selectedHospital) : "—"}
               </Text>
             </View>
 
@@ -468,7 +499,7 @@ export default function OnSceneCareScreen({
               style={styles.launchTransportBtn}
               onPress={() => {
                 setIsHandoffModalOpen(false);
-                if (onProceedToTransportNavigation) {
+                if (onProceedToTransportNavigation && selectedHospital) {
                   onProceedToTransportNavigation(selectedHospital);
                 } else if (onBack) {
                   onBack();

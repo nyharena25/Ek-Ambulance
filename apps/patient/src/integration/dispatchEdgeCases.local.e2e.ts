@@ -16,7 +16,7 @@ import { buildCreateMissionParams, mapRpcError, parseCreateMissionResult } from 
  *   M3 (site 2): created while X is en_route on M2 with a live heartbeat: X is not asked and cannot accept (G4.7-B
  *       busy-driver guard, migration 20261001000000); Y is asked and takes it.
  *   MB/MA (site 2): MB is offered to X while free; X takes MA; X's accept of MB is refused (already_on_mission); Y takes MB.
- *   MC1/MC2 (site 2): X accepts both concurrently; exactly one wins.
+ *   MB/MA (site 2): an open offer reserves its drivers; MC1: X and Y accept one offer concurrently, exactly one wins.
  *
  * Nothing here inserts a wave, offer or event, updates a status, calls dispatch_tick / dispatch_next_wave, or publishes.
  * The service key only creates the throwaway users and reads rows a caller's RLS hides (dispatch_waves, drivers).
@@ -304,19 +304,20 @@ try {
   await refuse("anon accept_offer(M1 wave 1)", anon, "accept_offer", { p_offer_id: w1.id, p_client_event_id: randomUUID() }, ["unauthenticated", "42501"]);
   await refuse("driver C (outside wave 1 radius) accept_offer(M1 wave 1)", C.db, "accept_offer", { p_offer_id: w1.id, p_client_event_id: randomUUID() }, ["not_eligible"]);
 
-  step("6. decline_offer on M1 wave 1 by A (driver app DECLINE_DISPATCH mapping)");
+  step("6. decline_offer on M1 wave 1 by A, its only driver: recorded, and the next wave opens at once (20261003000000)");
   const w1Before = (await wavesOf(M1))[0]!;
   const dec1 = await decline(A, M1, w1.id);
   assert.ifError(dec1.error);
   assert.deepStrictEqual(dec1.data, { ok: true }, "decline_offer returns {ok:true}");
   await sleep(2000);
-  assert.deepStrictEqual((await wavesOf(M1))[0], w1Before, "decline leaves the wave row untouched (still broadcasting)");
+  const w1After = (await wavesOf(M1))[0]! as Wave & { declined_driver_ids: string[] };
+  assert.deepStrictEqual([w1After.status, w1After.declined_driver_ids, w1After.accepted_by], ["expired", [A.id], null], "every driver declined: wave 1 closed at once, the decline recorded");
   const m1AfterDecline = await missionRow(M1, patient.db);
   assert.deepStrictEqual([m1AfterDecline.status, m1AfterDecline.state_version], ["requesting", 1], "decline writes no mission state");
   assert.deepStrictEqual((await eventsOf(M1, patient.db)).map((e) => e.event_type), ["MISSION_REQUESTED"], "decline persists no event");
   assert.ok(!inbox.A.revoked.some((x) => x.r.offerId === w1.id), "decline sends no offer_revoked");
   assert.strictEqual(feed1.got.length, 0, "decline publishes nothing to the patient");
-  findings.push(`decline_offer(M1 wave 1, A) -> ${JSON.stringify(dec1.data)}; wave row identical (status ${w1Before.status}), state_version 1, no event, no revoke, no patient publish`);
+  findings.push(`decline_offer(M1 wave 1, A) -> ${JSON.stringify(dec1.data)}; wave 1 ${w1Before.status} -> ${w1After.status} (declined [A]), state_version 1, no event, no revoke, no patient publish`);
 
   // ------------------------------------------------------------------ M4: nobody in range anywhere
   step("7. M4 (site 3): no driver within the last radius (F online at ~11 km)");
@@ -345,30 +346,33 @@ try {
   negatives.push(`patient4 cancel_mission(M4, already system-cancelled): ${JSON.stringify(rc4.data ?? rc4.error)}`);
   findings.push(`M4 exhausted inside create_mission: waves [expired, expired, exhausted], 0 eligible each, created_at == missions.created_at; MISSION_CANCELLED seq 2 (system). Patient subscribed right after creation received ${feed4.got.length} lifecycle message(s)`);
 
-  // ------------------------------------------------------------------ M2: decline then accept the same offer
-  step("8. M2 (site 2): X declines, then accepts the same offer inside its TTL");
+  // ------------------------------------------------------------------ M2: a decline is binding (20261003000000)
+  step("8. M2 (site 2): Y declines; Y can no longer accept that offer; the wave stays open and X accepts");
   const m2 = await book("M2", patient2, SITE2);
   const M2 = m2.parsed.missionId;
   const ox2 = await inbox.X.offerFor(M2, 10_000);
   await inbox.Y.offerFor(M2, 10_000);
   const w2m2 = (await wavesOf(M2))[0]!;
   assert.deepStrictEqual([w2m2.wave_number, w2m2.status, [...w2m2.eligible_driver_ids].sort()], [1, "broadcasting", [X.id, Y.id].sort()]);
-  const dec2 = await decline(X, M2, w2m2.id);
+  const dec2 = await decline(Y, M2, w2m2.id);
   assert.ifError(dec2.error);
   assert.deepStrictEqual(dec2.data, { ok: true });
   await refuse("X decline_offer(M2, invalid reason)", X.db, "decline_offer", { p_offer_id: w2m2.id, p_reason: "nope" }, ["invalid_reason"]);
   await refuse("C decline_offer(M2, not offered to C)", C.db, "decline_offer", { p_offer_id: w2m2.id, p_reason: "other" }, ["offer_not_found"]);
   await refuse("anon decline_offer(M2)", anon, "decline_offer", { p_offer_id: w2m2.id, p_reason: "other" }, ["unauthenticated", "42501"]);
-  assert.deepStrictEqual((await wavesOf(M2))[0], w2m2, "M2 wave untouched by the decline");
+  const afterDecline = (await wavesOf(M2))[0] as Wave & { declined_driver_ids: string[] };
+  assert.deepStrictEqual(afterDecline.declined_driver_ids, [Y.id], "the decline is recorded on the wave");
+  assert.deepStrictEqual([afterDecline.status, afterDecline.accepted_by], ["broadcasting", null], "the wave stays open while X may still accept");
+  await refuse("Y accept_offer(M2, after declining it)", Y.db, "accept_offer", { p_offer_id: w2m2.id, p_client_event_id: randomUUID() }, ["offer_declined"]);
   assert.ok(Date.now() < Date.parse(ox2.o.expiresAt) - 500, "still inside X's offer TTL");
   const acc2 = await accept(X, M2, w2m2.id);
   assert.ifError(acc2.error);
-  assert.strictEqual(acc2.data.status, "en_route", "X accepts the offer it declined");
+  assert.strictEqual(acc2.data.status, "en_route", "X accepts the offer Y declined");
   const yRev = await inbox.Y.until("Y revoke (taken)", 10_000, () => inbox.Y.revoked.find((x) => x.r.offerId === w2m2.id));
   assert.strictEqual(yRev.r.reason, "taken");
   await refuse("driver Y accept_offer(M2, taken by X)", Y.db, "accept_offer", { p_offer_id: w2m2.id, p_client_event_id: randomUUID() }, ["offer_taken"]);
-  findings.push(`decline_offer(M2, X) -> {ok:true}; X then accept_offer(same offer) -> en_route seq ${acc2.data.seq}: a decline is not binding`);
-  console.log(`✓ M2 ${M2} en_route with X after X declined`);
+  findings.push(`decline_offer(M2, Y) -> {ok:true}, recorded; Y accept_offer(same offer) -> offer_declined; X accept_offer -> en_route seq ${acc2.data.seq}: a decline is binding`);
+  console.log(`✓ M2 ${M2} en_route with X after Y declined`);
 
   // ------------------------------------------------------------------ M3: X is busy on M2 (G4.7-B busy-driver guard)
   const activeOf = async (d: Actor) => {
@@ -424,66 +428,61 @@ try {
   }
   assert.deepStrictEqual([await activeOf(X), await activeOf(Y)], [[], []], "X and Y are free");
 
-  // ------------------------------------------------------------------ R: X becomes busy after MB's offer was sent
-  step("9c. Race: MB offered to free X and Y; X takes MA first; X's accept of MB is refused; Y takes MB");
+  // ------------------------------------------------------------------ R: an open offer reserves the driver (20261003000000)
+  // Before 20261003000000 one driver could hold two missions' offers at once; the accept-time busy check for that case is
+  // covered by supabase/tests/driver_board.behaviour.sql and dispatch_hardening.behaviour.sql. Here, on the real stack:
+  step("9c. Reservation: X and Y hold MB's open offer, so a second booking (MA) is not offered to them; Y takes MB");
   const mb = await book("MB", patient2, SITE2);
   const MB = mb.parsed.missionId;
   const feedB = await missionFeed(MB, patient2);
-  const ma = await book("MA", patient3, SITE2);
-  const MA = ma.parsed.missionId;
-  const oxB = await inbox.X.offerFor(MB, 10_000);
-  await inbox.X.offerFor(MA, 10_000);
+  await inbox.X.offerFor(MB, 10_000);
   await inbox.Y.offerFor(MB, 10_000);
   const wB = (await wavesOf(MB))[0]!;
-  const wA = (await wavesOf(MA))[0]!;
-  assert.deepStrictEqual([[...wB.eligible_driver_ids].sort(), [...wA.eligible_driver_ids].sort()], [[X.id, Y.id].sort(), [X.id, Y.id].sort()], "both offers went to free X and Y");
-  const accA = await accept(X, MA, wA.id);
-  assert.ifError(accA.error);
-  assert.strictEqual(accA.data.status, "en_route", "X takes MA");
-  assert.ok(Date.now() < Date.parse(oxB.o.expiresAt) - 500, "X's MB offer is still inside its TTL: only the busy check can refuse it");
-  const refusedB = await accept(X, MB, wB.id);
-  assert.ok(refusedB.error, `X accept_offer(MB) after taking MA must be refused, got ${JSON.stringify(refusedB.data)}`);
-  assert.strictEqual(refusedB.error.message, "already_on_mission");
-  assert.strictEqual(refusedB.error.code, "PT409");
-  negatives.push(`X accept_offer(MB, offered while free, X now on MA): ${refusedB.error.message} (${refusedB.error.code})`);
-  await unchanged("MB after X's refused accept", MB, patient2, feedB, wB);
+  assert.deepStrictEqual([...wB.eligible_driver_ids].sort(), [X.id, Y.id].sort(), "MB offered to free X and Y");
+  const ma = await book("MA", patient3, SITE2);
+  const MA = ma.parsed.missionId;
+  await sleep(2000);
+  const wavesA = await wavesOf(MA);
+  assert.ok(wavesA.every((w) => !w.eligible_driver_ids.includes(X.id) && !w.eligible_driver_ids.includes(Y.id)), "X and Y (holding MB's open offer) are not offered MA");
+  assert.ok(!inbox.X.offers.some((x) => x.o.missionId === MA) && !inbox.Y.offers.some((x) => x.o.missionId === MA), "no MA offer reached X or Y");
   const accB = await accept(Y, MB, wB.id);
   assert.ifError(accB.error);
-  assert.strictEqual(accB.data.status, "en_route", "Y still takes MB");
+  assert.strictEqual(accB.data.status, "en_route", "Y takes MB");
   await acceptedBy("MB", MB, patient2, feedB, Y, accB.data.eventId);
   const xRevB = await inbox.X.until("X revoke MB (taken)", 10_000, () => inbox.X.revoked.find((x) => x.r.offerId === wB.id));
   assert.strictEqual(xRevB.r.reason, "taken");
-  assert.deepStrictEqual([await activeOf(X), await activeOf(Y)], [[MA], [MB]], "one active mission each");
-  findings.push(`race: MB offered to X while free; X accepted MA; X accept_offer(MB) inside its TTL -> already_on_mission PT409; MB unchanged (requesting v1, wave broadcasting, no event, no publish); Y accepted MB; patient2 got one DRIVER_ACCEPTED driverId=Y; X got offer_revoked/taken`);
+  findings.push(`reservation: MB open to X,Y; MA (same site) waves ${JSON.stringify(wavesA.map((w) => who(w.eligible_driver_ids)))} never include X or Y; Y accepted MB; X got offer_revoked/taken`);
 
-  step("9d. Concurrent double-accept (Promise.all; does not prove the calls overlapped, the psql two-session harness does)");
-  for (const [p, id] of [[patient3, MA], [patient2, MB]] as const) {
+  step("9d. Two drivers accept the same offer at once (Promise.all; the psql two-session harness proves the overlap)");
+  for (const [p, id] of [[patient2, MB], [patient3, MA]] as const) {
     const r = await p.db.rpc("cancel_mission", { p_mission_id: id, p_reason: "other", p_note: "G4.7-B free the crew" });
-    assert.ifError(r.error);
+    if (r.error && !/not_found|invalid_transition/.test(r.error.message)) assert.ifError(r.error);
   }
+  assert.deepStrictEqual([await activeOf(X), await activeOf(Y)], [[], []], "X and Y are free");
   const mc1 = (await book("MC1", patient2, SITE2)).parsed.missionId;
-  const mc2 = (await book("MC2", patient3, SITE2)).parsed.missionId;
   await inbox.X.offerFor(mc1, 10_000);
-  await inbox.X.offerFor(mc2, 10_000);
-  const [wc1, wc2] = [(await wavesOf(mc1))[0]!, (await wavesOf(mc2))[0]!];
-  const both = await Promise.all([accept(X, mc1, wc1.id), accept(X, mc2, wc2.id)]);
+  await inbox.Y.offerFor(mc1, 10_000);
+  const wc1 = (await wavesOf(mc1))[0]!;
+  const both = await Promise.all([accept(X, mc1, wc1.id), accept(Y, mc1, wc1.id)]);
   const outcomes = both.map((r) => (r.error ? r.error.message : r.data.status));
-  assert.deepStrictEqual([...outcomes].sort(), ["already_on_mission", "en_route"], `exactly one concurrent accept wins: ${outcomes}`);
-  assert.strictEqual((await activeOf(X)).length, 1, "X holds one mission");
-  findings.push(`Promise.all double-accept by X on MC1/MC2 -> ${JSON.stringify(outcomes)}; X holds 1 active mission`);
+  assert.deepStrictEqual([...outcomes].sort(), ["en_route", "offer_taken"], `exactly one concurrent accept wins: ${outcomes}`);
+  assert.strictEqual((await activeOf(X)).length + (await activeOf(Y)).length, 1, "exactly one driver holds MC1");
+  findings.push(`Promise.all accept by X and Y of MC1's one offer -> ${JSON.stringify(outcomes)}; one driver assigned`);
 
   // ------------------------------------------------------------------ M1 escalation, driven by pg_cron
-  step("10. M1: A's offer TTL passes; A can no longer accept (wave still open)");
+  step("10. M1: A declined its offer, so A can never accept it (a decline is binding)");
   await sleepUntil(Date.parse(o1.o.expiresAt) + 1000);
-  await refuse("driver A accept_offer(own M1 wave 1 after TTL)", A.db, "accept_offer", { p_offer_id: w1.id, p_client_event_id: randomUUID() }, ["offer_expired"]);
+  await refuse("driver A accept_offer(own declined M1 wave 1)", A.db, "accept_offer", { p_offer_id: w1.id, p_client_event_id: randomUUID() }, ["offer_declined"]);
 
-  step(`11. M1 wave 2 (waiting for pg_cron dispatch_tick; window ${cfg.waveWindowSeconds} s, job every minute)`);
+  step(`11. M1 wave 2 (opened by A's decline; each wave lasts one offer TTL, ${cfg.offerTtlSeconds} s, escalated by the 5 s dispatch_tick)`);
   const o2 = await inbox.B.offerFor(M1, cfg.waveWindowSeconds * 1000 + 80_000);
   let ws1 = await wavesOf(M1);
   const w2 = ws1[1]!;
-  assert.deepStrictEqual([ws1.length, ws1[0]!.status], [2, "expired"]);
-  assert.deepStrictEqual([w2.id, w2.wave_number, Number(w2.radius_km), w2.status, w2.eligible_driver_ids], [o2.o.offerId, 2, r2, "broadcasting", [B.id]], "wave 2 asks B only; A (asked, declined, heartbeat alive) excluded");
-  assert.ok(Date.parse(w2.created_at) >= Date.parse(w1.expires_at), "the decline did not speed escalation: wave 2 opened after wave 1's full window");
+  // Waves now last one offer TTL: by the time this step reads, wave 2 may already have expired and wave 3 opened.
+  assert.ok(ws1.length >= 2 && ws1[0]!.status === "expired", `wave 1 expired, wave 2 exists (${ws1.map((w) => w.status)})`);
+  assert.deepStrictEqual([w2.id, w2.wave_number, Number(w2.radius_km), w2.eligible_driver_ids], [o2.o.offerId, 2, r2, [B.id]], "wave 2 asks B only; A (asked, declined, heartbeat alive) excluded");
+  assert.ok(["broadcasting", "expired"].includes(w2.status), `wave 2 is ${w2.status}`);
+  assert.ok(Date.parse(w2.created_at) < Date.parse(w1.expires_at), "the decline escalated at once: wave 2 opened before wave 1 would have expired");
   assert.ok(Math.abs(o2.o.distanceKm! - km(FIX.B, SITE1)) < 0.06, `server distance B ${o2.o.distanceKm}`);
   await refuse("driver A accept_offer(M1 wave 2, B's offer)", A.db, "accept_offer", { p_offer_id: w2.id, p_client_event_id: randomUUID() }, ["not_eligible"]);
   console.log(`✓ wave 2 ${w2.id} r=${w2.radius_km} eligible=[B] created ${w2.created_at}; server distanceKm B=${o2.o.distanceKm}`);
@@ -492,13 +491,15 @@ try {
   const o3 = await inbox.C.offerFor(M1, cfg.waveWindowSeconds * 1000 + 80_000);
   ws1 = await wavesOf(M1);
   const w3 = ws1[2]!;
-  assert.deepStrictEqual(ws1.map((w) => w.status), ["expired", "expired", "broadcasting"]);
+  // Waves now last one offer TTL, so by the time this step reads, wave 3 may already be exhausted by the tick.
+  assert.deepStrictEqual(ws1.slice(0, 2).map((w) => w.status), ["expired", "expired"]);
+  assert.ok(["broadcasting", "exhausted"].includes(w3.status), `wave 3 is ${w3.status}`);
   assert.deepStrictEqual([w3.id, w3.wave_number, Number(w3.radius_km), w3.eligible_driver_ids], [o3.o.offerId, 3, r3, [C.id]], "wave 3 = third radius, asks C only");
   assert.ok(Math.abs(o3.o.distanceKm! - km(FIX.C, SITE1)) < 0.06, `server distance C ${o3.o.distanceKm}`);
   assert.ok(o3.o.distanceKm! > r2 && o3.o.distanceKm! <= r3, "C sits in the third band by the server's own distance");
   assert.strictEqual(ms(o3.o.issuedAt!, o3.o.expiresAt), cfg.offerTtlSeconds * 1000, "wave 3 offer TTL");
   assert.ok(Math.abs(ms(w3.created_at, o3.o.issuedAt!)) < 1, "offer issuedAt = wave created_at");
-  assert.ok(Math.abs(ms(w3.created_at, w3.expires_at) - cfg.waveWindowSeconds * 1000) < 1, "wave 3 window");
+  assert.ok(Math.abs(ms(w3.created_at, w3.expires_at) - cfg.offerTtlSeconds * 1000) < 1, "a wave expires with its offer (no dead window)");
   assert.deepStrictEqual([o3.o.missionId, o3.o.waveNumber, o3.o.requiredVehicleType], [M1, 3, "TYPE_C_BLS"]);
   assert.ok(Date.parse(w3.created_at) >= Date.parse(w2.expires_at), "wave 3 after wave 2's window");
   assert.ok(![inbox.A, inbox.B].some((i) => i.offers.some((x) => x.o.offerId === w3.id)), "A and B never received wave 3");
@@ -536,7 +537,7 @@ try {
   assert.ok(age >= cfg.searchTtlSeconds * 1000 && age < (cfg.searchTtlSeconds + 60) * 1000 + 2000, `search window closed ${age} ms after creation`);
   assert.deepStrictEqual([cancelMsg.m.eventId, cancelMsg.m.seq, cancelMsg.m.state, cancelMsg.m.missionId, cancelMsg.m.driverId, cancelMsg.m.data], [ce.id, 2, "cancelled", M1, undefined, ce.metadata], "realtime = persisted");
   assert.ok(Math.abs(ms(ce.created_at, cancelMsg.m.timestamp!)) < 1);
-  await refuse("driver C accept_offer(M1 wave 3) after system cancel", C.db, "accept_offer", { p_offer_id: w3.id, p_client_event_id: randomUUID() }, ["offer_expired"]);
+  await refuse("driver C accept_offer(M1 wave 3) after system cancel", C.db, "accept_offer", { p_offer_id: w3.id, p_client_event_id: randomUUID() }, ["mission_cancelled"]);
   console.log(`✓ MISSION_CANCELLED seq 2 ${ce.id} at +${age} ms; patient received it ${cancelMsg.at}`);
 
   step("15. One more tick: nothing reopens");

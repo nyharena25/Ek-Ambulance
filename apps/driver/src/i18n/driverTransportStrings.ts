@@ -7,12 +7,6 @@ export interface DriverTransportTranslation {
   missionIdLabel: (id: string) => string;
 
   // ER Integration Alert Banner
-  erAlertBannerTitle: string;
-  erIntegrationSub: string;
-  hl7GatewayStatus: string;
-  assignedBayText: string;
-  traumaTeamStatus: string;
-  preArrivalVitalsStream: string;
 
   // Navigation Overlay
   destinationHeading: string;
@@ -79,12 +73,6 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
     missionIdLabel: (id) => `Mission #${id}`,
 
     // ER Integration Alert Banner
-    erAlertBannerTitle: "Hospital Triage Desk Notified via Integration",
-    erIntegrationSub: "Live HL7/FHIR gateway connected • Real-time patient telemetry streaming to ER dashboard",
-    hl7GatewayStatus: "HL7/FHIR Gateway: CONNECTED (200 OK)",
-    assignedBayText: "Assigned: Bay 02 - Red Resus (Ventilator Ready)",
-    traumaTeamStatus: "Trauma Team: In Position at ER Ramp",
-    preArrivalVitalsStream: "Telemetry: HR 88 • SpO2 94% • MAP 93 mmHg",
 
     // Navigation Overlay
     destinationHeading: "Destination Emergency Room",
@@ -122,7 +110,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
     emtSignTimestampLabel: (time) => `Electronically stamped at ${time} with verified GPS coordinates.`,
 
     handoverChecklistHeading: "Clinical Handover Checklist",
-    checklistBedTransfer: "Patient transferred safely from ambulance stretcher to ER Resus Bay 02",
+    checklistBedTransfer: "Patient transferred safely from ambulance stretcher to the ER bed",
     checklistVentilatorTransfer:
       "Transport ventilator / oxygen lines transferred to hospital central wall supply",
     checklistEmrPacket: "Physical triage record and digital telemetry handed over to head nurse",
@@ -153,12 +141,6 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
     missionIdLabel: (id) => `मिशन #${id}`,
 
     // ER Integration Alert Banner
-    erAlertBannerTitle: "अस्पताल ट्रायज डेस्क को इंटीग्रेशन द्वारा सूचित कर दिया गया है",
-    erIntegrationSub: "लाइव HL7/FHIR गेटवे कनेक्टेड • रियल-टाइम मरीज टेलीमेट्री इमरजेंसी डैशबोर्ड पर स्ट्रीम हो रही है",
-    hl7GatewayStatus: "HL7/FHIR गेटवे: कनेक्टेड (200 OK)",
-    assignedBayText: "आवंटित: बे 02 - रेड ट्रॉमा रिससिटेटर (वेंटिलेटर तैयार)",
-    traumaTeamStatus: "ट्रॉमा टीम: ER रैंप पर उपस्थित",
-    preArrivalVitalsStream: "टेलीमेट्री: HR 88 • SpO2 94% • MAP 93 mmHg",
 
     // Navigation Overlay
     destinationHeading: "गंतव्य इमरजेंसी विभाग",
@@ -195,7 +177,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
     emtSignTimestampLabel: (time) => `सत्यापित जीपीएस निर्देशांकों के साथ ${time} पर इलेक्ट्रॉनिक रूप से दर्ज।`,
 
     handoverChecklistHeading: "क्लीनिकल हैंडओवर चेकलिस्ट",
-    checklistBedTransfer: "मरीज को एंबुलेंस स्ट्रेचर से ER ट्रॉमा बे 02 में सुरक्षित स्थानांतरित किया गया",
+    checklistBedTransfer: "मरीज को एंबुलेंस स्ट्रेचर से ER बेड पर सुरक्षित स्थानांतरित किया गया",
     checklistVentilatorTransfer: "ट्रांसपोर्ट वेंटिलेटर / ऑक्सीजन लाइनों को अस्पताल की सेंट्रल सप्लाई पर स्थानांतरित किया गया",
     checklistEmrPacket: "भौतिक ट्रायज रिकॉर्ड एवं डिजिटल टेलीमेट्री हेड नर्स को सौंपी गई",
 

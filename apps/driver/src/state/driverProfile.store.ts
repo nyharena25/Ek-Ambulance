@@ -25,6 +25,8 @@ export interface DriverProfileState {
   profile: DriverProfile | null;
   status: "idle" | "loading" | "ready" | "error";
   errorCode: string | null;
+  /** The server's or the network's own wording for errorCode, shown on the load-failure screen so the cause is visible. */
+  errorDetail?: string;
   load: () => Promise<void>;
   /** `hospitalName` is only used by the local (development) path: the server resolves it from the hospitals table. */
   save: (patch: DriverProfilePatch, hospitalName?: string | null) => Promise<SaveResult>;
@@ -73,7 +75,7 @@ export const useDriverProfileStore = create<DriverProfileState>((set, get) => ({
     }
     set({ status: "loading" });
     const result = await server.fetchProfile();
-    if (!result.ok) return set({ status: "error", errorCode: result.error.code });
+    if (!result.ok) return set({ status: "error", errorCode: result.error.code, errorDetail: result.error.detail });
     set({ profile: result.data, status: "ready", errorCode: null });
     syncStandby(result.data);
   },

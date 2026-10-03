@@ -3,6 +3,8 @@ import {
   missionChannelName,
   isMissionTelemetryPing,
   parseLifecycleMessage,
+  realtimeLogLine,
+  type RealtimeEvent,
   type MissionTelemetryPing,
   type MissionLifecycleEventType,
   type ParsedLifecycleMessage,
@@ -52,7 +54,24 @@ export interface MissionChannelCallbacks {
   onLifecycleMessage?: (message: ParsedLifecycleMessage) => void;
   /** The subscription (re)established. `recovered === false` means events may have been missed: reconcile. */
   onResubscribed?: (info: { recovered: boolean }) => void;
+  /** Every SDK lifecycle callback, for the app's one connection state (@sahayak/domain reduceRealtime). */
+  onTransportEvent?: (event: RealtimeEvent) => void;
   onError: (error: Error) => void;
+}
+
+/** A static token, or a getter read on every (re)connect so a refreshed session token is used without remounting. */
+export type AuthTokenSource = string | (() => string | null);
+const readToken = (source: AuthTokenSource): string => {
+  const token = typeof source === "function" ? source() : source;
+  // UnauthorizedError: the SDK stops retrying instead of looping on a session that no longer exists.
+  if (!token) throw new UnauthorizedError("No authenticated session");
+  return token;
+};
+
+declare const __DEV__: boolean | undefined;
+/** Development builds only: subscription lifecycle, ids only, never payloads. */
+export function devLog(event: string, ids: Record<string, string | number | undefined> = {}): void {
+  if (typeof __DEV__ !== "undefined" && __DEV__) console.log(realtimeLogLine("patient", event, ids));
 }
 
 export { missionChannelName };
@@ -110,13 +129,15 @@ async function requestToken(scope: string, authToken: string): Promise<string> {
 export interface ClientLike {
   connect(): void;
   disconnect(): void;
-  on(event: "connecting" | "connected" | "disconnected", cb: () => void): unknown;
+  on(event: "connecting" | "connected" | "disconnected", cb: (ctx?: { code?: number; reason?: string }) => void): unknown;
+  on(event: "error", cb: (ctx?: { type?: string; error?: Error }) => void): unknown;
   newSubscription(channel: string, options: { getToken: () => Promise<string> }): SubscriptionLike;
 }
 export interface SubscriptionLike {
   subscribe(): void;
   unsubscribe(): void;
   on(event: "subscribed", cb: (ctx?: { wasRecovering?: boolean; recovered?: boolean }) => void): unknown;
+  on(event: "subscribing", cb: () => void): unknown;
   on(event: "unsubscribed", cb: () => void): unknown;
   on(event: "publication", cb: (ctx: { data: unknown }) => void): unknown;
   on(event: "error", cb: (ctx: { error: Error }) => void): unknown;
@@ -134,7 +155,7 @@ export interface SubscriptionLike {
  */
 export function mountMissionChannel(
   missionId: string,
-  authToken: string,
+  authToken: AuthTokenSource,
   callbacks: MissionChannelCallbacks,
   createClient: (endpoint: string, options: Record<string, unknown>) => ClientLike = (
     endpoint,
@@ -144,28 +165,57 @@ export function mountMissionChannel(
   const client = createClient(CENTRIFUGO_WS_URL, {
     minReconnectDelay: 500,
     maxReconnectDelay: 20000,
-    // Fresh connection token on every (re)connect; never cached.
-    getToken: () => fetchConnectionToken(authToken),
+    // Fresh connection token on every (re)connect, from the current session token; never cached.
+    getToken: async () => fetchConnectionToken(readToken(authToken)),
+  });
+  const transport = (event: RealtimeEvent) => callbacks.onTransportEvent?.(event);
+
+  client.on("connecting", (ctx) => {
+    devLog("RECONNECTING", { mission_id: missionId, reason: ctx?.reason });
+    callbacks.onStatusChange("connecting");
+    transport({ type: "connecting", reason: ctx?.reason });
+  });
+  client.on("connected", () => {
+    devLog("CONNECTED", { mission_id: missionId });
+    callbacks.onStatusChange("connected");
+    transport({ type: "connected" });
+  });
+  client.on("disconnected", (ctx) => {
+    devLog("DISCONNECTED", { mission_id: missionId, reason: ctx?.reason });
+    callbacks.onStatusChange("disconnected");
+    transport({ type: "disconnected", reason: ctx?.reason });
   });
 
-  client.on("connecting", () => callbacks.onStatusChange("connecting"));
-  client.on("connected", () => callbacks.onStatusChange("connected"));
-  client.on("disconnected", () => callbacks.onStatusChange("disconnected"));
+  // A failed (re)connect attempt: counted toward the reconnect threshold, never a fallback trigger on its own.
+  client.on("error", (ctx) => transport({ type: "error", message: ctx?.error?.message ?? ctx?.type ?? "client error" }));
 
   const sub = client.newSubscription(missionChannelName(missionId), {
-    getToken: () => fetchChannelToken(missionId, authToken),
+    getToken: async () => fetchChannelToken(missionId, readToken(authToken)),
   });
 
+  sub.on("subscribing", () => {
+    devLog("SUBSCRIBING", { mission_id: missionId });
+    transport({ type: "subscribing" });
+  });
   sub.on("subscribed", (ctx) => {
+    devLog(ctx?.wasRecovering ? "RECONNECTED" : "SUBSCRIBED", { mission_id: missionId, recovered: ctx?.wasRecovering ? String(ctx.recovered) : undefined });
+    transport({ type: "subscribed" });
     callbacks.onSubscriptionStateChange(true);
     // Centrifugo history is shared with GPS pings, so a lifecycle event can fall out of the recovery window: whenever
     // recovery was attempted and did not fully succeed, the caller reconciles against the server (7.5 rule 3).
-    if (ctx?.wasRecovering && ctx.recovered === false) callbacks.onResubscribed?.({ recovered: false });
+    // The first subscribe recovers nothing: an event published between the mount-time read and this point (a fast
+    // DRIVER_ACCEPTED) would be lost, so it reconciles once too.
+    if (!ctx?.wasRecovering || ctx.recovered === false) callbacks.onResubscribed?.({ recovered: false });
   });
-  sub.on("unsubscribed", () => callbacks.onSubscriptionStateChange(false));
+  sub.on("unsubscribed", () => {
+    devLog("UNSUBSCRIBED", { mission_id: missionId });
+    transport({ type: "unsubscribed" });
+    callbacks.onSubscriptionStateChange(false);
+  });
   sub.on("publication", (ctx) => {
     // Runs inside the socket callback: nothing here may throw (G-18). Unknown events and shapes are ignored.
     try {
+      transport({ type: "message" });
       const data = ctx.data;
       if (isMissionTelemetryPing(data)) {
         callbacks.onTelemetry(data);
@@ -173,6 +223,7 @@ export function mountMissionChannel(
       }
       const message = parseLifecycleMessage(data);
       if (!message) return;
+      devLog("EVENT_RECEIVED", { mission_id: missionId, event_id: message.eventId, seq: message.seq, event: message.event });
       if (callbacks.onLifecycleMessage) callbacks.onLifecycleMessage(message);
       // Rule 6: the mission id is the channel's, never the payload's.
       else callbacks.onLifecycleEvent(message.event, missionId);
@@ -180,7 +231,11 @@ export function mountMissionChannel(
       callbacks.onError(error instanceof Error ? error : new Error(String(error)));
     }
   });
-  sub.on("error", (ctx) => callbacks.onError(ctx.error));
+  sub.on("error", (ctx) => {
+    devLog("SUBSCRIBE_ERROR", { mission_id: missionId, error: ctx.error?.message });
+    transport({ type: "error", message: ctx.error?.message ?? "subscription error" });
+    callbacks.onError(ctx.error);
+  });
 
   client.connect();
   sub.subscribe();

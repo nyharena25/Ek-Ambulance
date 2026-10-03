@@ -63,6 +63,12 @@ export interface PatientHydratePayload {
   fareDetails?: ItemizedStatutoryFare;
   /** The crew from the mission's stored DRIVER_ACCEPTED event, so a reopened app shows who is coming. */
   driver?: AssignedDriverInfo;
+  /** The hospital from the stored TRANSPORT_STARTED event (written by the server from missions.destination_hospital_id). */
+  destination?: TransportDestination;
+  /** The server's final fare from the stored MISSION_COMPLETED event; absent until the mission completed. */
+  completion?: MissionCompletedData;
+  /** Who/why from the stored MISSION_CANCELLED event (e.g. reason no_ambulance_available), so a reopened app shows it. */
+  cancellation?: MissionCancelledData;
 }
 
 /**

@@ -36,7 +36,7 @@ export interface ActiveMatchingScreenProps {
  * The route (booking/matching.tsx) moves on when the server's DRIVER_ACCEPTED or cancellation arrives.
  */
 export default function ActiveMatchingScreen({
-  vehicleType = "TYPE_D_ALS",
+  vehicleType,
   pickupAddress = "",
   pickupCoords,
   initialLanguage = "en",
@@ -209,7 +209,7 @@ export default function ActiveMatchingScreen({
                 {strings.requestedVehicleLabel}
               </Text>
               <Text style={styles.contextMainValue} numberOfLines={2}>
-                {strings.vehicleTypeName[vehicleType] ?? vehicleType}
+                {vehicleType ? (strings.vehicleTypeName[vehicleType] ?? vehicleType) : "—"}
               </Text>
               <Text style={styles.contextSubValue}>
                 {strings.lifeSupportTelemetry}

@@ -8,6 +8,7 @@ export * from "./state-machine/driverLifecycle.ts";
 export * from "./mission-channel/index.ts";
 export * from "./dispatch/index.ts";
 export * from "./dispatch/board.ts";
+export * from "./realtime/index.ts";
 export * from "./api/index.ts";
 export * from "./services/routingService.ts";
 export * from "./services/navigationLinks.ts";
