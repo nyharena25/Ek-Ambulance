@@ -116,6 +116,13 @@ function contextFields(context: DriverLifecycleContext) {
   };
 }
 
+/** Server calls in flight, and a counter bumped whenever one starts or ends. A mission read that overlapped one may describe the
+ *  server after a transition whose 200 has not reached the machine yet (e.g. COMPLETE): activeMission.store discards it. */
+const serverCalls = { pending: 0, epoch: 0 };
+export function serverCallActivity(): { pending: number; epoch: number } {
+  return { ...serverCalls };
+}
+
 export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) => {
   const mount = () => {
     if (actor) actor.stop();
@@ -149,7 +156,12 @@ export const useDriverLifecycleStore = create<DriverLifecycleStoreState>((set) =
       const built = buildServerCall(event, keyFor(event));
       if (!built.ok) return { ok: false, error: { code: built.code, status: 0, retryable: false } };
       if (built.call) {
-        const result = await server.call(built.call);
+        serverCalls.pending += 1;
+        serverCalls.epoch += 1;
+        const result = await server.call(built.call).finally(() => {
+          serverCalls.pending -= 1;
+          serverCalls.epoch += 1;
+        });
         // A refusal leaves the machine where it was: a mission the server did not accept is not one the driver holds.
         if (!result.ok) return result;
       }

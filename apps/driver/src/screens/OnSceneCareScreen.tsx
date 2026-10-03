@@ -16,7 +16,7 @@ import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { ConfirmPatientOnboardPayload, type GeoPoint } from "@sahayak/domain";
 import { driverOnSceneStrings } from "../i18n/driverOnSceneStrings";
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
-import { EMERGENCY_TYPES, hospitalsFor, type EmergencyType } from "../hooks/hospitalSelection.core";
+import { EMERGENCY_TYPES, canHold, hospitalsFor, type EmergencyType } from "../hooks/hospitalSelection.core";
 import type { CatalogHospital } from "../lib/driverServer.core";
 import { useDriverStandbyStore } from "../state/driverStandby.store";
 
@@ -94,7 +94,7 @@ export default function OnSceneCareScreen({
     () => hospitalsFor(emergency ?? "general", pickupCoordinates, hospitals ?? []),
     [emergency, pickupCoordinates.latitude, pickupCoordinates.longitude, hospitals]
   );
-  const selectedHospital = nearby.find((n) => n.hospital.id === selectedHospitalId)?.hospital ?? null;
+  const selectedHospital = nearby.find((n) => n.hospital.id === selectedHospitalId && canHold(n.hospital))?.hospital ?? null;
   const hospitalLabel = (h: CatalogHospital) => (language === "hi" ? h.nameHi ?? h.name : h.name);
 
   // Mean Arterial Pressure (MAP) computation
@@ -431,13 +431,16 @@ export default function OnSceneCareScreen({
             ) : null}
             {nearby.map(({ hospital, km }, index) => {
               const isSelected = hospital.id === selectedHospital?.id;
+              // Shown but not choosable: the server would refuse the hold (hospital_at_capacity).
+              const isFull = !canHold(hospital);
               return (
                 <Pressable
                   key={hospital.id}
-                  style={[styles.hospitalCard, isSelected && styles.hospitalCardSelected]}
+                  style={[styles.hospitalCard, isSelected && styles.hospitalCardSelected, isFull && styles.hospitalCardDisabled]}
                   onPress={() => setSelectedHospitalId(hospital.id)}
+                  disabled={isFull}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected: isSelected }}
+                  accessibilityState={{ selected: isSelected, disabled: isFull }}
                 >
                   <View style={styles.hospTopRow}>
                     <View style={styles.hospRankBadge}>
@@ -452,7 +455,13 @@ export default function OnSceneCareScreen({
                         {km.toFixed(1)} km{hospital.traumaLevel !== undefined ? ` · ${language === "hi" ? "ट्रॉमा लेवल" : "Trauma level"} ${hospital.traumaLevel}` : ""}
                       </Text>
                     </View>
-                    <View style={styles.radioOuter}>{isSelected && <View style={styles.radioInner} />}</View>
+                    {isFull ? (
+                      <View style={styles.atCapacityBadge}>
+                        <Text style={styles.atCapacityBadgeText}>{language === "hi" ? "बेड नहीं" : "FULL"}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.radioOuter}>{isSelected && <View style={styles.radioInner} />}</View>
+                    )}
                   </View>
 
                   <Pressable

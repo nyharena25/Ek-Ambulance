@@ -26,6 +26,7 @@ export function mapRpcError(error: RpcErrorLike | null | undefined): ApiError {
   const sqlstate = error?.code ?? "";
   const pt = /^PT(\d{3})$/.exec(sqlstate);
   if (pt) return { code: message || "unknown", status: Number(pt[1]), detail: error?.details ?? undefined, retryable: false };
+  if (sqlstate === "42501") return { code: "forbidden", status: 403, detail: message || undefined, retryable: false };
   // supabase-js reports a fetch failure as an error with no SQLSTATE and the TypeError text.
   if (/network|fetch|timeout|abort|failed to/i.test(message) || sqlstate === "") {
     return { code: "network", status: 0, detail: message || undefined, retryable: true };

@@ -20,7 +20,10 @@ import { useDriverProfileStore } from "../state/driverProfile.store";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
 import { refreshDriverConnection } from "../hooks/useServerSync";
 
-import { AppIcon, DriverMap, StandbyBookingSection } from "../components";
+import { AppIcon, CurrentMissionCard, DriverMap, StandbyBookingSection } from "../components";
+import { useActiveMissionStore } from "../state/activeMission.store";
+import { useDriverLifecycleStore } from "../state/driverLifecycle.store";
+import { holdsCurrentMission } from "../state/activeMission.core";
 import { driverErrorMessage } from "../lib/driverServer.core";
 export interface DriverStandbyScreenProps {
   onNavigateToOnboarding?: () => void;
@@ -56,6 +59,11 @@ export default function DriverStandbyScreen({
   const profile = useDriverProfileStore((s) => s.profile);
   // Only the server's registered classification is shown - never the store's pre-profile default.
   const ais125Info = profile?.ais125Type ? strings.ais125TierBadge[profile.ais125Type] : null;
+  // A driver on a mission is not available: the Current Mission card replaces the available-missions entry.
+  const missionView = useActiveMissionStore((s) => s.view);
+  const currentState = useDriverLifecycleStore((s) => s.currentState);
+  const activeMissionId = useDriverLifecycleStore((s) => s.activeMissionId);
+  const onMission = holdsCurrentMission(missionView, { currentState, activeMissionId });
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -143,6 +151,9 @@ export default function DriverStandbyScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* CURRENT MISSION: the server-assigned mission, first and always reachable (absent when there is none). */}
+        <CurrentMissionCard />
+
         {/* PROMINENT 'GO ONLINE' / 'GO OFFLINE' SHIFT ACTION CARD */}
         <View
           style={[
@@ -312,7 +323,7 @@ export default function DriverStandbyScreen({
         </View>
 
         {/* BOOKING BOARD: entry with a live count, and the 10 km fallback when nobody nearer answered */}
-        <StandbyBookingSection onOpenBooking={onOpenBooking} />
+        {!onMission && <StandbyBookingSection onOpenBooking={onOpenBooking} />}
 
         {/* ACTIVE SERVICE AREA MAP & LIVE GPS HUD */}
         <View style={styles.mapSectionCard}>

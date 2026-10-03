@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { distanceKm, hospitalsFor } from "./hospitalSelection.core.ts";
+import { canHold, distanceKm, hospitalsFor } from "./hospitalSelection.core.ts";
 import type { CatalogHospital } from "../lib/driverServer.core.ts";
 
 // Synthetic catalog rows (test-only): the real catalog is read from the hospitals table at run time.
@@ -16,4 +16,7 @@ assert.equal(hospitalsFor("general", NOIDA_62, catalog).length, 3, "general list
 assert.equal(hospitalsFor("stroke", NOIDA_62, []).length, 0, "no catalog, no hospitals: nothing is invented");
 assert.ok(cardiac.every((r, i) => i === 0 || cardiac[i - 1]!.km <= r.km), "sorted nearest first");
 assert.ok(cardiac.every((r) => /^[0-9a-f-]{36}$/.test(r.hospital.id)), "every selectable hospital carries its canonical id");
+assert.equal(canHold({ ...catalog[0]!, availableCapacity: 0 }), false, "a full hospital cannot be chosen (the server would refuse the hold)");
+assert.equal(canHold({ ...catalog[0]!, availableCapacity: 3 }), true);
+assert.equal(canHold(catalog[0]!), true, "unknown capacity is not full");
 console.log("HOSPITAL SELECTION TESTS PASSED (100% GREEN)");

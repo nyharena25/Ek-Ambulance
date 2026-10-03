@@ -5,4 +5,5 @@ export { default as NavigateInGoogleMapsButton } from "./NavigateInGoogleMapsBut
 export { default as DriverMap } from "./DriverMap";
 export { default as EmergencyCard, type EmergencyCardProps } from "./EmergencyCard";
 export { default as StandbyBookingSection } from "./StandbyBookingSection";
+export { default as CurrentMissionCard } from "./CurrentMissionCard";
 export { openGoogleMapsNavigation } from "./NavigateInGoogleMapsButton";

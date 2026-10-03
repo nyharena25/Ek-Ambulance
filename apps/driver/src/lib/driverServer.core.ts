@@ -82,7 +82,9 @@ export function buildServerCall(event: DriverLifecycleMachineEvent, clientEventI
 
     case "CONFIRM_PATIENT_ONBOARD": {
       const p = event.payload;
-      if (!isUuid(p.hospitalId)) return { ok: false, code: "hospital_required" };
+      // Missing and malformed are different failures: a non-uuid here is a stale client list (a display name or preset id), never a choice.
+      if (typeof p.hospitalId !== "string" || p.hospitalId.trim() === "") return { ok: false, code: "hospital_required" };
+      if (!isUuid(p.hospitalId)) return { ok: false, code: "invalid_hospital_id" };
       const vitals = sanitizeVitals(p.vitals);
       if (vitals === null) return { ok: false, code: "invalid_vitals" };
       return transition(
@@ -116,8 +118,13 @@ function transition(missionId: string, event: string, payload: Record<string, un
   return { ok: true, call: { rpc: "transition_mission", args: { p_mission_id: missionId, p_event: event, p_payload: payload, p_client_event_id: clientEventId } } };
 }
 
-/** What the driver is told when the server refused a call. Never implies the action happened. */
-export function driverErrorMessage(code: string): string {
+/**
+ * What the driver is told when the server refused a call. Never implies the action happened. `status` splits the server's
+ * `invalid_hospital`: PT422 = the id is not a uuid, PT409 = no active registered hospital has that id (unknown or deactivated).
+ */
+export function driverErrorMessage(code: string, status?: number): string {
+  if (code === "invalid_hospital" && status === 422) code = "invalid_hospital_id";
+  if (code === "invalid_hospital" && status === 409) code = "hospital_unavailable";
   const messages: Record<string, string> = {
     offer_taken: "Another crew accepted this mission first.",
     offer_expired: "This offer has expired.",
@@ -141,11 +148,15 @@ export function driverErrorMessage(code: string): string {
     invalid_hospital: "That hospital is not available. Choose another.",
     invalid_transition: "The mission is no longer in that state. Refreshing.",
     not_found: "This mission is no longer assigned to you.",
-    hospital_required: "Select a hospital that is registered in the system.",
+    hospital_required: "Choose a destination hospital before starting transport.",
+    invalid_hospital_id: "This hospital entry has no valid registered ID, so nothing was sent. Reload the hospital list; if this keeps happening, update the app.",
+    hospital_unavailable: "That hospital is no longer registered or active. The list has been refreshed - choose another.",
+    forbidden: "You are not allowed to do this for this mission.",
     hospital_at_capacity: "That hospital has no capacity. Choose another.",
     invalid_vitals: "A vital sign is outside the allowed range. Check the values.",
     handoff_incomplete: "Enter the receiving physician's name, registration number and department.",
     network: "No connection. The action was NOT recorded. Try again.",
+    multiple_active_missions: "Your account shows more than one active mission. Contact dispatch before continuing.",
   };
   return messages[code] ?? "The server could not record that action. Try again.";
 }
@@ -219,19 +230,49 @@ export interface AssignedMissionRow {
   pickup?: GeoPoint;
   /** missions.destination_hospital_id once transport started: the hospital is reloaded from this, never from a name. */
   destinationHospitalId?: string;
+  /** The mission's public reference (missions.display_ref), never the patient's identity. */
+  displayRef?: string;
+  pickupAddress?: string;
+  /** The registered hospital's name, read through the foreign key (null when it is no longer active). */
+  destinationName?: string;
 }
+
+/** The driver's own active missions: same rule as public._driver_on_mission and missions_one_active_per_driver. */
+export const ASSIGNED_MISSION_COLUMNS = "id,status,display_ref,pickup_address,pickup_location,destination_hospital_id,destination:hospitals(name)";
 
 /** A `missions` row read through RLS (`missions_select_driver`: only the caller's own assigned mission). */
 export function parseAssignedMissionRow(row: unknown): AssignedMissionRow | null {
   if (typeof row !== "object" || row === null) return null;
-  const r = row as { id?: unknown; status?: unknown; pickup_location?: unknown; destination_hospital_id?: unknown };
+  const r = row as { id?: unknown; status?: unknown; pickup_location?: unknown; destination_hospital_id?: unknown; display_ref?: unknown; pickup_address?: unknown; destination?: { name?: unknown } | null };
   if (typeof r.id !== "string" || !isMissionStatus(r.status)) return null;
+  const text = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v : undefined);
+  const displayRef = text(r.display_ref);
+  const pickupAddress = text(r.pickup_address);
+  const destinationName = text(r.destination?.name);
   return {
     missionId: r.id,
     status: r.status,
     pickup: readPoint(r.pickup_location) ?? undefined,
     ...(isUuid(r.destination_hospital_id) ? { destinationHospitalId: r.destination_hospital_id } : {}),
+    ...(displayRef ? { displayRef } : {}),
+    ...(pickupAddress ? { pickupAddress } : {}),
+    ...(destinationName ? { destinationName } : {}),
   };
+}
+
+/**
+ * The answer to "which mission is this driver on?". `data: null` is reserved for a real "none": a row that cannot be read is
+ * an error (it must never end a live mission), and more than one is an integrity error - never silently one of them.
+ */
+export function readAssignedMissions(rows: unknown): { ok: true; data: AssignedMissionRow | null } | { ok: false; error: { code: string; status: number; detail?: string; retryable: boolean } } {
+  if (!Array.isArray(rows)) return { ok: false, error: { code: "invalid_response", status: 0, retryable: true } };
+  if (rows.length > 1) {
+    const ids = rows.map((r) => (r as { id?: unknown } | null)?.id).filter((id): id is string => typeof id === "string");
+    return { ok: false, error: { code: "multiple_active_missions", status: 0, detail: ids.join(","), retryable: false } };
+  }
+  if (rows.length === 0) return { ok: true, data: null };
+  const row = parseAssignedMissionRow(rows[0]);
+  return row ? { ok: true, data: row } : { ok: false, error: { code: "invalid_response", status: 0, retryable: true } };
 }
 
 // ---------------------------------------------------------------------------

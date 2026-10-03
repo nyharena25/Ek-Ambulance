@@ -132,5 +132,30 @@ select t.eq((select metadata ->> 'distanceSource' from public.mission_events whe
 select t.eq((select final_fare_inr from public.missions where id = :'m1'),
   ((public.compute_statutory_fare('TYPE_C_BLS', 'UP', :'leg_km'::numeric)) ->> 'estimatedTotalInr')::int, 'final fare priced on that leg');
 
+-- G: every active registered hospital is accepted by its catalog id (each attempt rolled back in a subtransaction).
+create function t.each_hospital_accepted() returns int language plpgsql as $$
+declare h record; v uuid; r jsonb; d uuid; n int := 0;
+begin
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000002d01","role":"authenticated"}', true);
+  for h in select id, name from public.hospitals where is_active and held_capacity < total_capacity order by name loop
+    begin
+      v := t.on_scene();
+      -- Two statements on purpose: a subquery in the same expression would read the snapshot from before the UPDATE.
+      r := public.transition_mission(v, 'PATIENT_ON_BOARD', jsonb_build_object('hospitalId', h.id));
+      select destination_hospital_id into d from public.missions where id = v;
+      if r ->> 'status' is distinct from 'transporting' or d is distinct from h.id then
+        raise exception 'FAIL % (%): got % with destination %', h.name, h.id, r, d;
+      end if;
+      raise exception using errcode = 'P0001', message = 'rollback';
+    exception when raise_exception then
+      if sqlerrm <> 'rollback' then raise; end if;
+    end;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+select t.eq(t.each_hospital_accepted(), (select count(*)::int from public.hospitals where is_active and held_capacity < total_capacity),
+  'G: every active registered hospital starts transport by its catalog id');
+
 drop schema t cascade;
 select 'ALL HOSPITAL HANDOFF CHECKS PASSED';

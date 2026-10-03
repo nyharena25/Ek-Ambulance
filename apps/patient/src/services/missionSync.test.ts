@@ -260,7 +260,7 @@ assert.deepStrictEqual(mapRpcError({ message: "invalid_transition", code: "PT409
 assert.strictEqual(mapRpcError({ message: "jurisdictions_not_loaded", code: "PT503" }).status, 503);
 assert.deepStrictEqual(mapRpcError({ message: "TypeError: Network request failed", code: "" }), { code: "network", status: 0, detail: "TypeError: Network request failed", retryable: true });
 assert.strictEqual(mapRpcError(null).retryable, true);
-assert.strictEqual(mapRpcError({ message: "permission denied for table x", code: "42501" }).code, "unknown");
+assert.deepStrictEqual(mapRpcError({ message: "permission denied for table x", code: "42501" }), { code: "forbidden", status: 403, detail: "permission denied for table x", retryable: false }, "a privilege refusal is an authorization failure, not unknown");
 console.log("✓ error mapping\n");
 
 console.log("Test 8: create_mission request/response mapping...");

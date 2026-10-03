@@ -2,7 +2,8 @@ import { isUuid, mapRpcError, newIdempotencyKey, parseBoardResponse, type ApiRes
 import { supabase } from "./supabaseClient";
 import { parseDriverProfile, type DriverProfile, type DriverProfilePatch, type ServiceZone } from "./driverProfile.core";
 import {
-  parseAssignedMissionRow,
+  ASSIGNED_MISSION_COLUMNS,
+  readAssignedMissions,
   HOSPITAL_CATALOG_COLUMNS,
   parseCatalogHospital,
   parseOpenOffers,
@@ -77,19 +78,21 @@ export async function ingestTelemetry(missionId: string, pings: QueuedTelemetryP
   }
 }
 
-/** Rule 9 / 7.6: the mission assigned to this driver, so a killed process resumes it instead of orphaning it. */
-export async function fetchAssignedMission(): Promise<ApiResult<AssignedMissionRow | null>> {
+/** Rule 9 / 7.6: the mission assigned to this driver, so a killed process resumes it instead of orphaning it. Scoped to
+ *  driver_id explicitly: RLS also lets an account read missions it booked as a patient. Two rows are fetched so a broken
+ *  one-active-mission invariant is reported, not hidden behind `limit(1)`. */
+export async function fetchAssignedMission(driverId: string): Promise<ApiResult<AssignedMissionRow | null>> {
   try {
     const { data, error } = await supabase
       .from("missions")
-      .select("id,status,pickup_location,destination_hospital_id")
+      .select(ASSIGNED_MISSION_COLUMNS)
+      .eq("driver_id", driverId)
       .not("status", "in", "(completed,cancelled)")
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(2);
     // A failed read is NOT "no mission": callers end a live mission only on `{ ok: true, data: null }`.
     if (error) return { ok: false, error: mapRpcError(error) };
-    if (!data) return { ok: false, error: { code: "invalid_response", status: 0, retryable: true } };
-    return { ok: true, data: data.length === 0 ? null : parseAssignedMissionRow(data[0]) };
+    return readAssignedMissions(data);
   } catch (e) {
     return fail(e);
   }

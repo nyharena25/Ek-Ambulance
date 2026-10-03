@@ -15,6 +15,8 @@ import {
 import { driverErrorMessage, type CatalogHospital } from "../../src/lib/driverServer.core";
 import { fetchAssignedMission, fetchHospitalCatalog } from "../../src/lib/driverServer";
 import { flushLivePings } from "../../src/services/telemetryUpload";
+import { useActiveMissionStore } from "../../src/state/activeMission.store";
+import { canOpenMission } from "../../src/state/activeMission.core";
 import type { DriverLifecycleMachineEvent, DriverLifecycleState, GeoPoint } from "@sahayak/domain";
 
 type MissionPhase = "enRouteToPatient" | "onScene" | "transporting";
@@ -24,13 +26,6 @@ type MissionPhase = "enRouteToPatient" | "onScene" | "transporting";
 // isCompletedAtHospital/isReceiptView sub-states), the same way
 // DriverNavigationScreen already handles its own post-arrival review UI
 // internally without a parent-level phase change.
-const MISSION_ACTIVE_STATES: readonly DriverLifecycleState[] = [
-  "enRouteToPatient",
-  "onScene",
-  "transporting",
-  "arrivedHospital",
-];
-
 function phaseForLifecycleState(state: DriverLifecycleState): MissionPhase {
   if (state === "onScene") return "onScene";
   if (state === "transporting" || state === "arrivedHospital") return "transporting";
@@ -41,14 +36,14 @@ export default function MissionExecutionRoute() {
   const { id, pickupLat, pickupLng } = useLocalSearchParams<{ id: string; pickupLat?: string; pickupLng?: string }>();
   const pickupCoordinates =
     pickupLat && pickupLng ? { latitude: Number(pickupLat), longitude: Number(pickupLng) } : undefined;
-  const { currentState, driverId, submit, send } = useDriverLifecycleStore();
+  const { currentState, activeMissionId, driverId, submit } = useDriverLifecycleStore();
 
-  // A stale deep link, a page reload with no accepted mission, or a mission
-  // that already completed (currentState back to standby) - nothing here
-  // for the route to render. Redirect rather than rendering a screen whose
-  // events the machine won't accept.
+  // A stale deep link, a page reload with no accepted mission, a mission that already completed (currentState back to
+  // standby), or a URL id that is not the mission the server assigned (activeMissionId comes only from a server-confirmed
+  // accept or a server read) - nothing here for the route to render. Every action is still authorized by the server
+  // (transition_mission: PT404 not_found for a mission not assigned to this driver).
   const actingDriverId = getServerAdapter()?.userId ?? driverId;
-  if (!MISSION_ACTIVE_STATES.includes(currentState) || !actingDriverId) {
+  if (!canOpenMission(id, { currentState, activeMissionId }) || !actingDriverId) {
     return <Redirect href="/(shift)/standby" />;
   }
 
@@ -59,7 +54,6 @@ export default function MissionExecutionRoute() {
       initialLifecycleState={currentState}
       pickupCoordinates={pickupCoordinates}
       submit={submit}
-      send={send}
     />
   );
 }
@@ -70,7 +64,6 @@ interface MissionExecutionScreensProps {
   initialLifecycleState: DriverLifecycleState;
   pickupCoordinates?: GeoPoint;
   submit: DriverLifecycleStoreState["submit"];
-  send: DriverLifecycleStoreState["send"];
 }
 
 /**
@@ -78,7 +71,7 @@ interface MissionExecutionScreensProps {
  * mount. Every confirmation goes to the server FIRST (7.5 rule 1): the machine, and therefore this route's next screen, only
  * advances on the server's 200. A refusal shows why and re-reads the server's view instead of pretending it happened.
  */
-function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, pickupCoordinates, submit, send }: MissionExecutionScreensProps) {
+function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, pickupCoordinates, submit }: MissionExecutionScreensProps) {
   const router = useRouter();
   const [phase, setPhase] = useState<MissionPhase>(phaseForLifecycleState(initialLifecycleState));
   const [selectedHospital, setSelectedHospital] = useState<CatalogHospital | null>(null);
@@ -91,13 +84,18 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
   useEffect(() => {
     if (pickup) return;
     let alive = true;
-    void fetchAssignedMission().then((r) => {
+    void fetchAssignedMission(driverId).then((r) => {
       if (alive && r.ok && r.data?.missionId === missionId && r.data.pickup) setPickup(r.data.pickup);
     });
     return () => {
       alive = false;
     };
-  }, [pickup, missionId]);
+  }, [pickup, missionId, driverId]);
+
+  // Opening the mission (Return to Mission, deep link, restart) re-checks it with the server: still assigned, current stage.
+  useEffect(() => {
+    void useActiveMissionStore.getState().refresh("mission_opened");
+  }, [missionId]);
   const loadHospitals = useCallback(async () => {
     setHospitalsError(false);
     const result = await fetchHospitalCatalog();
@@ -112,7 +110,7 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
       const catalog = await loadHospitals();
       // Resumed mid-transport (process kill, reconnect): the destination comes back from missions.destination_hospital_id.
       if (!alive || !catalog || phaseForLifecycleState(initialLifecycleState) !== "transporting") return;
-      const row = await fetchAssignedMission();
+      const row = await fetchAssignedMission(driverId);
       const id = row.ok ? row.data?.destinationHospitalId : undefined;
       const hospital = id ? catalog.find((h) => h.id === id) : undefined;
       if (alive && hospital) setSelectedHospital((current) => current ?? hospital);
@@ -120,26 +118,24 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
     return () => {
       alive = false;
     };
-  }, [loadHospitals, initialLifecycleState]);
+  }, [loadHospitals, initialLifecycleState, driverId]);
 
-  // After a refusal that means "your view of the mission is out of date", ask the server what the mission is now.
+  // After a refusal that means "your view of the mission is out of date", ask the server what the mission is now. The shared
+  // read moves the machine (HYDRATE / ended); a failed read keeps the mission (the alert already said it was not recorded).
   const refreshFromServer = async () => {
-    const result = await fetchAssignedMission();
-    if (!result.ok) return; // could not reach the server: keep the mission, the alert already said it was not recorded
-    const row = result.data;
-    if (!row || row.missionId !== missionId) {
-      send({ type: "SERVER_MISSION_CANCELLED", payload: { missionId } });
+    await useActiveMissionStore.getState().refresh("action_refused");
+    const now = useDriverLifecycleStore.getState();
+    if (!canOpenMission(missionId, now)) {
       router.replace("/(shift)/standby");
       return;
     }
-    send({ type: "HYDRATE", payload: { missionId: row.missionId, status: row.status, driverId } });
     router.replace({ pathname: "/mission/[id]", params: { id: missionId } });
   };
 
   const run = async (event: DriverLifecycleMachineEvent): Promise<boolean> => {
     const result = await submit(event);
     if (result.ok) return true;
-    Alert.alert("Not recorded", driverErrorMessage(result.error.code));
+    Alert.alert("Not recorded", driverErrorMessage(result.error.code, result.error.status));
     if (isServerAuthoritative() && (result.error.code === "invalid_transition" || result.error.code === "not_found")) {
       await refreshFromServer();
     }
@@ -161,7 +157,9 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
             type: "ABORT_MISSION",
             payload: { missionId, driverId, reason: "driver_backed_out", abortedAt: new Date().toISOString() },
           }).then((ok) => {
-            if (ok) router.replace("/(shift)/standby");
+            if (!ok) return;
+            useActiveMissionStore.getState().missionEndAcknowledged(missionId);
+            router.replace("/(shift)/standby");
           });
         },
       },
@@ -229,7 +227,10 @@ function MissionExecutionScreens({ missionId, driverId, initialLifecycleState, p
         // (the mission is still `arrived_hospital`, which the ingest endpoint accepts).
         await flushLivePings(missionId);
         // The signed handoff is validated by the server.
-        if (await run({ type: "COMPLETE_MISSION", payload })) router.replace("/(shift)/standby");
+        if (await run({ type: "COMPLETE_MISSION", payload })) {
+          useActiveMissionStore.getState().missionEndAcknowledged(missionId);
+          router.replace("/(shift)/standby");
+        }
       }}
       onFinishSignOff={() => {
         // Navigation happens in onCompleteMission, only after the server accepted the completion.

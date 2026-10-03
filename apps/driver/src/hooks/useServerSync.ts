@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
 import { router } from "expo-router";
-import { driverStateForStatus, type DriverLifecycleState } from "@sahayak/domain";
+import type { DriverLifecycleState } from "@sahayak/domain";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
 import { createAuthSessionTracker, isNetworkFailure, verifiedDriverSession, type DriverAuthStatus } from "./otpAuth.core";
@@ -9,7 +9,6 @@ import { useDriverConsentStore } from "../state/driverConsent.store";
 import { useDriverAuthStore } from "../state/driverAuth.store";
 import {
   callServer,
-  fetchAssignedMission,
   fetchOpenOffers,
   fetchBoard,
   fetchDriverProfile,
@@ -24,6 +23,7 @@ import {
 import { getDevicePushToken } from "../services/dispatchNotifications";
 import { getDriverRealtimeSession, getServerAdapter, setDriverRealtimeSession, setServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";
 import { useDriverConnectionStore } from "../state/driverConnection.store";
+import { useActiveMissionStore } from "../state/activeMission.store";
 import { heartbeatLocation, useDriverStandbyStore } from "../state/driverStandby.store";
 import { useDriverProfileStore } from "../state/driverProfile.store";
 import { createDriverRealtimeSession, devLog, mountMissionWatch, mountOffersChannel, type DriverRealtimeSession } from "../services/driverRealtime";
@@ -34,6 +34,8 @@ import { startTelemetryUploadLoop, syncQueuedPings } from "../services/telemetry
 
 const ACTIVE_STATES: readonly DriverLifecycleState[] = ["enRouteToPatient", "onScene", "transporting", "arrivedHospital"];
 const HEARTBEAT_MS = 10_000;
+/** While the active-mission read is failing (unknown, or a last-known mission marked stale), retry this often. */
+const MISSION_RETRY_MS = 15_000;
 /** How often the time-dependent connection health (grace period, failure threshold) is re-derived. */
 const HEALTH_EVALUATE_MS = 2_000;
 
@@ -108,6 +110,7 @@ function clearSignedOutDriverState(): void {
   useDriverLifecycleStore.getState().reset();
   useDriverStandbyStore.setState({ isOnline: false, isOfflineModalOpen: false, presenceErrorCode: null });
   useDriverConsentStore.getState().reset();
+  useActiveMissionStore.getState().reset();
   presentedOfferIds.clear();
   dismissAllNotifications();
 }
@@ -287,46 +290,55 @@ export function useServerSync(): void {
     // Keyed on "a mission is active", not on its stage: en route -> on scene -> transporting must keep one subscription.
     if (!realtime || !activeMissionId || !missionActive) return;
     const missionId = activeMissionId;
-    const end = (cancelledBy?: "patient" | "driver" | "system", reason?: string) => {
-      const lifecycle = useDriverLifecycleStore.getState();
-      if (lifecycle.activeMissionId !== missionId) return;
-      lifecycle.send({ type: "SERVER_MISSION_CANCELLED", payload: { missionId, cancelledBy, reason } });
-      router.replace("/(shift)/standby");
-      Alert.alert("Mission ended", cancelledBy === "patient" ? "The patient cancelled this mission." : "This mission was ended by dispatch.");
-    };
     return mountMissionWatch(missionId, realtime, {
-      onCancelled: (info) => end(info.cancelledBy, info.reason),
-      // Resubscribing may have skipped the cancellation: read the server's view (rule 3, 7.6 "mission ends while offline").
+      onCancelled: (info) => {
+        const lifecycle = useDriverLifecycleStore.getState();
+        if (lifecycle.activeMissionId !== missionId) return;
+        lifecycle.send({ type: "SERVER_MISSION_CANCELLED", payload: { missionId, cancelledBy: info.cancelledBy, reason: info.reason } });
+        useActiveMissionStore.getState().missionEndAcknowledged(missionId);
+        router.replace("/(shift)/standby");
+        Alert.alert("Mission ended", info.cancelledBy === "patient" ? "The patient cancelled this mission." : "This mission was ended by dispatch.");
+      },
+      // Resubscribing may have skipped the cancellation or a stage change: re-read the server's view (rule 3, 7.6). Only a
+      // successful read that shows no such mission ends it; a network blip never drops a live mission.
       onSubscribed: () => {
         devLog("RECONCILIATION", { scope: "mission", mission_id: missionId });
-        // Only a successful read that shows no such mission ends it; a network blip must never drop a live mission.
-        void fetchAssignedMission().then((result) => {
-          if (result.ok && (!result.data || result.data.missionId !== missionId)) end();
-        });
+        void useActiveMissionStore.getState().refresh("mission_resubscribed");
       },
     });
   }, [realtime, activeMissionId, missionActive]);
 
-  // Resume after a process kill: the machine is memory-only, the assignment is on the server (7.6).
+  // Current Mission recovery (7.6): the machine is memory-only, the assignment is on the server. Read it on sign-in (cold
+  // start, session restore), on every return to the foreground and on every transition INTO "connected" (a realtime outage
+  // is never read as "no mission"), and keep retrying while the read fails. No auto-navigation: the Current Mission card on
+  // standby is the route back.
   useEffect(() => {
-    if (!session) return;
-    const driverId = session.userId;
-    const lifecycle = useDriverLifecycleStore.getState();
-    if (ACTIVE_STATES.includes(lifecycle.currentState)) return;
-    void fetchAssignedMission().then((result) => {
-      const row = result.ok ? result.data : null;
-      if (!row || driverStateForStatus(row.status) === null) return;
-      const now = useDriverLifecycleStore.getState();
-      if (ACTIVE_STATES.includes(now.currentState)) return;
-      now.send({ type: "HYDRATE", payload: { missionId: row.missionId, status: row.status, driverId } });
-      router.replace({
-        pathname: "/mission/[id]",
-        params: { id: row.missionId, ...(row.pickup ? { pickupLat: String(row.pickup.latitude), pickupLng: String(row.pickup.longitude) } : {}) },
-      });
+    const missions = useActiveMissionStore.getState();
+    missions.reset();
+    if (!userId) return;
+    void missions.refresh("session");
+    const appState = AppState.addEventListener("change", (s) => {
+      if (s === "active") void useActiveMissionStore.getState().refresh("foreground");
     });
-    // Keyed on the user: a token refresh is not a new session to resume.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const unsubscribeConnection = useDriverConnectionStore.subscribe((now, before) => {
+      if (now.status === "connected" && before.status !== "connected") void useActiveMissionStore.getState().refresh("realtime_connected");
+    });
+    const retry = setInterval(() => {
+      const { view } = useActiveMissionStore.getState();
+      if (view.kind === "unknown" || (view.kind === "active" && view.stale)) void useActiveMissionStore.getState().refresh("retry");
+    }, MISSION_RETRY_MS);
+    return () => {
+      appState.remove();
+      unsubscribeConnection();
+      clearInterval(retry);
+    };
   }, [userId]);
+
+  // Every lifecycle change (accept, stage, end) re-reads the server's view, so the card follows the server.
+  useEffect(() => {
+    if (!userId) return;
+    void useActiveMissionStore.getState().refresh("lifecycle");
+  }, [userId, activeMissionId, currentState]);
 
   // Live GPS is persisted server-side in acknowledged batches: the final fare is computed from the measured transport leg.
   useEffect(() => {

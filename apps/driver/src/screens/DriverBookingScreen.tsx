@@ -2,7 +2,7 @@ import { ScrollView, StyleSheet, Text, Pressable, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radii, spacing, touchTargets, typography } from "@sahayak/ui";
 import { BOARD_PAGE_SIZE, DISPATCH_CONFIG, paginate } from "@sahayak/domain";
-import { AppIcon } from "../components";
+import { AppIcon, CurrentMissionCard } from "../components";
 import EmergencyCard from "../components/EmergencyCard";
 import { driverBookingStrings } from "../i18n/driverBookingStrings";
 import { useNow } from "../hooks/useNow";
@@ -73,6 +73,11 @@ export default function DriverBookingScreen({ onBack }: DriverBookingScreenProps
           <Text style={styles.bannerText}>{t.busyBanner}</Text>
         </View>
       )}
+      {busy && (
+        <View style={styles.currentMission}>
+          <CurrentMissionCard />
+        </View>
+      )}
       {status === "error" && <Text style={styles.error}>{t.loadError}</Text>}
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
@@ -141,6 +146,7 @@ const styles = StyleSheet.create({
   hint: { paddingHorizontal: spacing.base, paddingBottom: spacing.sm, fontSize: typography.fontSizes.xs, lineHeight: typography.lineHeights.xs, color: colors.slate600 },
   banner: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: spacing.base, marginBottom: spacing.sm, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.warningLight, borderWidth: 1, borderColor: colors.warning },
   bannerText: { flex: 1, fontSize: typography.fontSizes.xs, lineHeight: typography.lineHeights.xs, color: colors.slate900, fontWeight: typography.fontWeights.semibold },
+  currentMission: { marginHorizontal: spacing.base },
   error: { marginHorizontal: spacing.base, marginBottom: spacing.sm, fontSize: typography.fontSizes.xs, color: colors.triageRedText },
   list: { padding: spacing.base, paddingTop: spacing.xs, gap: spacing.md },
   empty: { alignItems: "center", gap: 6, paddingVertical: spacing["3xl"] },

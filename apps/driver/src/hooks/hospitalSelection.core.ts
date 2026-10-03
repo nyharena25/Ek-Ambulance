@@ -37,3 +37,8 @@ export function hospitalsFor(emergency: EmergencyType, from: GeoPoint, catalog: 
     .map((hospital) => ({ hospital, km: distanceKm(from, hospital.coordinates) }))
     .sort((a, b) => a.km - b.km);
 }
+
+/** The server holds a bed only while available_capacity > 0 (else hospital_at_capacity). Unknown capacity is not "full". */
+export function canHold(hospital: CatalogHospital): boolean {
+  return hospital.availableCapacity !== 0;
+}

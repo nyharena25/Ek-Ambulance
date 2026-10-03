@@ -74,7 +74,8 @@ console.log("Test 2: an action the server cannot accept is refused BEFORE it is 
   assert.deepStrictEqual(call({ type: "CONFIRM_ARRIVAL_SCENE", payload: { missionId: "MSN-2026-8819", driverId: D, location: { latitude: 1, longitude: 2 }, arrivedAt: T } }), { ok: false, code: "invalid_mission" });
   const onboard = (over: object) => call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: { latitude: 28.5, longitude: 77.2 }, onboardAt: T, ...over } });
   assert.deepStrictEqual(onboard({}), { ok: false, code: "hospital_required" }, "no hospital id => no transport start");
-  assert.deepStrictEqual(onboard({ hospitalId: "AIIMS-fixture-1" }), { ok: false, code: "hospital_required" });
+  assert.deepStrictEqual(onboard({ hospitalId: "  " }), { ok: false, code: "hospital_required" }, "blank is missing, not malformed");
+  assert.deepStrictEqual(onboard({ hospitalId: "AIIMS-fixture-1" }), { ok: false, code: "invalid_hospital_id" }, "malformed is its own failure");
   assert.deepStrictEqual(onboard({ hospitalId: H, vitals: { spO2: 140 } }), { ok: false, code: "invalid_vitals" }, "out-of-range vitals are not silently accepted");
   const good = onboard({ hospitalId: H, vitals: { pulse: 88, spO2: undefined, gcs: 13 }, emergencyType: "trauma", bypass: false }) as any;
   assert.deepStrictEqual(good.call.args.p_payload, { hospitalId: H, onboardAt: T, vitals: { pulse: 88, gcs: 13 }, emergencyType: "trauma", bypass: false }, "only entered readings travel");
@@ -167,19 +168,63 @@ console.log("Test 4b: the hospital the driver sees is the hospital the server re
   const reread = rows.filter((r) => r.id !== sharda).map(parseCatalogHospital).filter((h) => h !== null);
   assert.strictEqual(hospitalsFor("general", pickup, reread).find((n) => n.hospital.id === selectedId), undefined, "D: the selection clears");
   // B/C at the client: the old build's preset ids and names never reach the server.
-  for (const bad of ["hosp_sharda_gnoida", "hosp_jaypee", "Sharda Hospital Greater Noida", "Jaypee Hospital (Sec 128)", ""]) {
+  for (const bad of ["hosp_sharda_gnoida", "hosp_jaypee", "Sharda Hospital Greater Noida", "Jaypee Hospital (Sec 128)", sharda.toUpperCase().slice(1)]) {
     assert.deepStrictEqual(
       call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: pickup, hospitalId: bad, onboardAt: T } }),
-      { ok: false, code: "hospital_required" },
+      { ok: false, code: "invalid_hospital_id" },
       `B: ${JSON.stringify(bad)} is refused before sending`
     );
   }
+  // The pre-d910f79 build: the list had no ids and matched by position within 1 km. Its Sharda point (28.4744, 77.504) is ~2.2 km
+  // from the registered one, so no id was found and the payload carried none - the "registered in the system" refusal.
+  assert.deepStrictEqual(
+    call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: { latitude: 28.4744, longitude: 77.504 }, onboardAt: T } }),
+    { ok: false, code: "hospital_required" },
+    "the old build's id-less payload"
+  );
   // C (an unregistered but well-formed uuid) is decided by the server: it is sent, and refused there as invalid_hospital.
   const unregistered = call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: pickup, hospitalId: "6f0c1e9a-0000-4000-8000-00000000dead", onboardAt: T } });
   assert.ok(unregistered.ok, "C: the client never guesses which uuids are registered");
   assert.notStrictEqual(driverErrorMessage("invalid_hospital"), driverErrorMessage("unheard_of"), "the server's refusal has its own message");
+  // Each hospital failure reads differently, and the server's PT422 / PT409 refusals are told apart.
+  const hospitalMessages = [
+    driverErrorMessage("hospital_required"),
+    driverErrorMessage("invalid_hospital_id"),
+    driverErrorMessage("invalid_hospital", 409),
+    driverErrorMessage("hospital_at_capacity"),
+    driverErrorMessage("forbidden"),
+    driverErrorMessage("unauthenticated"),
+    driverErrorMessage("network"),
+    driverErrorMessage("unheard_of"),
+  ];
+  assert.strictEqual(new Set(hospitalMessages).size, hospitalMessages.length, "missing / malformed / gone / full / forbidden / signed out / offline are distinct");
+  assert.strictEqual(driverErrorMessage("invalid_hospital", 422), driverErrorMessage("invalid_hospital_id"), "server PT422 = malformed id");
+  assert.match(driverErrorMessage("invalid_hospital", 409), /no longer registered or active/);
+  assert.ok(!/registered in the system/.test(driverErrorMessage("hospital_required")), "a missing choice is not reported as an unregistered hospital");
 }
 console.log("✓ hospital identity end to end\n");
+
+console.log("Test 4c: every real catalog hospital (hosted rows, 2026-10-03) goes through catalog -> selection -> payload unchanged...");
+{
+  const { hospitalsFor } = await import("../hooks/hospitalSelection.core.ts");
+  const point = (lng: number, lat: number) => ({ type: "Point", coordinates: [lng, lat] });
+  const rows = [
+    { id: "952695c0-e058-4ab6-941b-b62a6c6d0b8a", name: "AIIMS New Delhi", location: point(77.21, 28.5672), specialities: [], available_capacity: 30 },
+    { id: "4ea0cd84-bc88-4298-8a3a-b09e2ec97827", name: "Fortis Hospital Noida Sector 62", location: point(77.3732, 28.6189), specialities: [], available_capacity: 12 },
+    { id: "d087825d-5737-4c7f-8482-fa6d789e1f70", name: "Safdarjung Hospital", location: point(77.2075, 28.5694), specialities: [], available_capacity: 24 },
+    { id: "be32d962-003d-447b-9147-3e15ee30496c", name: "Sharda Hospital Greater Noida", location: point(77.482, 28.4732), specialities: [], available_capacity: 10 },
+  ];
+  const catalog = rows.map(parseCatalogHospital).filter((h) => h !== null);
+  assert.strictEqual(catalog.length, rows.length, "G: no real hospital is dropped by the parser");
+  const shown = hospitalsFor("trauma", { latitude: 28.47, longitude: 77.48 }, catalog);
+  for (const row of rows) {
+    const tapped = shown.find((n) => n.hospital.name === row.name)!.hospital;
+    const built = call({ type: "CONFIRM_PATIENT_ONBOARD", payload: { missionId: M, driverId: D, destination: tapped.coordinates, hospitalId: tapped.id, onboardAt: T } }) as any;
+    assert.ok(built.ok, `G: ${row.name} is sendable`);
+    assert.strictEqual(built.call.args.p_payload.hospitalId, row.id, `F/G: ${row.name} is sent as its database id`);
+  }
+}
+console.log("✓ every real hospital\n");
 
 console.log("Test 5: telemetry upload is acknowledged, never assumed (D-UX-08, G-10)...");
 {

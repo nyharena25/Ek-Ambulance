@@ -277,6 +277,7 @@ reset role;
 select set_config('request.jwt.claims', :'jwt_d3', false);
 set role authenticated;
 select t.raises(format($$select public.transition_mission(%L, 'ON_SCENE', '{}')$$, :'m1'), 'PT404', 'unassigned driver cannot transition (not_found)');
+select t.eq((select count(*)::int from public.missions where id = :'m1'), 0, 'unassigned driver cannot read the mission (Current Mission lookup returns nothing for a stale or foreign id)');
 reset role;
 
 select set_config('request.jwt.claims', :'jwt_d1', false);

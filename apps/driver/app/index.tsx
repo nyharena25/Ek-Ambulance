@@ -10,6 +10,7 @@ import { confirmDriverSignOut } from "../src/screens/DriverVerificationScreen";
 import { useDriverConsentStore } from "../src/state/driverConsent.store";
 import { retrySessionRestore } from "../src/hooks/useServerSync";
 import { signOut } from "../src/lib/driverServer";
+import { CurrentMissionCard } from "../src/components";
 
 /**
  * App entry. The root layout's route gate redirects from here once it knows both the session and the server's KYC state;
@@ -69,6 +70,8 @@ export default function Index() {
   }
   return (
     <View style={{ flex: 1, backgroundColor: colors.white, justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
+      {/* The shift screens are gated on KYC/consent; an active mission is still reachable from here. */}
+      <CurrentMissionCard />
       <Text accessibilityRole="header" style={{ fontSize: typography.fontSizes.lg, fontWeight: typography.fontWeights.bold, color: colors.slate900 }}>
         {t.loadFailedTitle}
       </Text>
