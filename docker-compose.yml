@@ -9,8 +9,8 @@ x-hmac-secret: &hmac_secret ${CENTRIFUGO_HMAC_SECRET:-dev-only-hmac-secret-chang
 services:
   redis:
     image: redis:7-alpine
-    # AOF for durability of presence/geo state; volatile-lru so only TTL'd presence keys can be evicted,
-    # never the driver GEO sets.
+    # Centrifugo's engine (channel history and recovery). AOF so history survives a restart; volatile-lru evicts only
+    # TTL'd keys.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
@@ -41,7 +41,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Dev-only stand-in for the not-yet-built backend's POST /realtime/token.
+  # Realtime gateway: POST /realtime/token, the Centrifugo publish proxy and POST /triage/extract (docker/mock-gateway).
+  # AUTH_MODE=dev here; docker-compose.prod.yml runs it in strict mode.
   token-mint:
     image: node:22-alpine
     command: ["node", "/app/server.mjs"]
@@ -56,6 +57,8 @@ services:
       # /triage/extract (Phase B item 8): no default - unset means the route fail-closes with
       # triage_unavailable rather than ever running with a blank/placeholder key.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Optional server-side model override for /triage/extract (the client can no longer choose one).
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
     volumes:
       - ./docker/mock-gateway:/app:ro
     healthcheck:

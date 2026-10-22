@@ -7,7 +7,7 @@ import { errorCode, type Result } from "./kycApi.ts";
  * between two server timestamps the RPC returns, and a missing timestamp stays missing ("Not recorded").
  */
 
-export const IST = "Asia/Kolkata";
+const IST = "Asia/Kolkata";
 export const OUTCOMES = ["completed", "cancelled", "released", "in_progress"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 export const VEHICLE_TYPES = ["TYPE_A_MFR", "TYPE_B_PTA", "TYPE_C_BLS", "TYPE_D_ALS"] as const;

@@ -55,7 +55,7 @@ export const DRIVER_REALTIME_THRESHOLDS: RealtimeThresholds = { ...REALTIME_THRE
 
 const healthAt = (realtime: RealtimeSnapshot, now: number) => realtimeHealth(realtime, now, DRIVER_REALTIME_THRESHOLDS);
 
-export function statusFor(realtime: RealtimeSnapshot, health: TransportHealth): CentrifugoConnectionStatus {
+function statusFor(realtime: RealtimeSnapshot, health: TransportHealth): CentrifugoConnectionStatus {
   // The SDK stopped because the server refused the credentials: only a fresh session (or sign-in) can fix that.
   if (realtime.connectionState === "disconnected" && realtime.lastError === AUTH_REQUIRED_REASON) return "authRequired";
   // Connected with no channel to hold (driver offline, no mission) is a healthy idle socket, not a degraded one.

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { toE164IndianPhone, requestOtpWith, verifyOtpWith, type AuthApiError, type OtpResult } from "./otpAuth.core";
+import { requestOtpWith, verifyOtpWith, type AuthApiError, type OtpResult } from "./otpAuth.core";
 
 export type { AuthApiError };
 
@@ -94,7 +94,3 @@ export function useOtpAuth(): UseOtpAuthReturn {
 
   return { isLoading, error, rateLimitCooldown, requestOtp, verifyOtp, clearError };
 }
-
-// Re-exported for callers that need +91 formatting outside this hook
-// (e.g. the auth store deriving a display phone number).
-export { toE164IndianPhone };

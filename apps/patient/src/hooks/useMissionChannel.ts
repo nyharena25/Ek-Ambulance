@@ -154,8 +154,7 @@ export function useMissionChannel({
     };
 
     if (!hasSession) {
-      // No real session (production build, Task 4.1 auth still a stub -
-      // see HANDOVER D2): make this legible rather
+      // No real session (signed out or not yet restored): make this legible rather
       // than a silent, indistinguishable-from-network-failure permanent
       // "disconnected" - the whole point of surfacing connection health is
       // for the low-connectivity overlay to explain *why*.

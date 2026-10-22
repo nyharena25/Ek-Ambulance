@@ -20,7 +20,7 @@ export type ActiveMissionView =
 export type MissionReadResult = ApiResult<AssignedMissionRow | null>;
 
 /** The view after a read. Only a successful read changes what is known; a failure keeps the last known mission. */
-export function nextActiveMissionView(previous: ActiveMissionView, result: MissionReadResult): ActiveMissionView {
+function nextActiveMissionView(previous: ActiveMissionView, result: MissionReadResult): ActiveMissionView {
   if (result.ok) return result.data ? { kind: "active", mission: result.data, stale: false } : { kind: "none" };
   if (result.error.code === "multiple_active_missions") {
     return { kind: "integrity", missionIds: (result.error.detail ?? "").split(",").filter(Boolean) };
@@ -58,7 +58,7 @@ export type LifecycleSync =
  * - no mission on the server while the machine holds one -> it ended (completed or cancelled server-side).
  * A failed read and an integrity error never move the machine.
  */
-export function lifecycleSyncFor(result: MissionReadResult, machine: MachineSnapshot): LifecycleSync {
+function lifecycleSyncFor(result: MissionReadResult, machine: MachineSnapshot): LifecycleSync {
   if (!result.ok) return { type: "none" };
   const holds = ACTIVE.includes(machine.currentState) ? machine.activeMissionId : null;
   const row = result.data;
@@ -70,7 +70,7 @@ export function lifecycleSyncFor(result: MissionReadResult, machine: MachineSnap
 }
 
 /** True when the machine changed, or a server call was in flight, during a read: its answer may not match the machine. */
-export function readRacedTransition(before: MachineSnapshot, after: MachineSnapshot): boolean {
+function readRacedTransition(before: MachineSnapshot, after: MachineSnapshot): boolean {
   // A transition the server committed but whose 200 has not reached the machine (a call pending or finished during the read)
   // is invisible to the machine: such a read could report "no mission" right after the driver's own COMPLETE.
   if ((before.pendingCalls ?? 0) > 0 || (after.pendingCalls ?? 0) > 0 || before.callEpoch !== after.callEpoch) return true;

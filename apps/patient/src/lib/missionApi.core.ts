@@ -31,6 +31,8 @@ export function createMissionErrorMessage(code: string, language: "en" | "hi" = 
     not_a_patient: "This account cannot request an ambulance. Please call 108.",
     unauthenticated: "Please sign in again to request an ambulance, or call 108.",
     network: "No connection. Your request was not sent. Check your network and try again, or call 108.",
+    active_mission_exists: "You already have an ambulance request in progress. Open it from Home, or cancel it to request again. For another emergency, call 108.",
+    too_many_requests: "Too many requests from this account in the last hour. Your request was not sent. Please call 108.",
   };
   const hi: Record<string, string> = {
     out_of_zone: "यह पिकअप स्थान हमारे सेवा क्षेत्र से बाहर है। कृपया 108 पर कॉल करें।",
@@ -38,6 +40,8 @@ export function createMissionErrorMessage(code: string, language: "en" | "hi" = 
     not_a_patient: "इस खाते से एम्बुलेंस अनुरोध नहीं किया जा सकता। कृपया 108 पर कॉल करें।",
     unauthenticated: "एम्बुलेंस के लिए कृपया फिर से साइन इन करें, या 108 पर कॉल करें।",
     network: "कनेक्शन नहीं है। आपका अनुरोध भेजा नहीं गया। नेटवर्क जाँचकर फिर कोशिश करें, या 108 पर कॉल करें।",
+    active_mission_exists: "आपका एक एम्बुलेंस अनुरोध पहले से चल रहा है। उसे होम से खोलें, या नया अनुरोध करने के लिए उसे रद्द करें। किसी दूसरी आपात स्थिति के लिए 108 पर कॉल करें।",
+    too_many_requests: "पिछले एक घंटे में इस खाते से बहुत अधिक अनुरोध हुए। आपका अनुरोध भेजा नहीं गया। कृपया 108 पर कॉल करें।",
   };
   const fallback = language === "hi" ? "आपका अनुरोध भेजा नहीं जा सका। फिर कोशिश करें, या 108 पर कॉल करें।" : "Your request could not be sent. Try again, or call 108.";
   return (language === "hi" ? hi : en)[code] ?? fallback;

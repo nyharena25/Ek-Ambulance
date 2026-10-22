@@ -125,9 +125,9 @@ select t.eq(t.at(:'du'), null, 'the refused call wrote nothing for U');
 
 select set_config('request.jwt.claims', :'jwt_da', false);
 set role authenticated;
-select t.eq((public.set_driver_presence(true, null, 77.5)) ->> 'ok', 'true', 'a longitude without a latitude is accepted (recorded)');
+select t.raises($$select public.set_driver_presence(true, null, 77.5)$$, 'PT422', 'a longitude without a latitude is refused (20261004000000)');
 reset role;
-select t.eq(t.at(:'da'), '28.5752,77.2100', '... and silently ignored: position unchanged while last_seen_at is refreshed (recorded)');
+select t.eq(t.at(:'da'), '28.5752,77.2100', '... and nothing was written: position unchanged');
 
 -- ---------------------------------------------------------------------------
 -- What dispatch reads: drivers.current_location, used only while last_seen_at is under 30 s old
@@ -195,8 +195,8 @@ reset role;
 select set_config('request.jwt.claims', :'jwt_db', false);
 set role authenticated;
 select t.eq((public.ingest_telemetry(:'mga', '[{"latitude":90.5,"longitude":77.21,"timestamp":"2026-10-01T10:00:00Z"},{"latitude":28.57,"longitude":180.5,"timestamp":"2026-10-01T10:00:00Z"},{"latitude":28.57,"longitude":77.21,"timestamp":"not a time"}]')) ->> 'rejected', '3', 'bad latitude, bad longitude and a bad timestamp are rejected');
-select t.eq((public.ingest_telemetry(:'mga', '[{"latitude":28.57,"longitude":77.21,"timestamp":"2019-01-01T00:00:00Z"}]')) ->> 'acknowledged', '1', 'a ping stamped years before the mission is accepted (recorded)');
-select t.eq((public.ingest_telemetry(:'mga', '[{"latitude":28.57,"longitude":77.21,"timestamp":"2019-01-01T00:00:01Z","accuracy":5000}]')) ->> 'acknowledged', '1', 'a fix with 5 km accuracy is accepted as track (recorded)');
+select t.eq((public.ingest_telemetry(:'mga', '[{"latitude":28.57,"longitude":77.21,"timestamp":"2019-01-01T00:00:00Z"}]')) ->> 'rejected', '1', 'a ping stamped years before the mission was accepted is rejected (20261004000000)');
+select t.eq((public.ingest_telemetry(:'mga', jsonb_build_array(jsonb_build_object('latitude', 28.57, 'longitude', 77.21, 'timestamp', now(), 'accuracy', 5000)))) ->> 'acknowledged', '1', 'a fix with 5 km accuracy is stored as track (never billed: the fare ignores fixes worse than 50 m)');
 reset role;
 select t.eq(t.at(:'db'), '28.6072,77.2100', 'the mission track never moves drivers.current_location (only the heartbeat does)');
 
@@ -212,7 +212,7 @@ select t.eq((public.transition_mission(:'mga', 'ON_SCENE', '{"location":{"latitu
 select t.eq((public.transition_mission(:'mga', 'PATIENT_ON_BOARD', jsonb_build_object('hospitalId', :'aiims', 'onboardAt', '2020-01-01T00:00:00Z', 'etaMinutes', 10))) ->> 'status', 'transporting', 'GA: on board, with an onboardAt years in the past');
 select t.eq((public.transition_mission(:'mga', 'ARRIVED_HOSPITAL', '{"arrivedAt":"2020-01-01T00:30:00Z"}')) ->> 'status', 'arrived_hospital', 'GA: at hospital');
 reset role;
-select t.eq((select onboard_at from public.missions where id = :'mga'), '2020-01-01T00:00:00Z'::timestamptz, 'the billing window starts where the driver says, unbounded by server time (recorded)');
+select t.ok((select onboard_at = arrived_scene_at and onboard_at > '2025-01-01' from public.missions where id = :'mga'), 'a backdated onboardAt is clamped to the on-scene time: the billing window is server-bounded (20261004000000)');
 select set_config('request.jwt.claims', :'jwt_db', false);
 set role authenticated;
 select t.eq((public.transition_mission(:'mga', 'COMPLETE', '{"handoff":{"physicianName":"Dr Test","registrationNumber":"REG-1","department":"ER"}}')) ->> 'status', 'completed', 'GA: completed');
@@ -238,9 +238,12 @@ reset role;
 -- The quote is priced from the client's distance, within 0..9999.99 km.
 select set_config('request.jwt.claims', :'jwt_p1', false);
 set role authenticated;
+-- One active mission per patient (20261004000000): the patient ends the fixture requests still open before each new one.
+select count(public.cancel_mission(id)) from public.missions where status not in ('completed', 'cancelled', 'transporting', 'arrived_hospital') \g /dev/null
 select t.eq(t.err($$select public.create_mission(gen_random_uuid(), 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', -1)$$), 'invalid_distance', 'a negative distance is refused');
 select t.eq(t.err($$select public.create_mission(gen_random_uuid(), 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 10000)$$), 'invalid_distance', 'a distance over 9999.99 km is refused');
 select (public.create_mission(gen_random_uuid(), 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 0)) -> 'mission' as q0 \gset
+select count(public.cancel_mission(id)) from public.missions where status not in ('completed', 'cancelled', 'transporting', 'arrived_hospital') \g /dev/null
 -- Lucknow: 525.5 km is the patient app's own quote distance for this pickup (UP hub near Noida -> Lucknow, offline route estimate).
 select (public.create_mission(gen_random_uuid(), 26.8467, 80.9462, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 525.5)) -> 'mission' as ql \gset
 reset role;

@@ -32,8 +32,6 @@ export interface DriverProfile {
   vehicle: DriverVehicleInfo;
 }
 
-export const EMPTY_VEHICLE: DriverVehicleInfo = { registrationNumber: "", makeModel: "", manufactureYear: null, color: "", crewCount: null };
-
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
 const int = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) ? v : null);

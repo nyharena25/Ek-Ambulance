@@ -21,6 +21,8 @@ export interface MissionTelemetryPing {
   longitude: number;
   heading?: number;
   speed?: number;
+  /** Metres (the fix's horizontal accuracy). The server ignores fixes worse than 50 m when it measures the billed leg. */
+  accuracy?: number;
   timestamp: string;
   /** v1: pings flushed from the offline buffer. */
   deadZone?: boolean;

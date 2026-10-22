@@ -279,6 +279,9 @@ set role authenticated;
 select t.raises(format($$select public.transition_mission(%L, 'ON_SCENE', '{}')$$, :'m1'), 'PT404', 'unassigned driver cannot transition (not_found)');
 select t.eq((select count(*)::int from public.missions where id = :'m1'), 0, 'unassigned driver cannot read the mission (Current Mission lookup returns nothing for a stale or foreign id)');
 reset role;
+-- The device times below are on 2026-09-24; since 20261004000000 they are clamped to [previous stage, now()], so the
+-- acceptance is moved back to before them (now() is frozen in a transaction, so time moves by backdating rows).
+update public.missions set accepted_at = '2026-09-24T08:30:00Z' where id = :'m1';
 
 select set_config('request.jwt.claims', :'jwt_d1', false);
 set role authenticated;
@@ -313,8 +316,8 @@ select t.eq((public.transition_mission(:'m1', 'ARRIVED_HOSPITAL', '{"arrivedAt":
 select t.eq((select event_type from public.mission_events where mission_id = :'m1' and seq = 5), 'HOSPITAL_ARRIVED', 'HOSPITAL_ARRIVED is its own wire event');
 select t.raises(format($$select public.transition_mission(%L, 'COMPLETE', '{}')$$, :'m1'), 'PT422', 'COMPLETE refused without a sign-off (handoff_incomplete)');
 select t.raises(format($$select public.transition_mission(%L, 'COMPLETE', '{"handoff":{"physicianName":" ","registrationNumber":"R","department":"ER"}}')$$, :'m1'), 'PT422', 'blank physician name refused');
--- Live pings: ~11.1 km along a meridian inside the transport leg, uploaded twice (idempotent re-flush).
-select t.eq((public.ingest_telemetry(:'m1', '[{"latitude":28.50,"longitude":77.20,"timestamp":"2026-09-24T09:01:00Z","speed":40,"heading":10},{"latitude":28.55,"longitude":77.20,"timestamp":"2026-09-24T09:02:00Z"},{"latitude":28.60,"longitude":77.20,"timestamp":"2026-09-24T09:03:00Z","deadZone":true},{"latitude":200,"longitude":77.2,"timestamp":"2026-09-24T09:04:00Z"}]')) ->> 'acknowledged', '3', 'batch ingest acknowledges the valid pings');
+-- Live pings: ~11.1 km along a meridian inside the transport leg (~111 km/h), uploaded twice (idempotent re-flush).
+select t.eq((public.ingest_telemetry(:'m1', '[{"latitude":28.50,"longitude":77.20,"timestamp":"2026-09-24T09:01:00Z","speed":40,"heading":10},{"latitude":28.55,"longitude":77.20,"timestamp":"2026-09-24T09:04:00Z"},{"latitude":28.60,"longitude":77.20,"timestamp":"2026-09-24T09:07:00Z","deadZone":true},{"latitude":200,"longitude":77.2,"timestamp":"2026-09-24T09:04:00Z"}]')) ->> 'acknowledged', '3', 'batch ingest acknowledges the valid pings');
 select t.eq((public.ingest_telemetry(:'m1', '[{"latitude":28.50,"longitude":77.20,"timestamp":"2026-09-24T09:01:00Z"}]')) ->> 'acknowledged', '1', 're-flushed duplicate is acknowledged');
 reset role;
 select t.eq((select count(*)::int from public.telemetry_logs where mission_id = :'m1'), 3, 'duplicates and the invalid fix were not stored twice');
@@ -439,6 +442,8 @@ select t.eq((select count(*)::int from public.dispatch_waves where mission_id = 
 -- accept after expiry
 select set_config('request.jwt.claims', :'jwt_p1', false);
 set role authenticated;
+-- One active mission per patient (20261004000000): m7's search is still open, so the patient ends it first.
+select t.eq((public.cancel_mission(:'m7')) ->> 'status', 'cancelled', 'the patient ends the open search before requesting again');
 select (public.create_mission('00000000-0000-4000-8000-0000000000e8', 28.5672, 77.21, 'TYPE_D_ALS', 'CAT_1_IMMEDIATE', '{}', 6.0)) -> 'mission' ->> 'id' as m8 \gset
 reset role;
 update public.dispatch_waves set created_at = now() - interval '20 seconds', expires_at = now() - interval '5 seconds' where mission_id = :'m8';

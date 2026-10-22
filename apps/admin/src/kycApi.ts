@@ -125,6 +125,7 @@ const MESSAGES: Record<string, string> = {
   driver_not_found: "Application not found.",
   not_pending_verification: "This application is no longer pending; reload to see its current state.",
   reason_required: "A rejection reason is required.",
+  reason_too_long: "The rejection reason is too long (500 characters at most).",
   cannot_review_own_application: "You cannot review your own application.",
   staff_check_failed: "Could not verify staff access (network or gateway error). Try again.",
   documents_invalid: "Cannot approve: a required document is rejected or its file is missing. Reject the application so the driver can replace it.",

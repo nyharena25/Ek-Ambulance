@@ -4,7 +4,6 @@ import {
   hasDriverRole,
   mapAuthError,
   networkErrorToApiError,
-  toE164IndianPhone,
   type AuthApiError,
 } from "./otpAuth.core";
 
@@ -135,5 +134,3 @@ export function useOtpAuth(): UseOtpAuthReturn {
 
   return { isLoading, error, rateLimitCooldown, requestOtp, verifyOtp, clearError };
 }
-
-export { toE164IndianPhone };

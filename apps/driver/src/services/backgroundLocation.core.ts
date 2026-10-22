@@ -58,7 +58,7 @@ export interface LocationFixDeps {
   enqueuePing: (
     missionId: string,
     coords: { latitude: number; longitude: number },
-    meta: { speed?: number; heading?: number; timestamp: string }
+    meta: { speed?: number; heading?: number; accuracy?: number; timestamp: string }
   ) => void;
   publish: (ping: MissionTelemetryPing) => void;
 }

@@ -88,4 +88,16 @@ const domainSrc = fileURLToPath(new URL("../../../../packages/domain/src/", impo
 for (const f of files(domainSrc)) assert.doesNotMatch(readFileSync(f, "utf8"), /UP_DISTRICTS|resolveJurisdiction|minLat/, f);
 console.log("✓ no boxes, district lists or DL defaults\n");
 
+console.log("Test: the server's request limits (20261004000000) reach the patient as a 108-pointing message...");
+for (const [sqlstate, code] of [["PT409", "active_mission_exists"], ["PT429", "too_many_requests"]] as const) {
+  const e = mapRpcError({ code: sqlstate, message: code });
+  assert.strictEqual(e.code, code);
+  for (const lang of ["en", "hi"] as const) {
+    const msg = createMissionErrorMessage(e.code, lang);
+    assert.match(msg, /108/, `${code} (${lang}) points to 108`);
+    assert.notStrictEqual(msg, createMissionErrorMessage("some_unknown_code", lang), `${code} (${lang}) has its own message`);
+  }
+}
+console.log("✓ active request / too many requests\n");
+
 console.log("SERVER JURISDICTION AUTHORITY TESTS PASSED (100% GREEN)");

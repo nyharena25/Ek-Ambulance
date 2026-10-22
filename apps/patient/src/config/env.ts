@@ -18,11 +18,6 @@ export const ENV = {
  *  silently aiming a phone at itself. */
 export const SUPABASE_URL = ENV.supabaseUrl || "https://supabase-url-not-set.invalid";
 
-/** True only under the plain node test runner, where the React Native `__DEV__` global does not exist. A development
- *  build on a phone is NOT this: it must show the same real data as a release build, never demo identities,
- *  coordinates or seeded forms. The one shared check for test-only fallbacks. */
-export const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
-
 const REQUIRED_ENV_KEYS = ["supabaseUrl", "supabaseAnonKey", "gatewayUrl", "centrifugoWsUrl"] as const;
 
 /**

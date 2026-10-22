@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { initTracer } from "@sahayak/observability";
 import { assertEnvOrWarn } from "../src/config/env.ts";
 import { useResumeActiveMission } from "../src/hooks/useResumeActiveMission";
 import { realAccessToken, usePatientAuthStore } from "../src/state/patientAuth.store";
@@ -21,11 +20,6 @@ export default function RootLayout() {
     if (isInitializing || signedIn) return;
     if (firstSegment !== undefined && firstSegment !== "(auth)") router.replace("/");
   }, [isInitializing, signedIn, firstSegment]);
-  useEffect(() => {
-    const tracer = initTracer("sahayak-patient-mobile");
-    const span = tracer.startSpan("patient_app_bootstrap");
-    span.end();
-  }, []);
 
   return (
     <>

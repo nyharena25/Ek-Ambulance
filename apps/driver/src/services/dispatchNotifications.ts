@@ -4,14 +4,15 @@ import {
   ACTION_ACCEPT,
   ACTION_DECLINE,
   offerNotificationBody,
+  offerNotificationPayload,
   type OfferNotificationData,
 } from "./dispatchNotifications.core";
 
-export const DISPATCH_CHANNEL_ID = "emergency_dispatch";
+const DISPATCH_CHANNEL_ID = "emergency_dispatch";
 const OFFER_CATEGORY_ID = "dispatch_offer";
 
 /** Expo Go (SDK 53+) has no expo-notifications native module: even importing it can crash the root layout. */
-export const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 type NotificationsModule = typeof import("expo-notifications");
 let loaded: NotificationsModule | null = null;
@@ -41,7 +42,8 @@ function expoGoNotice(what: string): void {
 /**
  * Registers the max-importance channel, the Accept/Decline action category and notification permission.
  * Android has no full-screen-intent API in expo-notifications: the strongest available is a MAX-importance
- * heads-up that is public on the lock screen, bypasses DND and vibrates. A true full-screen takeover needs a
+ * heads-up that bypasses DND and vibrates. Its content (the patient's pickup address) is PRIVATE on the lock screen:
+ * the alert still sounds and shows, the details only after unlock. A true full-screen takeover needs a
  * native config plugin (USE_FULL_SCREEN_INTENT + setFullScreenIntent) and a dev build.
  */
 export async function setupDispatchNotifications(): Promise<void> {
@@ -51,7 +53,7 @@ export async function setupDispatchNotifications(): Promise<void> {
     await Notifications.setNotificationChannelAsync(DISPATCH_CHANNEL_ID, {
       name: "Emergency dispatch",
       importance: Notifications.AndroidImportance.MAX,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       bypassDnd: true,
       enableVibrate: true,
       // Android channels cannot repeat a pattern; this long one is as close to "continuous" as the API allows.
@@ -79,7 +81,7 @@ export async function notifyIncomingOffer(data: OfferNotificationData): Promise<
     content: {
       title: "Incoming emergency mission",
       body: offerNotificationBody(data),
-      data: { ...data },
+      data: offerNotificationPayload(data),
       categoryIdentifier: OFFER_CATEGORY_ID,
       priority: Notifications.AndroidNotificationPriority.MAX,
       sticky: true,

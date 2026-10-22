@@ -1,11 +1,5 @@
 import type { AIS125VehicleType, CareLevel, Jurisdiction } from "../types/index.ts";
 
-export interface PricingEstimateParams {
-  careLevel: CareLevel;
-  jurisdiction: Jurisdiction;
-  distanceKm: number;
-}
-
 export interface PricingEstimateResponse {
   careLevel: CareLevel;
   jurisdiction: Jurisdiction;
@@ -66,32 +60,6 @@ export function careLevelFromVehicleType(type: AIS125VehicleType): CareLevel {
     default:
       return "PTA";
   }
-}
-
-/**
- * Computes statutory pricing for standard CareLevel
- */
-export function computePricingEstimate(
-  params: PricingEstimateParams
-): PricingEstimateResponse {
-  const baseFareInr =
-    params.careLevel === "ALS" ? 500 : params.careLevel === "BLS" ? 300 : 200;
-  const perKmRateInr =
-    params.careLevel === "ALS" ? 25 : params.careLevel === "BLS" ? 15 : 12;
-  const estimatedTotalInr =
-    baseFareInr + Math.round(params.distanceKm * perKmRateInr);
-
-  return {
-    careLevel: params.careLevel,
-    jurisdiction: params.jurisdiction,
-    distanceKm: params.distanceKm,
-    baseFareInr,
-    perKmRateInr,
-    estimatedTotalInr,
-    currency: "INR",
-    tariffVersion: "2026-04-01",
-    computedAt: new Date().toISOString(),
-  };
 }
 
 /**

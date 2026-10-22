@@ -61,7 +61,7 @@ export function extractCooldownSeconds(description: string): number | null {
  */
 const NETWORK_ERROR_PATTERN = /network|fetch|UnknownHost|ECONN|ENOTFOUND|timed? ?out|java\.|status: 0/i;
 
-export function isNetworkFailure(error: { status?: number; name?: string; message?: string }): boolean {
+function isNetworkFailure(error: { status?: number; name?: string; message?: string }): boolean {
   return (
     error.status === 0 ||
     error.name === "AuthRetryableFetchError" ||

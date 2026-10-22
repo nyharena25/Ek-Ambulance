@@ -3,11 +3,10 @@ import type { AIS125VehicleType } from "@sahayak/domain";
 import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
 import { getServerAdapter } from "./driverLifecycle.store.ts";
 import { mapFormDataToApplicationFields, mapStep1ToDraftFields, step1ValidationErrors } from "../lib/kycSubmission.core.ts";
+import { IS_TEST_RUNNER } from "../config/env.ts";
 
-// `IS_TEST_RUNNER` is true only under the node test runner (where `__DEV__` does not exist); false in every build on a
-// phone. A release build must never seed a real driver's onboarding wizard with fake DL/plate/document
-// data just because the real session hasn't hydrated yet - see `initialFormData`/`initialDocuments` below.
-const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
+// A release build must never seed a real driver's onboarding wizard with fake DL/plate/document data just because the real
+// session hasn't hydrated yet - see `initialFormData`/`initialDocuments` below (IS_TEST_RUNNER only).
 
 export type EMTLevel = "EMT_P" | "EMT_A" | "EMT_B" | "FMR";
 
@@ -106,7 +105,7 @@ export interface DriverOnboardingStoreState {
   submitApplication: () => Promise<boolean>;
   resetOnboarding: () => void;
   /** Starts the wizard empty for a real session - called once by the screen on mount when a server session
-   *  exists, instead of the __DEV__ pre-filled seed. A no-op if the form already has real user input, so a
+   *  exists, instead of the test-runner seed. A no-op if the form already has real user input, so a
    *  remount (e.g. language toggle) never wipes what the driver already typed. */
   initForRealSession: () => void;
 }
@@ -139,7 +138,7 @@ export const EMPTY_FORM_DATA: DriverOnboardingFormData = {
   ais125VehicleType: null,
 };
 
-export const EMPTY_DOCUMENTS: Record<DocumentSlotKey, DocumentUploadState> = {
+const EMPTY_DOCUMENTS: Record<DocumentSlotKey, DocumentUploadState> = {
   arai_certificate: { status: "idle" },
   fitness_permit: { status: "idle" },
   commercial_dl: { status: "idle" },

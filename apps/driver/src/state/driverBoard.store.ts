@@ -9,7 +9,7 @@ import { useDriverStandbyStore } from "./driverStandby.store.ts";
  * recomputed here: the server decides what this driver may see.
  */
 
-export const BOARD_POLL_MS = 5_000;
+const BOARD_POLL_MS = 5_000;
 
 export type BoardTab = Exclude<BoardBand, "fallback">;
 

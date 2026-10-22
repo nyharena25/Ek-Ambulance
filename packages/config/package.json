@@ -2,9 +2,7 @@
   "name": "@sahayak/config",
   "version": "0.1.0",
   "private": true,
-  "main": "eslint-preset.js",
   "files": [
-    "tsconfig.base.json",
-    "eslint-preset.js"
+    "tsconfig.base.json"
   ]
 }

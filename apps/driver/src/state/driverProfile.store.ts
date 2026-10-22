@@ -8,15 +8,14 @@ import {
   type DriverProfilePatch,
   type ServiceZone,
 } from "../lib/driverProfile.core.ts";
+import { IS_TEST_RUNNER } from "../config/env.ts";
 
 /**
  * The driver's profile: name, phone, service area, hospital and vehicle. With a verified session it is the server's
- * (`get_driver_profile` / `update_driver_profile`, which refuses a change mid-mission). Without one, in a development build,
- * it is seeded from the mock login and kept locally. The lock is applied here as well as on the server, so the UI never
- * offers an edit the server will refuse (invariant 3: read from the lifecycle machine, not a flag).
+ * (`get_driver_profile` / `update_driver_profile`, which refuses a change mid-mission). Without one (node test runner only)
+ * it is seeded and kept locally. The lock is applied here as well as on the server, so the UI never offers an edit the
+ * server will refuse (invariant 3: read from the lifecycle machine, not a flag).
  */
-
-const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
 
 export type SaveResult = { ok: true } | { ok: false; code: string };
 

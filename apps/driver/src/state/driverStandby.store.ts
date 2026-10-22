@@ -3,11 +3,10 @@ import { careLevelFromVehicleType, type AIS125VehicleType } from "@sahayak/domai
 import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
 import { useDriverLifecycleStore, getServerAdapter } from "./driverLifecycle.store.ts";
 import { isProfileLocked } from "./driverAvailability.core.ts";
+import { IS_TEST_RUNNER } from "../config/env.ts";
 
 // Synthetic demo identity for the NODE TEST RUNNER ONLY (never a phone, dev build included). With a verified session the real user id is used and the server
-// (set_driver_presence -> `not_verified`) is the verification gate. `IS_TEST_RUNNER` is true under the node test runner, where
-// `__DEV__` does not exist, so the existing tests keep their seeded state.
-const IS_TEST_RUNNER = typeof __DEV__ === "undefined";
+// (set_driver_presence -> `not_verified`) is the verification gate. The existing tests keep their seeded state (IS_TEST_RUNNER).
 const DEMO_DRIVER_ID = "DRV-DEMO-0001";
 const DEMO_AMBULANCE_ID = "AMB-DEMO-0001";
 const DEMO_AIS125_CERT_PATH = "storage/certs/demo-driver-kyc.pdf";

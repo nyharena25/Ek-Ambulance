@@ -2,7 +2,11 @@ import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, radii, spacing, typography } from "@sahayak/ui";
 import { extractTriageIndicators, type TriageExtraction } from "../services/openRouterTriage";
+import { recordConsent } from "../lib/missionApi";
 import AppIcon from "./AppIcon";
+
+/** Version of the AI-assistant notice below; bump when its text changes (DPDP: consent is tied to the notice shown). */
+export const AI_TRIAGE_NOTICE_VERSION = "2026-10";
 
 const STRINGS = {
   en: {
@@ -15,6 +19,7 @@ const STRINGS = {
     filled: "Form pre-filled from your description. Please review below.",
     review: "The assistant suggested higher urgency than the protocol result. Please review the answers below.",
     failed: "Assistant unavailable. Please use the buttons below.",
+    consent: "Send my description to an external AI service (OpenRouter) to fill the form. Optional: you can use the buttons below instead.",
   },
   hi: {
     title: "आपातकाल का वर्णन करें (वैकल्पिक)",
@@ -26,6 +31,7 @@ const STRINGS = {
     filled: "आपके विवरण से फ़ॉर्म भरा गया है। कृपया नीचे जांच लें।",
     review: "सहायक ने प्रोटोकॉल परिणाम से अधिक गंभीरता सुझाई है। कृपया नीचे के उत्तर जांचें।",
     failed: "सहायक उपलब्ध नहीं है। कृपया नीचे दिए बटन उपयोग करें।",
+    consent: "फ़ॉर्म भरने के लिए मेरा विवरण एक बाहरी AI सेवा (OpenRouter) को भेजें। वैकल्पिक: आप नीचे दिए बटन भी उपयोग कर सकते हैं।",
   },
 } as const;
 
@@ -45,11 +51,34 @@ export default function DescribeEmergencyPanel({ language, onExtracted, authToke
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<"filled" | "review" | "failed" | null>(null);
+  // DPDP: nothing is sent to the AI service until the patient ticks the notice, and the grant is recorded server-side
+  // (record_consent, server timestamp) before the first request; the gateway refuses a caller without it.
+  const [consented, setConsented] = useState(false);
+  const consentRecorded = useRef(false);
+
+  const toggleConsent = () => {
+    const next = !consented;
+    setConsented(next);
+    // Withdrawing a grant that was recorded is recorded too, so the gateway stops relaying.
+    if (!next && consentRecorded.current) {
+      consentRecorded.current = false;
+      void recordConsent("third_party_llm", AI_TRIAGE_NOTICE_VERSION, false, language);
+    }
+  };
 
   const analyze = async () => {
-    if (loading || !text.trim()) return;
+    if (loading || !text.trim() || !consented) return;
     setLoading(true);
     setStatus(null);
+    if (!consentRecorded.current) {
+      const recorded = await recordConsent("third_party_llm", AI_TRIAGE_NOTICE_VERSION, true, language);
+      if (!recorded.ok) {
+        setLoading(false);
+        setStatus("failed");
+        return;
+      }
+      consentRecorded.current = true;
+    }
     const result = await extractTriageIndicators(text, { authToken });
     setLoading(false);
     setStatus(result.ok ? (onExtracted(result.data) ? "review" : "filled") : "failed");
@@ -81,10 +110,20 @@ export default function DescribeEmergencyPanel({ language, onExtracted, authToke
         </Pressable>
       </View>
       <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: consented }}
+        accessibilityLabel={s.consent}
+        style={styles.consentRow}
+        onPress={toggleConsent}
+      >
+        <AppIcon icon={{ set: "ion", name: consented ? "checkbox" : "square-outline" }} size={22} color={colors.info} />
+        <Text style={styles.consentText}>{s.consent}</Text>
+      </Pressable>
+      <Pressable
         accessibilityRole="button"
-        accessibilityState={{ disabled: loading || !text.trim(), busy: loading }}
-        disabled={loading || !text.trim()}
-        style={[styles.analyzeButton, (loading || !text.trim()) && styles.analyzeDisabled]}
+        accessibilityState={{ disabled: loading || !text.trim() || !consented, busy: loading }}
+        disabled={loading || !text.trim() || !consented}
+        style={[styles.analyzeButton, (loading || !text.trim() || !consented) && styles.analyzeDisabled]}
         onPress={analyze}
       >
         {loading ? <ActivityIndicator color={colors.white} /> : <AppIcon icon={{ set: "ion", name: "sparkles" }} size={18} color={colors.white} />}
@@ -147,6 +186,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.info,
   },
   analyzeDisabled: { opacity: 0.5 },
+  consentRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm, minHeight: 44 },
+  consentText: { flex: 1, fontSize: typography.fontSizes.xs, color: colors.slate700 },
   analyzeText: { color: colors.white, fontSize: typography.fontSizes.sm, fontWeight: typography.fontWeights.bold },
   status: { fontSize: typography.fontSizes.xs, color: colors.success, fontWeight: typography.fontWeights.bold },
   statusMuted: { color: colors.slate600 },

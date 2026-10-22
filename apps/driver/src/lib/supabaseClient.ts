@@ -55,7 +55,7 @@ function createSecureStorageAdapter(): SupportedStorage {
   };
 }
 
-export const authStorage = createSecureStorageAdapter();
+const authStorage = createSecureStorageAdapter();
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

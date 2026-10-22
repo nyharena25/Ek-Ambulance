@@ -22,11 +22,11 @@ export const DISPATCH_CONFIG = {
   boardRadiiKm: [4, 7, 10],
   /**
    * How long a request nobody took stays open after the offer waves (3 x 45 s = 135 s) end. Drivers were asked and did not
-   * answer, so it remains on their Booking board until this window closes; then dispatch_tick cancels it. Measured from creation.
+   * answer, so it remains on their Booking board until this window closes; then dispatch_tick cancels it. Measured from the dispatch round's start (missions.search_started_at).
    * 345 = the 45 s designed time + 5 minutes overdue: the signed timer both sides show never reads past -05:00.
    */
   searchTtlSeconds: 345,
-  /** A driver counts as present for 30 s after the last heartbeat (Redis key TTL, 6.6). */
+  /** A driver counts as present for 30 s after the last heartbeat (drivers.last_seen_at; SQL dispatch_config().presenceFreshSeconds). */
   presenceTtlSeconds: 30,
 } as const;
 

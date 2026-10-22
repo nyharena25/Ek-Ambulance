@@ -3,7 +3,6 @@ import { Alert, AppState, View } from "react-native";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { initTracer } from "@sahayak/observability";
 
 import { OfflineConnectivityOverlay } from "../src/components";
 import { getServerAdapter, useDriverLifecycleStore } from "../src/state/driverLifecycle.store";
@@ -71,12 +70,6 @@ export default function RootLayout() {
       appStateSub.remove();
     };
   }, [driverId, submit]);
-
-  useEffect(() => {
-    const tracer = initTracer("sahayak-driver-mobile");
-    const span = tracer.startSpan("driver_app_bootstrap");
-    span.end();
-  }, []);
 
   // The offline banner sits in flow at the top and already clears the status bar, so screens below it must not add the inset again.
   const insets = useSafeAreaInsets();

@@ -187,7 +187,7 @@ export const HOSPITAL_CATALOG_COLUMNS = "id,name,name_hi,zone,location,category,
  * A geography POINT as PostgREST returns it: EWKB hex by default (what a plain `select` gets), GeoJSON when asked for.
  * Anything else (another geometry type, bad hex) is null.
  */
-export function readPoint(value: unknown): GeoPoint | null {
+function readPoint(value: unknown): GeoPoint | null {
   if (typeof value === "string") {
     if (value.length < 42 || !/^([0-9a-fA-F]{2})+$/.test(value)) return null;
     const bytes = new Uint8Array(value.length / 2);

@@ -49,6 +49,7 @@ const run = (fetchImpl: typeof fetch, authToken: string | null = "session-jwt", 
 assert.deepStrictEqual(await run(resp(200, wrap(JSON.stringify(good)))), { ok: true, data: good });
 assert.deepStrictEqual(await run(resp(401)), { ok: false, reason: "auth" });
 assert.deepStrictEqual(await run(resp(403)), { ok: false, reason: "auth" });
+assert.deepStrictEqual(await run(resp(403, { error: "consent_required" })), { ok: false, reason: "consent" }, "no recorded AI consent: the gateway refuses, manual triage remains");
 assert.deepStrictEqual(await run(resp(429)), { ok: false, reason: "rate_limit" });
 assert.deepStrictEqual(await run(resp(500)), { ok: false, reason: "network" });
 assert.deepStrictEqual(await run(resp(200, wrap("sorry, cannot help"))), { ok: false, reason: "invalid_response" });
@@ -61,7 +62,7 @@ assert.deepStrictEqual(await run(resp(200), null), { ok: false, reason: "no_auth
 assert.deepStrictEqual(await run(resp(200), "session-jwt", "   "), { ok: false, reason: "empty_input" });
 console.log("✓ degradation\n");
 
-console.log("Test 4: request is OpenRouter JSON-schema shaped, goes to the gateway (never OpenRouter directly), and sends the caller's session token, not an API key...");
+console.log("Test 4: request goes to the gateway (never OpenRouter directly), carries the caller's session token, and only the patient's text (model, prompt and schema are fixed server-side)...");
 let seen: { url?: unknown; init?: { headers?: Record<string, string>; body?: string } } = {};
 await extractTriageIndicators("saans nahi aa rahi", {
   authToken: "session-jwt",
@@ -70,10 +71,7 @@ await extractTriageIndicators("saans nahi aa rahi", {
 });
 assert.strictEqual(seen.url, "https://gateway.example.in/triage/extract", "never the OpenRouter URL directly from the client");
 assert.strictEqual(seen.init?.headers?.Authorization, "Bearer session-jwt", "the caller's own session token, not an OpenRouter key");
-const sent = JSON.parse(seen.init?.body ?? "{}");
-assert.strictEqual(sent.response_format.type, "json_schema");
-assert.strictEqual(sent.response_format.json_schema.strict, true);
-assert.strictEqual(sent.messages[1].content, "saans nahi aa rahi");
+assert.deepStrictEqual(JSON.parse(seen.init?.body ?? "{}"), { text: "saans nahi aa rahi" }, "the body is the text and nothing else: no model, prompt or token budget the client could choose");
 console.log("✓ request\n");
 
 console.log("OPENROUTER TRIAGE TESTS PASSED (100% GREEN)");

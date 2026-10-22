@@ -1,5 +1,6 @@
 import assert from "node:assert";
-import { resolveOfferAction, offerNotificationBody, ACTION_ACCEPT, ACTION_DECLINE } from "./dispatchNotifications.core.ts";
+import { readFileSync } from "node:fs";
+import { resolveOfferAction, offerNotificationBody, offerNotificationPayload, ACTION_ACCEPT, ACTION_DECLINE } from "./dispatchNotifications.core.ts";
 
 const now = new Date("2026-09-25T10:00:00.000Z");
 const data = {
@@ -40,4 +41,14 @@ console.log("Test 4: notification body...");
 assert.strictEqual(offerNotificationBody(data), "Hauz Khas Village • 4.2 km • ETA 11 min");
 assert.strictEqual(offerNotificationBody({ missionId: "m", offerId: "o" }), "");
 console.log("✓ body\n");
+console.log("Test 5: the notification carries only what Accept/Decline need, never the patient summary or address...");
+const full = { ...data, patientSummary: JSON.stringify({ primaryComplaint: "chest_pain", sex: "F" }), acuity: "CAT_1_IMMEDIATE" } as unknown as typeof data;
+const payload = offerNotificationPayload(full);
+assert.deepStrictEqual(payload, { missionId: "MSN-1", offerId: "OFFER-1", pickupLat: "28.5672", pickupLng: "77.21" });
+assert.deepStrictEqual(resolveOfferAction(ACTION_ACCEPT, payload, "DRV-1", now), accept, "the reduced payload still accepts exactly as before");
+const src = readFileSync(new URL("./dispatchNotifications.ts", import.meta.url), "utf8");
+assert.match(src, /lockscreenVisibility: Notifications\.AndroidNotificationVisibility\.PRIVATE/, "lock-screen content is private");
+assert.doesNotMatch(src, /AndroidNotificationVisibility\.PUBLIC/, "never public on the lock screen");
+assert.match(src, /data: offerNotificationPayload\(data\)/, "the scheduled notification uses the reduced payload");
+console.log("✓ notification privacy\n");
 console.log("DISPATCH NOTIFICATION CORE TESTS PASSED (100% GREEN)");

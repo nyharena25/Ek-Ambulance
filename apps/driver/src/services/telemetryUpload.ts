@@ -36,6 +36,7 @@ export function recordLivePing(missionId: string, ping: MissionTelemetryPing): v
     longitude: ping.longitude,
     heading: ping.heading,
     speed: ping.speed,
+    accuracy: ping.accuracy,
     timestamp: ping.timestamp,
     syncStatus: "queued",
     retryCount: 0,

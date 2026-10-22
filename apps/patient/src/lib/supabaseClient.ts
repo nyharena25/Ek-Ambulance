@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "../config/env.ts";
@@ -81,4 +81,11 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     // out of scope) - nothing to detect in a URL.
     detectSessionInUrl: false,
   },
+});
+
+// Session refresh (Supabase's React Native lifecycle, as in the driver app): the 30 s refresh ticker is suspended with the
+// app's timers in the background, so a resumed app could use an expired access token for its first calls. Back in the
+// foreground, restart it: it checks immediately.
+AppState.addEventListener("change", (state) => {
+  if (state === "active") void supabase.auth.startAutoRefresh();
 });
