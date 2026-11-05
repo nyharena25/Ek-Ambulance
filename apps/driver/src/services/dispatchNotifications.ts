@@ -1,42 +1,49 @@
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import { isRunningInExpoGo } from "expo";
+import Constants from "expo-constants";
 import { AppState, Platform } from "react-native";
 import {
   ACTION_ACCEPT,
   ACTION_DECLINE,
+  loadOptionalNative,
   offerNotificationBody,
   offerNotificationPayload,
+  type NativeLoad,
   type OfferNotificationData,
 } from "./dispatchNotifications.core";
 
 const DISPATCH_CHANNEL_ID = "emergency_dispatch";
 const OFFER_CATEGORY_ID = "dispatch_offer";
 
-/** Expo Go (SDK 53+) has no expo-notifications native module: even importing it can crash the root layout. */
-const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-
 type NotificationsModule = typeof import("expo-notifications");
-let loaded: NotificationsModule | null = null;
+let loaded: NativeLoad<NotificationsModule> | null = null;
 
-/** Lazily loads expo-notifications in dev/production builds; null in Expo Go. */
+/**
+ * Lazily loads expo-notifications once; null when its native side is missing (Expo Go, or a dev build that predates
+ * the SDK 58 upgrade). Expo Go is detected the way Expo's own modules do it: `Constants.executionEnvironment` is not
+ * reliably "storeClient" there.
+ */
 function native(): NotificationsModule | null {
-  if (isExpoGo) return null;
   if (!loaded) {
-    loaded = require("expo-notifications") as NotificationsModule;
-    loaded.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
+    loaded = loadOptionalNative(isRunningInExpoGo(), () => require("expo-notifications") as NotificationsModule);
+    if (loaded.status === "ready") {
+      loaded.module.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+    } else if (loaded.reason !== "Expo Go") {
+      console.warn(`[dispatchNotifications] expo-notifications unavailable (${loaded.reason}); rebuild the dev client with \`pnpm --filter @sahayak/driver android\`.`);
+    }
   }
-  return loaded;
+  return loaded.status === "ready" ? loaded.module : null;
 }
 
-// Expo Go fallback: the offer screen is pushed in-app and this is the only diagnostic.
+// Fallback when the native module is missing: the offer screen is pushed in-app and this is the only diagnostic.
 function expoGoNotice(what: string): void {
-  console.info(`[dispatchNotifications] Expo Go: ${what} skipped (needs a development build); the in-app offer screen is the only alert.`);
+  console.info(`[dispatchNotifications] ${what} skipped (no expo-notifications native module; needs a development build); the in-app offer screen is the only alert.`);
 }
 
 /**

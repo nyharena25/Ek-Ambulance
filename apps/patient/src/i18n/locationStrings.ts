@@ -92,7 +92,7 @@ export const locationStrings: Record<SupportedLanguage, LocationTranslation> = {
     confirmPickupButton: "Confirm Pickup Location",
     confirmDisabledText: "Set the pickup point first",
     coordinatesLabel: "GPS coordinates",
-    nextStepNotice: "Next: Select Care Level (ALS / BLS / PTA)",
+    nextStepNotice: "Next: review the ambulance and fare",
     locationPermissionDeniedBanner:
       "Location permission denied. Allow location in Settings and tap Locate Me, or search a landmark above.",
     locationUnavailableBanner:
@@ -116,7 +116,7 @@ export const locationStrings: Record<SupportedLanguage, LocationTranslation> = {
     confirmPickupButton: "पिकअप स्थान सुनिश्चित करें",
     confirmDisabledText: "पहले पिकअप स्थान चुनें",
     coordinatesLabel: "GPS निर्देशांक",
-    nextStepNotice: "अगला चरण: एंबुलेंस श्रेणी का चयन (ALS / BLS / PTA)",
+    nextStepNotice: "अगला चरण: एंबुलेंस और किराया देखें",
     locationPermissionDeniedBanner:
       "स्थान अनुमति अस्वीकृत। सेटिंग्स में स्थान की अनुमति दें और 'मेरा स्थान' दबाएं, या ऊपर लैंडमार्क खोजें।",
     locationUnavailableBanner:

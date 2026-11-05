@@ -1,5 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import type { ColorValue, StyleProp, TextStyle } from "react-native";
+import type { OpaqueColorValue, StyleProp, TextStyle } from "react-native";
 
 /**
  * Typed reference to a production vector glyph.
@@ -16,7 +16,7 @@ export type IconRef =
 export interface AppIconProps {
   icon: IconRef;
   size?: number;
-  color?: ColorValue;
+  color?: string | OpaqueColorValue;
   style?: StyleProp<TextStyle>;
 }
 

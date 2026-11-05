@@ -29,6 +29,47 @@ export function tickOfferCountdown(secondsLeft: number): OfferCountdownTick {
   return { secondsLeft: secondsLeft - 1, expired: false };
 }
 
+export interface OfferCountdownDeps {
+  /** Seconds left now: from the server expiry when there is one, else `fallback` (the locally ticked value). */
+  secondsLeft: (fallback: number) => number;
+  onTick: (secondsLeft: number) => void;
+  onExpire: () => void;
+  setInterval: (fn: () => void, ms: number) => unknown;
+  clearInterval: (handle: unknown) => void;
+}
+
+/**
+ * Runs one offer's countdown; returns the stop function. `onExpire` fires exactly once, and immediately for an offer
+ * that is already expired on arrival (late delivery, clock skew, unparseable expiry) - a 0 -> 0 tick never counted as an
+ * expiry before, which left a dead offer on screen. Side effects stay out of React state updaters.
+ */
+export function runOfferCountdown(deps: OfferCountdownDeps): () => void {
+  let remaining = deps.secondsLeft(OFFER_WINDOW_SECONDS);
+  let handle: unknown = null;
+  let done = false;
+  const stop = () => {
+    done = true;
+    if (handle !== null) deps.clearInterval(handle);
+    handle = null;
+  };
+  deps.onTick(remaining);
+  if (remaining === 0) {
+    stop();
+    deps.onExpire();
+    return stop;
+  }
+  handle = deps.setInterval(() => {
+    if (done) return;
+    remaining = deps.secondsLeft(tickOfferCountdown(remaining).secondsLeft);
+    deps.onTick(remaining);
+    if (remaining === 0) {
+      stop();
+      deps.onExpire();
+    }
+  }, 1000);
+  return stop;
+}
+
 /**
  * Swipe-to-Accept completion threshold: the driver must drag at least 75%
  * across the slider track before release counts as acceptance - prevents

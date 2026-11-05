@@ -19,13 +19,13 @@ export default function BookingCategorySelectRoute() {
   }>();
   const { triageResult } = usePatientLifecycleStore((s) => s.context);
 
-  // Machine context is the source of truth when warm (the normal in-app
-  // flow); URL params are the fallback for a cold store (deep link direct
-  // to this screen, or an app restart mid-flow).
+  // URL params win (forwarded from the latest triage confirm via location-entry): the machine keeps only the first
+  // SUBMIT_TRIAGE, so after a patient goes back and re-triages its context is stale. Machine context, then the most
+  // protective default, cover a cold deep link without params.
   const triageCareLevel: CareLevel =
-    triageResult?.recommendedCareLevel ?? ((params.careLevel as CareLevel) || "ALS");
+    (params.careLevel as CareLevel | undefined) || triageResult?.recommendedCareLevel || "ALS";
   const urgencyTier: UrgencyTier =
-    triageResult?.tier ?? ((params.tier as UrgencyTier) || "CAT_1_IMMEDIATE");
+    (params.tier as UrgencyTier | undefined) || triageResult?.tier || "CAT_1_IMMEDIATE";
 
   const handleConfirmCategory = (selection: {
     vehicleType: AIS125VehicleType;

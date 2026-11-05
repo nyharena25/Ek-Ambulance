@@ -1720,3 +1720,44 @@ Two new driver pages, `(shift)/booking` and `(shift)/profile`, opened from the s
 - `pnpm preflight` exit 0 (10/10 turbo tasks, both schema suites, gateway suite). New: `board.test.ts` (domain), `driverAvailability`, `mockBoardFeed`, `driverProfile.core`, `driverBoardProfile.store` (driver), `Test 14` (schema drift).
 - Behaviour: `supabase/tests/driver_board.behaviour.sql` (new, 90 checks, including the search window) and the existing `mission_api.behaviour.sql` both pass on a scratch database built from `template0` with Supabase shims (`auth`, `storage`, `vault`, PostGIS, pg_net). The local Supabase `postgres` database had **no migrations applied**, so it was not used. Run yourself: `supabase db reset`, then `psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/driver_board.behaviour.sql`.
 - **Not done:** any run on a device or simulator (the two new screens and the patient countdown are typechecked and linted but have never been rendered), and applying migrations `20260924000005` / `20260924000006` to any real project.
+
+## Driver GPS recovery: no fix -> can never go online (2026-10-28)
+
+**Bug:** `useDriverLocation` tried to start the foreground watcher exactly once per `tracking`/`missionActive` change. A refused location permission, location switched off at launch, or a dismissed Android "turn on location" dialog (which `watchPositionAsync` shows by default and rejects on decline) left the watcher dead, silently. `hasRealFix` stayed false, every Go online tap was refused with "Waiting for a GPS fix - try again in a moment", and nothing retried until the app was restarted.
+
+**Fix:**
+- `backgroundLocation.core.ts`: `checkLocationAccess` (pure, injected API) returns `location_permission_denied` / `location_services_off` / null. The system enable-location dialog is shown only for a driver-initiated retry, never on launch or resume.
+- `useDriverLocation.ts`: the watcher restarts on `locationRetryNonce` (bumped by a refused Go online tap) and on app resume when no watcher is running or a `locationIssue` is open (driver fixed it in Settings). Seed and watcher pass `mayShowUserSettingsDialog: false`, so a declined dialog can no longer reject the watcher, and the request stays registered until location comes on.
+- `driverStandby.store.ts`: `locationIssue`, `locationRetryNonce`, `setLocationIssue`. A no-fix refusal reports the real blocker as `presenceErrorCode`. `setGps` clears the issue.
+- `DriverStandbyScreen.tsx` + `driverStandbyStrings.ts`: distinct EN/HI messages for permission off / location off / waiting for a fix, plus a Settings button (`Linking.openSettings`) when permission is the blocker.
+
+**Verification:** `pnpm --filter @sahayak/driver typecheck` exit 0; `pnpm --filter @sahayak/driver test` exit 0 (new cases in `backgroundLocation.core.test.ts` and `driverStandby.store.test.ts`); `pnpm test:integrity` passed. **Not verified:** never run on a device. Smoke test on Android: deny permission, then allow in Settings and return; launch with location off, then tap Go online (system dialog), accept and decline; turn location on from quick settings while the app is open.
+
+## Research paper / project report and two defects it found (2026-10-28)
+
+**Report:** `report_source/` holds the paper in nine section files (`01_abstract.md` ... `09_references.md`), `metadata.json`,
+and `assemble.mjs`, which builds `report_source/report.md` (IEEE citation numbering, table of contents, and the five
+`.drawio` diagrams in `report_source/diagrams/`). Benchmarks with raw JSON are in `report_source/bench/`: domain microbenchmarks,
+realtime latency, fan-out and throughput against the local docker data plane, gateway rate limit, the paired board-sort
+benchmark, the contrast audit, and a seeded dispatch Monte Carlo model (labelled as a simulation). Rebuild with
+`node report_source/assemble.mjs` (`--check` validates citations and diagrams only).
+
+**Fix 1, board sort:** `packages/domain/src/dispatch/board.ts` `sortOldestFirst` parsed both ISO timestamps inside the
+comparator (~300 ns x n log n; 41 ms at n = 10,000). It now parses each once (decorate-sort-undecorate). Order, the NaN
+fallback to id order and the no-mutation guarantee are unchanged. `board.test.ts` Test 6 counts parses (fails on the old
+code). Paired benchmark: 2.8x (n = 10) to 14.5x (n = 100,000) faster, same order at every n.
+
+**Fix 2, contrast documentation:** 16 of the 17 contrast ratios in `packages/ui/src/tokens/colors.ts` comments were wrong,
+including four AAA claims that measure 5.0-6.5:1 (AA), and the header called the palette "WCAG AAA compliant". Comments
+now carry measured values. **No colour value changed.** New `designSystem.test.ts` Test 6 recomputes WCAG contrast:
+`textAccessible` >= 7:1 on its surface, text-on-white tokens >= 4.5:1.
+
+**Fix 3, control boundaries (WCAG 1.4.11):** `slate300` (#CBD5E1, 1.5:1) had 138 uses. Each was classified
+(report §4.3.1), and only the 14 whose edge identifies the control moved to a new token `colors.controlBorder` (= slate500,
+4.8:1). These are 11 text inputs and OTP cells, the driver onboarding checkbox, and the two switch off-tracks. Card edges,
+dividers, labelled buttons and disabled fills keep slate300 on purpose. `designSystem.test.ts` asserts `controlBorder` >= 3:1
+on white and slate50. Rendered: patient sign-in phone field at 375 px in React Native Web (computed border #64748B, no
+console errors). The other 13 sit behind sign-in or a mission and were not rendered.
+
+**Verification:** `pnpm preflight` exit 0 (10/10 turbo tasks, schema, gateway, integrity and security stages all passed).
+Not run: the SQL behaviour suites (no local Supabase DB during this work); nothing rendered on a device.

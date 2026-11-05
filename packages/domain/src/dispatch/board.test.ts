@@ -60,6 +60,16 @@ const mk = (missionId: string, createdAt: string) => ({ missionId, createdAt });
 const list = [mk("c", "2026-09-24T08:31:00Z"), mk("b", "2026-09-24T08:29:00Z"), mk("a", "2026-09-24T08:29:00Z")];
 assert.deepStrictEqual(sortOldestFirst(list).map((e) => e.missionId), ["a", "b", "c"]);
 assert.deepStrictEqual(list.map((e) => e.missionId), ["c", "b", "a"], "sort does not mutate");
+assert.strictEqual(sortOldestFirst(list)[0], list[2], "returns the caller's own objects, not copies");
+// An unparsable createdAt (NaN) compares as a tie, so it falls back to the id order, as before the parse-once change.
+const odd = [mk("z", "not a date"), mk("y", "2026-09-24T08:29:00Z")];
+assert.deepStrictEqual(sortOldestFirst(odd).map((e) => e.missionId), ["y", "z"]);
+let parses = 0;
+const realParse = Date.parse;
+Date.parse = (s: string) => (parses++, realParse(s));
+sortOldestFirst(Array.from({ length: 64 }, (_, i) => mk(`m${i}`, new Date(Date.UTC(2026, 8, 24, 8, i)).toISOString())));
+Date.parse = realParse;
+assert.strictEqual(parses, 64, "each timestamp is parsed exactly once");
 
 console.log("Test 7: five per page, page clamped into range...");
 assert.strictEqual(BOARD_PAGE_SIZE, 5);

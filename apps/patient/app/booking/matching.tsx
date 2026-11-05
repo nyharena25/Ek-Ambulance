@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, BackHandler } from "react-native";
+import { BackHandler, Platform } from "react-native";
+import { Alert } from "../../src/lib/alert";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { ActiveMatchingScreen } from "../../src/screens";
 import { AIS125VehicleType } from "@sahayak/domain";
@@ -125,6 +126,8 @@ export default function BookingMatchingRoute() {
   };
 
   useEffect(() => {
+    // Android-only API: on web it logs an error on every render.
+    if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       confirmCancel();
       return true;

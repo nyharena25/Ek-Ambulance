@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert } from "react-native";
+import { Alert } from "../../src/lib/alert";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { IncomingMissionModal } from "../../src/screens";
 import { getDrivingRoute, type AIS125VehicleType, type UrgencyTier } from "@sahayak/domain";

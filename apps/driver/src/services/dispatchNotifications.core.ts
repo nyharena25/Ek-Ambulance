@@ -12,6 +12,24 @@ export interface OfferNotificationData {
   pickupLng?: string;
 }
 
+export type NativeLoad<T> = { status: "ready"; module: T } | { status: "unavailable"; reason: string };
+
+/**
+ * Loads an optional native module, never throwing: Expo Go has no expo-notifications native side, and a dev build
+ * compiled before a dependency was added (e.g. ExpoApplication, which expo-notifications needs since SDK 58) throws
+ * "Cannot find native module" at require time. Callers cache the result so a failed load is not retried.
+ */
+export function loadOptionalNative<T>(inExpoGo: boolean, load: () => T): NativeLoad<T> {
+  if (inExpoGo) return { status: "unavailable", reason: "Expo Go" };
+  try {
+    const module = load();
+    if (!module) return { status: "unavailable", reason: "module resolved empty" };
+    return { status: "ready", module };
+  } catch (e) {
+    return { status: "unavailable", reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export const ACTION_ACCEPT = "ACCEPT_MISSION";
 export const ACTION_DECLINE = "DECLINE_MISSION";
 

@@ -1,0 +1,407 @@
+{
+  "experiment": "E2-E5 realtime plane (local docker, AUTH_MODE=dev)",
+  "runAt": "2026-10-28T08:54:34.657Z",
+  "env": {
+    "node": "v24.22.1",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13620H",
+    "cores": 16,
+    "centrifugo": "centrifugo/centrifugo:v5 (redis engine)",
+    "kong": "kong:3.9.3 DB-less"
+  },
+  "idleStats": [
+    {
+      "name": "kong",
+      "cpu": "2.83%",
+      "mem": "1.031GiB / 14.82GiB"
+    },
+    {
+      "name": "centrifugo",
+      "cpu": "0.37%",
+      "mem": "82.34MiB / 14.82GiB"
+    },
+    {
+      "name": "redis",
+      "cpu": "1.22%",
+      "mem": "7.898MiB / 14.82GiB"
+    },
+    {
+      "name": "token-mint",
+      "cpu": "2.41%",
+      "mem": "18.2MiB / 14.82GiB"
+    }
+  ],
+  "e2": [
+    {
+      "payload": "GPS ping",
+      "bytes": 142,
+      "delivered": 1000,
+      "sent": 1000,
+      "endToEnd": {
+        "n": 1000,
+        "minMs": 0.285,
+        "p50Ms": 1.195,
+        "p95Ms": 3.275,
+        "p99Ms": 4.332,
+        "maxMs": 8.214,
+        "meanMs": 1.452,
+        "sdMs": 0.884
+      },
+      "publishApiRtt": {
+        "n": 1000,
+        "minMs": 0.263,
+        "p50Ms": 0.905,
+        "p95Ms": 2.291,
+        "p99Ms": 3.44,
+        "maxMs": 6.455,
+        "meanMs": 1.03,
+        "sdMs": 0.648
+      }
+    },
+    {
+      "payload": "lifecycle event",
+      "bytes": 578,
+      "delivered": 1000,
+      "sent": 1000,
+      "endToEnd": {
+        "n": 1000,
+        "minMs": 0.262,
+        "p50Ms": 1.173,
+        "p95Ms": 1.87,
+        "p99Ms": 2.035,
+        "maxMs": 5.803,
+        "meanMs": 1.221,
+        "sdMs": 0.48
+      },
+      "publishApiRtt": {
+        "n": 1000,
+        "minMs": 0.223,
+        "p50Ms": 0.844,
+        "p95Ms": 1.273,
+        "p99Ms": 1.62,
+        "maxMs": 6.558,
+        "meanMs": 0.857,
+        "sdMs": 0.379
+      }
+    },
+    {
+      "payload": "4 KiB payload",
+      "bytes": 4112,
+      "delivered": 1000,
+      "sent": 1000,
+      "endToEnd": {
+        "n": 1000,
+        "minMs": 0.271,
+        "p50Ms": 1.364,
+        "p95Ms": 2.611,
+        "p99Ms": 3.37,
+        "maxMs": 6.755,
+        "meanMs": 1.46,
+        "sdMs": 0.671
+      },
+      "publishApiRtt": {
+        "n": 1000,
+        "minMs": 0.245,
+        "p50Ms": 0.986,
+        "p95Ms": 1.923,
+        "p99Ms": 2.442,
+        "maxMs": 7.494,
+        "meanMs": 1.056,
+        "sdMs": 0.536
+      }
+    },
+    {
+      "payload": "16 KiB payload",
+      "bytes": 16400,
+      "delivered": 1000,
+      "sent": 1000,
+      "endToEnd": {
+        "n": 1000,
+        "minMs": 0.422,
+        "p50Ms": 1.919,
+        "p95Ms": 4.233,
+        "p99Ms": 4.949,
+        "maxMs": 10.724,
+        "meanMs": 2.102,
+        "sdMs": 1.062
+      },
+      "publishApiRtt": {
+        "n": 1000,
+        "minMs": 0.361,
+        "p50Ms": 1.408,
+        "p95Ms": 3.026,
+        "p99Ms": 3.633,
+        "maxMs": 11.148,
+        "meanMs": 1.545,
+        "sdMs": 0.794
+      }
+    }
+  ],
+  "e3": [
+    {
+      "subscribers": 1,
+      "publications": 200,
+      "deliveries": 200,
+      "expected": 200,
+      "perDelivery": {
+        "n": 200,
+        "minMs": 0.463,
+        "p50Ms": 1.793,
+        "p95Ms": 2.509,
+        "p99Ms": 3.327,
+        "maxMs": 3.569,
+        "meanMs": 1.825,
+        "sdMs": 0.474
+      },
+      "lastSubscriberReceived": {
+        "n": 200,
+        "minMs": 0.463,
+        "p50Ms": 1.793,
+        "p95Ms": 2.509,
+        "p99Ms": 3.327,
+        "maxMs": 3.569,
+        "meanMs": 1.825,
+        "sdMs": 0.474
+      }
+    },
+    {
+      "subscribers": 10,
+      "publications": 200,
+      "deliveries": 2000,
+      "expected": 2000,
+      "perDelivery": {
+        "n": 2000,
+        "minMs": 0.447,
+        "p50Ms": 1.718,
+        "p95Ms": 2.617,
+        "p99Ms": 4.69,
+        "maxMs": 8.586,
+        "meanMs": 1.682,
+        "sdMs": 0.8
+      },
+      "lastSubscriberReceived": {
+        "n": 200,
+        "minMs": 0.551,
+        "p50Ms": 1.849,
+        "p95Ms": 2.788,
+        "p99Ms": 5.082,
+        "maxMs": 8.586,
+        "meanMs": 1.823,
+        "sdMs": 0.844
+      }
+    },
+    {
+      "subscribers": 50,
+      "publications": 200,
+      "deliveries": 10000,
+      "expected": 10000,
+      "perDelivery": {
+        "n": 10000,
+        "minMs": 0.629,
+        "p50Ms": 2.121,
+        "p95Ms": 3.375,
+        "p99Ms": 4.104,
+        "maxMs": 6.569,
+        "meanMs": 2.197,
+        "sdMs": 0.681
+      },
+      "lastSubscriberReceived": {
+        "n": 200,
+        "minMs": 1.171,
+        "p50Ms": 2.664,
+        "p95Ms": 3.961,
+        "p99Ms": 4.875,
+        "maxMs": 6.569,
+        "meanMs": 2.757,
+        "sdMs": 0.698
+      }
+    },
+    {
+      "subscribers": 100,
+      "publications": 200,
+      "deliveries": 20000,
+      "expected": 20000,
+      "perDelivery": {
+        "n": 20000,
+        "minMs": 1.081,
+        "p50Ms": 3.041,
+        "p95Ms": 5.269,
+        "p99Ms": 8.015,
+        "maxMs": 10.2,
+        "meanMs": 3.214,
+        "sdMs": 1.203
+      },
+      "lastSubscriberReceived": {
+        "n": 200,
+        "minMs": 2.831,
+        "p50Ms": 4.154,
+        "p95Ms": 6.684,
+        "p99Ms": 9.317,
+        "maxMs": 10.2,
+        "meanMs": 4.405,
+        "sdMs": 1.157
+      }
+    }
+  ],
+  "e4": [
+    {
+      "concurrency": 1,
+      "publications": 20000,
+      "delivered": 20000,
+      "publishRatePerSec": 1606,
+      "deliveredRatePerSec": 1603,
+      "endToEnd": {
+        "n": 20000,
+        "minMs": 0.146,
+        "p50Ms": 0.778,
+        "p95Ms": 1.62,
+        "p99Ms": 2.083,
+        "maxMs": 14.987,
+        "meanMs": 0.84,
+        "sdMs": 0.541
+      }
+    },
+    {
+      "concurrency": 8,
+      "publications": 20000,
+      "delivered": 20000,
+      "publishRatePerSec": 11670,
+      "deliveredRatePerSec": 11670,
+      "endToEnd": {
+        "n": 20000,
+        "minMs": 0.228,
+        "p50Ms": 0.518,
+        "p95Ms": 0.841,
+        "p99Ms": 2.062,
+        "maxMs": 6.91,
+        "meanMs": 0.585,
+        "sdMs": 0.441
+      }
+    },
+    {
+      "concurrency": 32,
+      "publications": 20000,
+      "delivered": 20000,
+      "publishRatePerSec": 12558,
+      "deliveredRatePerSec": 12558,
+      "endToEnd": {
+        "n": 20000,
+        "minMs": 0.605,
+        "p50Ms": 1.898,
+        "p95Ms": 2.854,
+        "p99Ms": 7.79,
+        "maxMs": 13.869,
+        "meanMs": 2.044,
+        "sdMs": 1.093
+      },
+      "containerStatsDuringRun": [
+        {
+          "name": "kong",
+          "cpu": "1.92%",
+          "mem": "1.033GiB / 14.82GiB"
+        },
+        {
+          "name": "centrifugo",
+          "cpu": "52.49%",
+          "mem": "84.63MiB / 14.82GiB"
+        },
+        {
+          "name": "redis",
+          "cpu": "21.34%",
+          "mem": "10.05MiB / 14.82GiB"
+        },
+        {
+          "name": "token-mint",
+          "cpu": "0.01%",
+          "mem": "16.93MiB / 14.82GiB"
+        }
+      ]
+    },
+    {
+      "concurrency": 64,
+      "publications": 20000,
+      "delivered": 20000,
+      "publishRatePerSec": 12412,
+      "deliveredRatePerSec": 12412,
+      "endToEnd": {
+        "n": 20000,
+        "minMs": 1.003,
+        "p50Ms": 3.829,
+        "p95Ms": 8.423,
+        "p99Ms": 11.501,
+        "maxMs": 33.03,
+        "meanMs": 4.081,
+        "sdMs": 2.137
+      },
+      "containerStatsDuringRun": [
+        {
+          "name": "kong",
+          "cpu": "1.48%",
+          "mem": "1.032GiB / 14.82GiB"
+        },
+        {
+          "name": "centrifugo",
+          "cpu": "105.33%",
+          "mem": "87.8MiB / 14.82GiB"
+        },
+        {
+          "name": "redis",
+          "cpu": "41.79%",
+          "mem": "10.88MiB / 14.82GiB"
+        },
+        {
+          "name": "token-mint",
+          "cpu": "0.00%",
+          "mem": "16.91MiB / 14.82GiB"
+        }
+      ]
+    }
+  ],
+  "e5": {
+    "requests": 140,
+    "ok200": 120,
+    "limited429": 20,
+    "firstLimitedRequestIndex1Based": 121,
+    "okLatency": {
+      "n": 120,
+      "minMs": 0.577,
+      "p50Ms": 1.132,
+      "p95Ms": 1.921,
+      "p99Ms": 2.726,
+      "maxMs": 4.29,
+      "meanMs": 1.247,
+      "sdMs": 0.454
+    },
+    "limitedLatency": {
+      "n": 20,
+      "minMs": 0.165,
+      "p50Ms": 0.303,
+      "p95Ms": 0.767,
+      "p99Ms": 0.767,
+      "maxMs": 0.767,
+      "meanMs": 0.362,
+      "sdMs": 0.175
+    }
+  },
+  "finalStats": [
+    {
+      "name": "kong",
+      "cpu": "1.16%",
+      "mem": "1.034GiB / 14.82GiB"
+    },
+    {
+      "name": "centrifugo",
+      "cpu": "0.11%",
+      "mem": "85.39MiB / 14.82GiB"
+    },
+    {
+      "name": "redis",
+      "cpu": "0.47%",
+      "mem": "7.668MiB / 14.82GiB"
+    },
+    {
+      "name": "token-mint",
+      "cpu": "3.57%",
+      "mem": "16.93MiB / 14.82GiB"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import {
   StatusBar,
   Modal,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
@@ -67,7 +68,7 @@ export default function DriverStandbyScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP NAVBAR & PILOT PROFILE */}
       <View style={styles.header}>
@@ -224,11 +225,27 @@ export default function DriverStandbyScreen({
             <View style={styles.noticeRow}>
               <Text style={[styles.shiftSubNotice, styles.shiftSubNoticeOffline, styles.noticeText]} accessibilityRole="alert">
                 {presenceErrorCode === "no_gps_fix"
-                  ? (language === "hi" ? "स्थान की पुष्टि होने की प्रतीक्षा करें, फिर पुनः प्रयास करें।" : "Waiting for a GPS fix - try again in a moment.")
-                  : language === "hi"
-                    ? strings.presenceRefused
-                    : driverErrorMessage(presenceErrorCode)}
+                  ? strings.gpsNoFix
+                  : presenceErrorCode === "location_permission_denied"
+                    ? strings.gpsPermissionDenied
+                    : presenceErrorCode === "location_services_off"
+                      ? strings.gpsServicesOff
+                      : language === "hi"
+                        ? strings.presenceRefused
+                        : driverErrorMessage(presenceErrorCode)}
               </Text>
+              {presenceErrorCode === "location_permission_denied" && (
+                <Pressable
+                  style={styles.noticeAction}
+                  onPress={() => void Linking.openSettings()}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={strings.openSettings}
+                >
+                  <AppIcon icon={{ set: "ion", name: "settings-outline" }} size={14} color={colors.slate700} />
+                  <Text style={styles.noticeActionText}>{strings.openSettings}</Text>
+                </Pressable>
+              )}
               <Pressable
                 style={styles.noticeAction}
                 onPress={clearPresenceError}
@@ -259,7 +276,7 @@ export default function DriverStandbyScreen({
               <View style={styles.toggleLoadingRow}>
                 <ActivityIndicator
                   size="small"
-                  color={isOnline ? colors.emergency : colors.white}
+                  color={isOnline ? colors.slate700 : colors.white}
                 />
                 <Text
                   style={[
@@ -703,10 +720,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  // On shift, "Go offline" is the secondary action: neutral outline, so the red never competes with the emergencies below.
   mainToggleOnline: {
-    backgroundColor: colors.emergencyLight,
-    borderWidth: 2,
-    borderColor: colors.emergencyBorder,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.slate300,
   },
   mainToggleOffline: {
     backgroundColor: colors.emergency,
@@ -734,9 +752,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   togglePulseCircleOnline: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.slate100,
     borderWidth: 1,
-    borderColor: colors.emergencyBorder,
+    borderColor: colors.slate300,
   },
   togglePulseCircleOffline: {
     backgroundColor: colors.emergencyDark,
@@ -753,7 +771,7 @@ const styles = StyleSheet.create({
     lineHeight: typography.lineHeights.base,
   },
   toggleBtnTitleOnline: {
-    color: colors.emergencyDark,
+    color: colors.slate800,
   },
   toggleBtnTitleOffline: {
     color: colors.white,

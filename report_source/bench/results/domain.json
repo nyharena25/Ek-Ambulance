@@ -1,0 +1,129 @@
+{
+  "experiment": "E1 domain microbenchmarks",
+  "runAt": "2026-10-28T08:52:34.702Z",
+  "env": {
+    "node": "v24.22.1",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13620H",
+    "cores": 16,
+    "platform": "linux 7.0.0-38-generic"
+  },
+  "results": [
+    {
+      "name": "computeTriageUrgency (severe_trauma, START red)",
+      "medianNs": 130.8,
+      "p95Ns": 193.8,
+      "p99Ns": 256.1,
+      "meanNs": 150.3,
+      "opsPerSec": 7647365,
+      "calls": 200000
+    },
+    {
+      "name": "computeItemizedStatutoryFare (TYPE_D_ALS, 12.7 km)",
+      "medianNs": 529.8,
+      "p95Ns": 590.6,
+      "p99Ns": 722.4,
+      "meanNs": 539.8,
+      "opsPerSec": 1887391,
+      "calls": 200000
+    },
+    {
+      "name": "haversineKm",
+      "medianNs": 3.5,
+      "p95Ns": 21.5,
+      "p99Ns": 63.9,
+      "meanNs": 5.9,
+      "opsPerSec": 287604257,
+      "calls": 200000
+    },
+    {
+      "name": "parseDispatchOffer (full offer)",
+      "medianNs": 213.4,
+      "p95Ns": 271.7,
+      "p99Ns": 331,
+      "meanNs": 230.1,
+      "opsPerSec": 4685004,
+      "calls": 200000
+    },
+    {
+      "name": "parseLifecycleMessage (v1 envelope)",
+      "medianNs": 16.7,
+      "p95Ns": 58.6,
+      "p99Ns": 91.8,
+      "meanNs": 23.2,
+      "opsPerSec": 59705057,
+      "calls": 200000
+    },
+    {
+      "name": "decideSeq",
+      "medianNs": 3,
+      "p95Ns": 3.2,
+      "p99Ns": 11.4,
+      "meanNs": 3.2,
+      "opsPerSec": 338294993,
+      "calls": 200000
+    },
+    {
+      "name": "boardBand",
+      "medianNs": 3,
+      "p95Ns": 3.2,
+      "p99Ns": 9.2,
+      "meanNs": 3.2,
+      "opsPerSec": 338753388,
+      "calls": 200000
+    },
+    {
+      "name": "reduceRealtime + realtimeHealth",
+      "medianNs": 18.8,
+      "p95Ns": 68.4,
+      "p99Ns": 93.5,
+      "meanNs": 25.5,
+      "opsPerSec": 53316272,
+      "calls": 200000
+    },
+    {
+      "name": "patient lifecycle: 6 transitions (idle -> receiptConfirmed)",
+      "medianNs": 25425.2,
+      "p95Ns": 49926.8,
+      "p99Ns": 98441.2,
+      "meanNs": 29119.8,
+      "opsPerSec": 39331,
+      "calls": 5000
+    }
+  ],
+  "scaling": [
+    {
+      "n": 10,
+      "medianUs": 6.24,
+      "p95Us": 6.44,
+      "nsPerNLogN": 187.81
+    },
+    {
+      "n": 100,
+      "medianUs": 183.47,
+      "p95Us": 185.5,
+      "nsPerNLogN": 276.15
+    },
+    {
+      "n": 1000,
+      "medianUs": 2967.42,
+      "p95Us": 3040.63,
+      "nsPerNLogN": 297.76
+    },
+    {
+      "n": 10000,
+      "medianUs": 40916.36,
+      "p95Us": 41200.6,
+      "nsPerNLogN": 307.93
+    },
+    {
+      "n": 100000,
+      "medianUs": 530628.53,
+      "p95Us": 546185.73,
+      "nsPerNLogN": 319.47
+    }
+  ],
+  "memory": {
+    "rssMiB": 215.2,
+    "heapUsedMiB": 38.7
+  }
+}

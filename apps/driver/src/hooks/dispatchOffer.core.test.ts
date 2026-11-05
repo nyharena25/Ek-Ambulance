@@ -2,9 +2,20 @@ import assert from "node:assert";
 import {
   OFFER_WINDOW_SECONDS,
   tickOfferCountdown,
+  runOfferCountdown,
   isSwipeAcceptanceComplete,
   isVehicleTierEligible,
 } from "./dispatchOffer.core.ts";
+
+/** Fake interval: `tick()` runs the registered callback; `cleared` records clearInterval. */
+function fakeTimer() {
+  const t = { fn: null as null | (() => void), cleared: false, tick: () => t.fn?.() };
+  return {
+    t,
+    setInterval: (fn: () => void) => { t.fn = fn; return 1; },
+    clearInterval: () => { t.cleared = true; t.fn = null; },
+  };
+}
 
 console.log("=================================================");
 console.log("Running Ek-Ambulance Driver Dispatch Offer Core Tests");
@@ -49,6 +60,48 @@ assert.strictEqual(
   "A Type A first-responder is not a substitute for a Type B transport ambulance, even though both collapse to CareLevel PTA"
 );
 console.log("✓ Only an exact AIS-125 tier match is eligible; mismatches are rejected.\n");
+
+console.log("Test: runOfferCountdown ticks down and expires exactly once...");
+{
+  const timer = fakeTimer();
+  const ticks: number[] = [];
+  let expired = 0;
+  runOfferCountdown({ secondsLeft: (f) => f, onTick: (s) => ticks.push(s), onExpire: () => expired++, ...timer });
+  for (let i = 0; i < OFFER_WINDOW_SECONDS + 3; i++) timer.t.tick();
+  assert.strictEqual(ticks[0], OFFER_WINDOW_SECONDS, "starts at the local window without a server expiry");
+  assert.strictEqual(ticks[ticks.length - 1], 0);
+  assert.strictEqual(expired, 1, "onExpire fires once");
+  assert.strictEqual(timer.t.cleared, true, "the interval is cleared on expiry");
+}
+console.log("✓ countdown\n");
+
+console.log("Test: an offer already expired on arrival times out at once (was stuck on 0 forever)...");
+{
+  const timer = fakeTimer();
+  let expired = 0;
+  const ticks: number[] = [];
+  runOfferCountdown({ secondsLeft: () => 0, onTick: (s) => ticks.push(s), onExpire: () => expired++, ...timer });
+  assert.deepStrictEqual(ticks, [0]);
+  assert.strictEqual(expired, 1, "expires immediately");
+  assert.strictEqual(timer.t.fn, null, "no interval is left running");
+}
+console.log("✓ expired on arrival\n");
+
+console.log("Test: the server expiry drives the count; stop() ends it without expiring...");
+{
+  const timer = fakeTimer();
+  let server = 5;
+  let expired = 0;
+  const ticks: number[] = [];
+  const stop = runOfferCountdown({ secondsLeft: () => server, onTick: (s) => ticks.push(s), onExpire: () => expired++, ...timer });
+  server = 2; // JS thread was suspended: the server clock jumped ahead
+  timer.t.tick();
+  stop();
+  timer.t.tick();
+  assert.deepStrictEqual(ticks, [5, 2]);
+  assert.strictEqual(expired, 0, "stopping (accept, unmount) never times the offer out");
+}
+console.log("✓ server expiry + stop\n");
 
 console.log("=================================================");
 console.log("ALL DRIVER DISPATCH OFFER CORE TESTS PASSED (100% GREEN)");

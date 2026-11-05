@@ -151,6 +151,9 @@ export default function HomeScreen() {
               <Text style={styles.hint}>{strings.locationConfirmLater}</Text>
             </View>
 
+            {/* Pushes the request button and 108 to the bottom of the screen, where a thumb reaches them one-handed. */}
+            <View style={styles.thumbZoneSpacer} />
+
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={strings.requestButtonLabel}
@@ -211,7 +214,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.slate300,
   },
-  content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing["3xl"] },
+  content: { flexGrow: 1, padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xl },
+  thumbZoneSpacer: { flexGrow: 1 },
   card: {
     backgroundColor: colors.white,
     borderRadius: radii.lg,

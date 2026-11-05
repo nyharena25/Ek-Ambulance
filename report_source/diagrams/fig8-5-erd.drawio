@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="fig85" name="Fig 8.5 ERD">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="consent" value="&lt;b&gt;consent_records&lt;/b&gt;&lt;hr&gt;id PK&lt;br&gt;user_id FK → profiles&lt;br&gt;purpose · granted · notice_version" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="profiles" value="&lt;b&gt;profiles&lt;/b&gt;&lt;hr&gt;id PK (= auth user)&lt;br&gt;role · full_name · phone&lt;br&gt;preferred_language" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;fillColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="20" y="200" width="220" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="erasure" value="&lt;b&gt;erasure_requests&lt;/b&gt;&lt;hr&gt;id PK&lt;br&gt;user_id FK → profiles&lt;br&gt;status · due_at · scope" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="20" y="390" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="missions" value="&lt;b&gt;missions&lt;/b&gt;&lt;hr&gt;id PK&lt;br&gt;patient_id FK → profiles&lt;br&gt;driver_id FK → drivers&lt;br&gt;destination_hospital_id FK&lt;br&gt;status · urgency · vehicle_type&lt;br&gt;jurisdiction · pickup_location&lt;br&gt;fare_details (surge = 1.0)&lt;br&gt;state_version · idempotency_key&lt;br&gt;dispatch_round · search_started_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;fillColor=#FEF9C3;" vertex="1" parent="1">
+          <mxGeometry x="310" y="160" width="250" height="210" as="geometry"/>
+        </mxCell>
+        <mxCell id="juris" value="&lt;b&gt;jurisdictions&lt;/b&gt;&lt;hr&gt;zone PK (DL | UP)&lt;br&gt;boundary · statutory_order_ref" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="310" y="430" width="250" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="events" value="&lt;b&gt;mission_events&lt;/b&gt; (append-only)&lt;hr&gt;id PK&lt;br&gt;mission_id FK · seq&lt;br&gt;event_type · from/to_status&lt;br&gt;metadata · client_event_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="630" y="20" width="230" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="waves" value="&lt;b&gt;dispatch_waves&lt;/b&gt;&lt;hr&gt;id PK (= offer id)&lt;br&gt;mission_id FK · round · wave_number&lt;br&gt;eligible / declined_driver_ids&lt;br&gt;status · expires_at · accepted_by" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="630" y="160" width="230" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="telemetry" value="&lt;b&gt;telemetry_logs&lt;/b&gt;&lt;hr&gt;id PK&lt;br&gt;mission_id FK · driver_id&lt;br&gt;location · accuracy_m · recorded_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="630" y="300" width="230" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="hospitals" value="&lt;b&gt;hospitals&lt;/b&gt;&lt;hr&gt;id PK&lt;br&gt;location · zone&lt;br&gt;total / held_capacity" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="630" y="420" width="230" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="vehicles" value="&lt;b&gt;driver_vehicles&lt;/b&gt;&lt;hr&gt;id PK · driver_id FK&lt;br&gt;registration_number (unique, normalised)&lt;br&gt;make_model · color · crew_count" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="20" width="240" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="drivers" value="&lt;b&gt;drivers&lt;/b&gt;&lt;hr&gt;id PK FK → profiles&lt;br&gt;ais125_type · is_verified · kyc_status&lt;br&gt;is_online · current_location&lt;br&gt;last_seen_at · location_fixed_at&lt;br&gt;service_zone" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;fillColor=#F1F5F9;" vertex="1" parent="1">
+          <mxGeometry x="930" y="160" width="240" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="documents" value="&lt;b&gt;driver_documents&lt;/b&gt;&lt;hr&gt;id PK · driver_id FK&lt;br&gt;slot · storage_path · status" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="320" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="push" value="&lt;b&gt;driver_push_tokens&lt;/b&gt;&lt;hr&gt;id PK · driver_id FK&lt;br&gt;token · platform" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="930" y="430" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="profiles" target="consent">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="profiles" target="erasure">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3" value="patient 1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="profiles" target="missions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4" value="1 : N (seq)" style="endArrow=ERoneToMany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="missions" target="events">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="missions" target="waves">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r6" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="missions" target="telemetry">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r7" value="destination 0..1 : N" style="endArrow=ERmany;startArrow=ERzeroToOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="hospitals" target="missions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r8" value="zone 1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="juris" target="missions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r9" value="serves 0..1 : N (≤ 1 active)" style="endArrow=ERmany;startArrow=ERzeroToOne;html=1;endFill=0;startFill=0;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="drivers" target="missions">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="900" y="280"/>
+              <mxPoint x="590" y="280"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="r10" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="drivers" target="vehicles">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r11" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;" edge="1" parent="1" source="drivers" target="documents">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="r12" value="1 : N" style="endArrow=ERmany;startArrow=ERmandOne;html=1;endFill=0;startFill=0;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="drivers" target="push">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1190" y="225"/>
+              <mxPoint x="1190" y="470"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="r13" value="1 : 0..1" style="endArrow=ERzeroToOne;startArrow=ERmandOne;html=1;endFill=0;startFill=0;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="profiles" target="drivers">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="130" y="150"/>
+              <mxPoint x="1050" y="150"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

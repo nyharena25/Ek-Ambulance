@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import type { PatientLifecycleState } from "@sahayak/domain";
-import { loadPersistedMission, resumeRoute, savePersistedMission, signOutPatient, type KeyValueStorage } from "./missionSession.core.ts";
+import { loadPersistedMission, resumeRoute, savePersistedMission, shortMissionRef, signOutPatient, type KeyValueStorage } from "./missionSession.core.ts";
 
 // Sign-out and active-mission restoration (the pure parts of patientAuth.store.signOut and useResumeActiveMission).
 
@@ -46,5 +46,9 @@ assert.deepStrictEqual(failed.persisted, MISSION);
 // Active mission + session restoration: the mission found on launch/sign-in reopens the right screen.
 assert.strictEqual(resumeRoute("requesting"), "/booking/matching", "still searching -> matching");
 for (const s of ["en_route", "on_scene", "transporting", "arrived_hospital"]) assert.strictEqual(resumeRoute(s), "/booking/[id]", `${s} -> tracking`);
+
+// Header reference: short enough for a phone header, a prefix of the real id.
+assert.strictEqual(shortMissionRef("8ad937f1-7329-400c-9ca7-f9bdaad912b3"), "#8AD937F1", "uuid -> # + first 8 hex, upper-cased");
+assert.strictEqual(shortMissionRef("not-a-uuid"), "not-a-uuid", "non-uuid passes through unchanged");
 
 console.log("PATIENT SESSION (SIGN-OUT / RESUME) TESTS PASSED");

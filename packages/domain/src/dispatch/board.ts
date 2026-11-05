@@ -76,9 +76,15 @@ export interface BoardEmergency {
   patientSummary?: { primaryComplaint?: string; derivedFlags?: string[]; ageBand?: string; sex?: string };
 }
 
-/** Oldest first (the one waiting longest is on top); ties break on id so the order is stable between refreshes. */
+/**
+ * Oldest first (the one waiting longest is on top); ties break on id so the order is stable between refreshes.
+ * Each createdAt is parsed once, not twice per comparison: parsing inside the comparator cost ~300 ns x n log n.
+ */
 export function sortOldestFirst<T extends { createdAt: string; missionId: string }>(items: readonly T[]): T[] {
-  return [...items].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.missionId.localeCompare(b.missionId));
+  return items
+    .map((item) => ({ item, at: Date.parse(item.createdAt) }))
+    .sort((a, b) => a.at - b.at || a.item.missionId.localeCompare(b.item.missionId))
+    .map((e) => e.item);
 }
 
 export interface BoardPage<T> {

@@ -75,6 +75,13 @@ export async function signOutPatient(deps: {
   return { ok: true };
 }
 
+/** Short reference for a mission header: "#" + the UUID's first 8 hex digits, upper-cased. The full 36-character id
+ *  overflows a phone header; this prefix still finds the mission in support tools. Anything that is not a UUID is
+ *  returned as it is. */
+export function shortMissionRef(missionId: string): string {
+  return isUuid(missionId) ? `#${missionId.slice(0, 8).toUpperCase()}` : missionId;
+}
+
 /** Screen that resumes a non-terminal mission found on launch / sign-in: still searching, or a driver is assigned. */
 export function resumeRoute(status: string): "/booking/matching" | "/booking/[id]" {
   return status === "requesting" ? "/booking/matching" : "/booking/[id]";

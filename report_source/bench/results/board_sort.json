@@ -1,0 +1,50 @@
+{
+  "experiment": "E1b board sort fix, paired legacy vs current",
+  "runAt": "2026-10-28T12:21:33.224Z",
+  "env": {
+    "node": "v24.22.1",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13620H",
+    "cores": 16
+  },
+  "power": {
+    "acOnline": "0",
+    "platformProfile": null
+  },
+  "rows": [
+    {
+      "n": 10,
+      "sameOrder": true,
+      "legacyMedianUs": 10.98,
+      "currentMedianUs": 3.92,
+      "speedup": 2.8
+    },
+    {
+      "n": 100,
+      "sameOrder": true,
+      "legacyMedianUs": 315.13,
+      "currentMedianUs": 38.95,
+      "speedup": 8.1
+    },
+    {
+      "n": 1000,
+      "sameOrder": true,
+      "legacyMedianUs": 5120.35,
+      "currentMedianUs": 449.27,
+      "speedup": 11.4
+    },
+    {
+      "n": 10000,
+      "sameOrder": true,
+      "legacyMedianUs": 70401.66,
+      "currentMedianUs": 5111.09,
+      "speedup": 13.8
+    },
+    {
+      "n": 100000,
+      "sameOrder": true,
+      "legacyMedianUs": 922320.95,
+      "currentMedianUs": 63663.17,
+      "speedup": 14.5
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import type { SupportedLanguage } from "../i18n/driverOnboardingStrings.ts";
 import { useDriverLifecycleStore, getServerAdapter } from "./driverLifecycle.store.ts";
 import { isProfileLocked } from "./driverAvailability.core.ts";
 import { IS_TEST_RUNNER } from "../config/env.ts";
+import type { LocationIssue } from "../services/backgroundLocation.core.ts";
 
 // Synthetic demo identity for the NODE TEST RUNNER ONLY (never a phone, dev build included). With a verified session the real user id is used and the server
 // (set_driver_presence -> `not_verified`) is the verification gate. The existing tests keep their seeded state (IS_TEST_RUNNER).
@@ -43,8 +44,12 @@ export interface DriverStandbyStoreState {
    *  build can hold a real session against a real project. Without a session the preset only drives the UI. */
   hasRealFix: boolean;
   /** The server's actual refusal reason for the last go-online attempt (e.g. "not_verified"), or a local
-   *  "no_gps_fix" when refused before ever reaching the server. Cleared on the next attempt. */
+   *  "no_gps_fix" / LocationIssue when refused before ever reaching the server. Cleared on the next attempt. */
   presenceErrorCode: string | null;
+  /** Set by useDriverLocation when permission or location services block the watcher; cleared by the next real fix. */
+  locationIssue: LocationIssue | null;
+  /** Bumped by a go-online attempt refused for lack of a fix: useDriverLocation restarts the watcher on it. */
+  locationRetryNonce: number;
 
   // Actions
   toggleOnlineState: () => Promise<void>;
@@ -54,6 +59,7 @@ export interface DriverStandbyStoreState {
   /** The driver closed the refusal notice: UI only, the presence state is unchanged. */
   clearPresenceError: () => void;
   setGps: (gps: GpsCoordinates) => void;
+  setLocationIssue: (issue: LocationIssue | null) => void;
   setAis125Type: (type: AIS125VehicleType) => void;
   toggleLanguage: () => void;
   setLanguage: (lang: SupportedLanguage) => void;
@@ -110,6 +116,8 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
   isOfflineModalOpen: false,
   hasRealFix: false,
   presenceErrorCode: null,
+  locationIssue: null,
+  locationRetryNonce: 0,
 
   toggleOnlineState: async () => {
     const { isOnline } = get();
@@ -127,8 +135,14 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
       if (server) {
         // A real session must never send the NOIDA_COORDS placeholder as if it were the driver's actual
         // position - refused client-side before it ever reaches set_driver_presence.
+        // The tap doubles as a retry: the watcher may have given up (permission refused, location off, dialog declined).
         if (!hasRealFix) {
-          set({ isTogglingPresence: false, presenceErrorCode: "no_gps_fix" });
+          const { locationIssue, locationRetryNonce } = get();
+          set({
+            isTogglingPresence: false,
+            presenceErrorCode: locationIssue ?? "no_gps_fix",
+            locationRetryNonce: locationRetryNonce + 1,
+          });
           return;
         }
         // The server decides: an unverified driver, or one whose request cannot be recorded, does NOT become dispatchable.
@@ -161,7 +175,8 @@ export const useDriverStandbyStore = create<DriverStandbyStoreState>((set, get) 
     set({ isOnline: false, isOfflineModalOpen: false });
   },
 
-  setGps: (gps) => set({ gps, hasRealFix: true }),
+  setGps: (gps) => set({ gps, hasRealFix: true, locationIssue: null }),
+  setLocationIssue: (issue) => set({ locationIssue: issue }),
   openOfflineModal: () => set({ isOfflineModalOpen: true }),
   closeOfflineModal: () => set({ isOfflineModalOpen: false }),
   clearPresenceError: () => set({ presenceErrorCode: null }),

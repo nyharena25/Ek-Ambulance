@@ -2,6 +2,7 @@ import assert from "node:assert";
 import type { DriverLifecycleState } from "@sahayak/domain";
 import {
   BACKGROUND_LOCATION_TASK,
+  checkLocationAccess,
   handleLocationFix,
   shouldTrackInBackground,
   shouldWatchLocation,
@@ -84,5 +85,25 @@ assert.strictEqual(shouldWatchLocation(false, false, false), false, "signed out:
 assert.strictEqual(shouldWatchLocation(false, false, true), true);
 assert.strictEqual(shouldWatchLocation(true, true, false), true);
 console.log("✓ watch gate\n");
+
+console.log("Test: location access names the blocker; the enable dialog only on a driver retry...");
+{
+  const access = (granted: boolean, enabled: boolean[], prompts: string[]) => ({
+    requestPermission: async () => ({ granted }),
+    servicesEnabled: async () => enabled.shift() ?? false,
+    promptEnableServices: async () => { prompts.push("dialog"); },
+  });
+  let prompts: string[] = [];
+  assert.strictEqual(await checkLocationAccess(access(false, [true], prompts), true), "location_permission_denied");
+  assert.strictEqual(await checkLocationAccess(access(true, [true], prompts), false), null);
+  assert.strictEqual(await checkLocationAccess(access(true, [false], prompts), false), "location_services_off");
+  assert.deepStrictEqual(prompts, [], "launch/resume never shows the system dialog");
+  assert.strictEqual(await checkLocationAccess(access(true, [false, true], prompts), true), null, "accepted dialog -> ok");
+  assert.deepStrictEqual(prompts, ["dialog"]);
+  prompts = [];
+  const declined = { ...access(true, [false, false], prompts), promptEnableServices: async () => { throw new Error("declined"); } };
+  assert.strictEqual(await checkLocationAccess(declined, true), "location_services_off", "declined dialog is reported, not thrown");
+}
+console.log("✓ access\n");
 
 console.log("BACKGROUND LOCATION TESTS PASSED (100% GREEN)");

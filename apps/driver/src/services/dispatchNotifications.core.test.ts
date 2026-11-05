@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
-import { resolveOfferAction, offerNotificationBody, offerNotificationPayload, ACTION_ACCEPT, ACTION_DECLINE } from "./dispatchNotifications.core.ts";
+import { resolveOfferAction, offerNotificationBody, offerNotificationPayload, loadOptionalNative, ACTION_ACCEPT, ACTION_DECLINE } from "./dispatchNotifications.core.ts";
 
 const now = new Date("2026-09-25T10:00:00.000Z");
 const data = {
@@ -51,4 +51,19 @@ assert.match(src, /lockscreenVisibility: Notifications\.AndroidNotificationVisib
 assert.doesNotMatch(src, /AndroidNotificationVisibility\.PUBLIC/, "never public on the lock screen");
 assert.match(src, /data: offerNotificationPayload\(data\)/, "the scheduled notification uses the reduced payload");
 console.log("✓ notification privacy\n");
+console.log("Test 6: a missing native module degrades to unavailable instead of crashing the root layout...");
+let loads = 0;
+assert.deepStrictEqual(loadOptionalNative(true, () => { loads++; return {}; }), { status: "unavailable", reason: "Expo Go" });
+assert.strictEqual(loads, 0, "Expo Go never requires the module");
+assert.deepStrictEqual(
+  loadOptionalNative(false, () => { throw new Error("Cannot find native module 'ExpoApplication'"); }),
+  { status: "unavailable", reason: "Cannot find native module 'ExpoApplication'" },
+);
+assert.deepStrictEqual(loadOptionalNative(false, () => undefined), { status: "unavailable", reason: "module resolved empty" });
+const mod = { setNotificationHandler() {} };
+assert.deepStrictEqual(loadOptionalNative(false, () => mod), { status: "ready", module: mod });
+assert.match(src, /isRunningInExpoGo\(\)/, "Expo Go is detected the way Expo's own modules detect it");
+assert.doesNotMatch(src, /ExecutionEnvironment\.StoreClient/, "executionEnvironment is not a reliable Expo Go check");
+console.log("✓ optional native load\n");
+
 console.log("DISPATCH NOTIFICATION CORE TESTS PASSED (100% GREEN)");

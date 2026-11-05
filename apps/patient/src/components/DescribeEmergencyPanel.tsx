@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from "react-native";
 import { colors, radii, spacing, typography } from "@sahayak/ui";
 import { extractTriageIndicators, type TriageExtraction } from "../services/openRouterTriage";
 import { recordConsent } from "../lib/missionApi";
@@ -47,7 +47,7 @@ export interface DescribeEmergencyPanelProps {
 
 export default function DescribeEmergencyPanel({ language, onExtracted, authToken }: DescribeEmergencyPanelProps) {
   const s = STRINGS[language];
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance | null>(null);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<"filled" | "review" | "failed" | null>(null);
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     minHeight: 72,
     backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.md,
     padding: spacing.sm,
     fontSize: typography.fontSizes.sm,

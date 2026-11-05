@@ -1,0 +1,28 @@
+{
+  "title": "Ek-Ambulance (SAHAYAK-EMS): A Server-Authoritative, Event-Driven Platform for On-Demand Emergency Ambulance Dispatch in Delhi and Uttar Pradesh",
+  "subtitle": "Research Paper and Project Report",
+  "authors": [
+    {
+      "name": "Ny Harena RAVELOMANANTSOA",
+      "affiliation": "Department of Computer Science and Engineering, Sharda School of Engineering and Technology (SSET), Sharda University, Greater Noida, Uttar Pradesh, India"
+    },
+    {
+      "name": "Yogesh Lekhra",
+      "affiliation": "Department of Computer Science and Engineering, Sharda School of Engineering and Technology (SSET), Sharda University, Greater Noida, Uttar Pradesh, India"
+    }
+  ],
+  "date": "October 2026",
+  "sections": [
+    "01_abstract.md",
+    "02_introduction.md",
+    "03_tech_stack.md",
+    "04_ui_ux.md",
+    "05_architecture.md",
+    "06_algorithms.md",
+    "07_experiments.md",
+    "08_diagrams.md"
+  ],
+  "references": "09_references.md",
+  "output": "report.md",
+  "diagramsDir": "diagrams"
+}

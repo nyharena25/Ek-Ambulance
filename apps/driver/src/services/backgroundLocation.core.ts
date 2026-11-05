@@ -17,6 +17,28 @@ export function shouldWatchLocation(signedIn: boolean, isOnline: boolean, missio
   return signedIn || isOnline || missionActive;
 }
 
+/** Why the foreground watcher cannot produce a fix; shown instead of a bare "waiting for GPS" so the driver can act. */
+export type LocationIssue = "location_permission_denied" | "location_services_off";
+
+export interface LocationAccessApi {
+  requestPermission: () => Promise<{ granted: boolean }>;
+  servicesEnabled: () => Promise<boolean>;
+  /** Android's system "turn on location" dialog; rejects when the driver declines it. */
+  promptEnableServices: () => Promise<unknown>;
+}
+
+/** Permission, then location services. The system dialog is shown only for a driver-initiated retry (a Go online tap),
+ *  never on launch or app resume, so declining it once cannot leave the app nagging. */
+export async function checkLocationAccess(api: LocationAccessApi, userInitiated: boolean): Promise<LocationIssue | null> {
+  if (!(await api.requestPermission()).granted) return "location_permission_denied";
+  if (await api.servicesEnabled()) return null;
+  if (userInitiated) {
+    await api.promptEnableServices().catch(() => undefined);
+    if (await api.servicesEnabled()) return null;
+  }
+  return "location_services_off";
+}
+
 export interface BackgroundTrackingApi {
   isRunning: () => Promise<boolean>;
   start: () => Promise<void>;

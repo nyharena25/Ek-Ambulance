@@ -25,6 +25,7 @@ import {
 } from "../i18n/categoryStrings";
 
 import { AppIcon } from "../components";
+import { isVehicleEligible as isEligibleForCareLevel } from "../lib/vehicleEligibility.core";
 export interface AmbulanceCategoryScreenProps {
   triageCareLevel?: CareLevel; // e.g. "ALS" | "BLS" | "PTA"
   urgencyTier?: UrgencyTier;   // e.g. "CAT_1_IMMEDIATE" | "CAT_2_URGENT" | "CAT_3_DELAYED"
@@ -50,21 +51,8 @@ export default function AmbulanceCategoryScreen({
   const [language, setLanguage] = useState<SupportedLanguage>(initialLanguage);
   const strings = categoryStrings[language];
 
-  // Helper to determine clinical eligibility based on triage
-  const isVehicleEligible = (type: AIS125VehicleType): boolean => {
-    switch (triageCareLevel) {
-      case "ALS":
-        // Patient requires Advanced Life Support; only Type D is clinically safe
-        return type === "TYPE_D_ALS";
-      case "BLS":
-        // Patient requires BLS; Type C and upgraded Type D are safe
-        return type === "TYPE_C_BLS" || type === "TYPE_D_ALS";
-      case "PTA":
-      default:
-        // Patient transport; Type B, C, and D are eligible (Type A lacks stretcher)
-        return type !== "TYPE_A_MFR";
-    }
-  };
+  // Clinical eligibility based on triage (shared with the booking routes, which skip this screen for ALS)
+  const isVehicleEligible = (type: AIS125VehicleType): boolean => isEligibleForCareLevel(triageCareLevel, type);
 
   // Determine initial valid vehicle selection
   const defaultSelection: AIS125VehicleType = useMemo(() => {
@@ -125,7 +113,7 @@ export default function AmbulanceCategoryScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER: Navigation & Persistent Bilingual Toggle */}
       <View style={styles.header}>

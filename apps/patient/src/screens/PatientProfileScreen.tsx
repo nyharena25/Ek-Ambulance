@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert } from "../lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radii, spacing, typography } from "@sahayak/ui";
 import { AppIcon } from "../components";
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
   row: { gap: 2, paddingVertical: spacing.xs },
   label: { fontSize: typography.fontSizes.sm, color: colors.slate600 },
   value: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.semibold, color: colors.slate900 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.slate300, borderRadius: radii.md, paddingHorizontal: spacing.md, fontSize: typography.fontSizes.base, color: colors.slate900, backgroundColor: colors.white },
+  input: { minHeight: 48, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: radii.md, paddingHorizontal: spacing.md, fontSize: typography.fontSizes.base, color: colors.slate900, backgroundColor: colors.white },
   hint: { fontSize: typography.fontSizes.sm, color: colors.slate600 },
   ok: { fontSize: typography.fontSizes.sm, color: colors.success, fontWeight: typography.fontWeights.semibold },
   error: { fontSize: typography.fontSizes.sm, color: colors.emergency, fontWeight: typography.fontWeights.semibold },

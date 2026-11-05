@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Alert } from "react-native";
+import { Alert } from "../lib/alert";
 import { fetchAssignedMission } from "../lib/driverServer";
 import { devLog } from "../services/driverRealtime";
 import { getServerAdapter, serverCallActivity, useDriverLifecycleStore } from "./driverLifecycle.store";

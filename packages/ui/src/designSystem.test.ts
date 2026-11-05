@@ -168,6 +168,47 @@ assert.ok(
 
 console.log(`✓ Touch targets calibrated: Minimum = ${touchTargets.minTargetSize}dp, Emergency Action = ${touchTargets.emergencyActionSize}dp.\n`);
 
+// ============================================================================
+// 6. Text Contrast (WCAG 2.x relative luminance)
+// ============================================================================
+console.log("Test 6: Validating text contrast: textAccessible on its surface >= 7:1 (AAA), text on white >= 4.5:1 (AA)...");
+
+const channel = (hex: string, at: number): number => {
+  const v = parseInt(hex.slice(at, at + 2), 16) / 255;
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (hex: string): number => 0.2126 * channel(hex, 1) + 0.7152 * channel(hex, 3) + 0.0722 * channel(hex, 5);
+const contrast = (fg: string, bg: string): number => {
+  const a = luminance(fg);
+  const b = luminance(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+};
+
+assert.ok(Math.abs(contrast("#000000", "#FFFFFF") - 21) < 1e-9, "contrast formula: black on white is 21:1");
+for (const tier of ["red", "yellow", "green"] as const) {
+  const t = semanticColors.triage[tier];
+  assert.ok(contrast(t.textAccessible, t.surface) >= 7, `triage.${tier}.textAccessible must be AAA on its surface`);
+  assert.ok(contrast(t.textOnWhite, "#FFFFFF") >= 4.5, `triage.${tier}.textOnWhite must be AA on white`);
+}
+for (const [name, hex] of [
+  ["emergency.dark", semanticColors.emergency.dark],
+  ["status.verified", semanticColors.status.verified],
+  ["status.statutory", semanticColors.status.statutory],
+  ["status.caution", semanticColors.status.caution],
+] as const) {
+  assert.ok(contrast(hex, "#FFFFFF") >= 4.5, `${name} must be AA on white`);
+}
+assert.ok(contrast(semanticColors.clinicalSurface.slate600, "#FFFFFF") >= 7, "slate600 captions must be AAA on white");
+assert.ok(contrast("#FFFFFF", semanticColors.emergency.primary) >= 4.5, "white label on the emergency button must be AA");
+
+// WCAG 1.4.11: the edge of a control with no other visual identity (inputs, OTP cells, checkboxes, switch off tracks).
+for (const surface of [colors.white, colors.slate50]) {
+  assert.ok(contrast(colors.controlBorder, surface) >= 3, `controlBorder must be >= 3:1 on ${surface}`);
+}
+assert.ok(contrast(colors.slate300, colors.white) < 3, "slate300 is decorative only: it must not become controlBorder");
+
+console.log("✓ Every text token meets the WCAG level its comment states; control borders meet 3:1.\n");
+
 console.log("===================================================================");
 console.log("ALL EK-AMBULANCE DESIGN SYSTEM TESTS PASSED (100% GREEN)");
 console.log("===================================================================");

@@ -8,10 +8,11 @@ import {
   ScrollView,
   Linking,
   Share,
-  Alert,
 } from "react-native";
+import { Alert } from "../lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { shortMissionRef } from "../services/missionSession.core";
 import { AIS125VehicleType, type GeoPoint } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { transportingStrings } from "../i18n/transportingStrings";
@@ -154,7 +155,7 @@ export default function TransportingScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER */}
       <View style={styles.topHeader}>
@@ -173,7 +174,7 @@ export default function TransportingScreen({
           <View>
             <Text style={styles.headerTitle}>{strings.screenTitle}</Text>
             <Text style={styles.headerMissionId}>
-              {strings.missionIdLabel(missionId)}
+              {strings.missionIdLabel(shortMissionRef(missionId))}
             </Text>
           </View>
         </View>

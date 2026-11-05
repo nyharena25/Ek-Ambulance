@@ -58,10 +58,17 @@ console.log("Test 7: before a real GPS fix nothing is sent as the driver's posit
   assert.strictEqual(useDriverStandbyStore.getState().presenceErrorCode, "no_gps_fix", "going online with a session and no fix is refused");
   assert.strictEqual(useDriverStandbyStore.getState().isOnline, false);
   assert.strictEqual(presenceCalls.length, 0, "set_driver_presence was never called with the preset");
+  assert.strictEqual(useDriverStandbyStore.getState().locationRetryNonce, initial.locationRetryNonce + 1, "the refused tap asks the watcher to retry");
+
+  useDriverStandbyStore.getState().setLocationIssue("location_permission_denied");
+  await useDriverStandbyStore.getState().toggleOnlineState();
+  assert.strictEqual(useDriverStandbyStore.getState().presenceErrorCode, "location_permission_denied", "the refusal names the real blocker");
+  assert.strictEqual(useDriverStandbyStore.getState().locationRetryNonce, initial.locationRetryNonce + 2, "every refused tap retries");
 
   const fix = { latitude: 28.6012, longitude: 77.2271, accuracyMeters: 9, heading: 0, speedKmh: 0, altitudeMeters: 0, fixedAt: "2026-10-03T08:00:00.000Z" };
   useDriverStandbyStore.getState().setGps(fix);
   assert.deepStrictEqual(heartbeatLocation(useDriverStandbyStore.getState()), fix, "after a fix the heartbeat sends that fix");
+  assert.strictEqual(useDriverStandbyStore.getState().locationIssue, null, "a real fix clears the location issue");
   await useDriverStandbyStore.getState().toggleOnlineState();
   assert.deepStrictEqual(presenceCalls, [[true, fix, fix.fixedAt]], "going online sends the real fix and when it was measured");
   setServerAdapter(null);

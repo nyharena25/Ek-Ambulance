@@ -178,7 +178,7 @@ export const OsmWebMap = forwardRef<OsmWebMapHandle, OsmWebMapProps>(function Os
   { center, zoom = DEFAULT_ZOOM, tileUrlTemplate, markers, route, onMoveEnd, onDragStart, onReady },
   ref
 ) {
-  const webviewRef = useRef<WebView>(null);
+  const webviewRef = useRef<any>(null);
   // Baked in once; see the module comment for why later updates go through postMessage instead.
   const html = useMemo(() => buildHtml(center, zoom, tileUrlTemplate), []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -247,7 +247,7 @@ export const OsmWebMap = forwardRef<OsmWebMapHandle, OsmWebMapProps>(function Os
   };
 
   return (
-    <WebView
+    <WebView<any>
       ref={webviewRef}
       style={StyleSheet.absoluteFill}
       originWhitelist={["*"]}

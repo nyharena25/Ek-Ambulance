@@ -131,7 +131,7 @@ export default function OnSceneCareScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER */}
       <View style={styles.header}>
@@ -178,7 +178,7 @@ export default function OnSceneCareScreen({
             <Switch
               value={isBypassActive}
               onValueChange={setIsBypassActive}
-              trackColor={{ false: colors.slate300, true: colors.emergency }}
+              trackColor={{ false: colors.controlBorder, true: colors.emergency }}
               thumbColor={colors.white}
             />
           </View>
@@ -829,7 +829,7 @@ const styles = StyleSheet.create({
   bpInput: {
     backgroundColor: colors.white,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: Platform.OS === "ios" ? 10 : 6,

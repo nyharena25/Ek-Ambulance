@@ -10,6 +10,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import {
   AIS125VehicleType,
+  type CareLevel,
   ItemizedStatutoryFare,
   type Jurisdiction,
   careLevelFromVehicleType,
@@ -27,6 +28,7 @@ import { createMission } from "../../src/lib/missionApi";
 import { createMissionErrorMessage, newIdempotencyKey } from "../../src/lib/missionApi.core";
 import { authStorage } from "../../src/lib/supabaseClient";
 import { savePersistedMission } from "../../src/services/missionSession.core";
+import { bookingStepCount } from "../../src/lib/vehicleEligibility.core";
 
 import { AppIcon } from "../../src/components";
 import { formatCoordinates, nearestDispatchHub } from "../../src/services/mapGeo.core";
@@ -60,6 +62,8 @@ export default function BookingConfirmScreen() {
 
   // Only the type the patient chose on the previous screen; a link without one cannot book (never a default type).
   const vehicleType: AIS125VehicleType | undefined = (params.vehicleType as AIS125VehicleType | undefined) || undefined;
+  // ALS bookings skip the vehicle step (only Type D is eligible), so they have one step fewer.
+  const stepCount = bookingStepCount((params.careLevel as CareLevel | undefined) ?? "BLS");
 
   // A missing or non-finite lat/lon means this screen was reached without a real pickup location (e.g. a
   // stale deep link past PickupLocationScreen's real geolocation flow). It must never be silently replaced
@@ -174,7 +178,7 @@ export default function BookingConfirmScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP BAR */}
       <View style={styles.topBar}>
@@ -190,7 +194,7 @@ export default function BookingConfirmScreen() {
         <View style={styles.topBarTitleGroup}>
           <Text style={styles.topBarTitle}>{strings.screenTitle}</Text>
           <Text style={styles.topBarTagline}>
-            Step 4 of 4 • Review fare
+            Step {stepCount} of {stepCount} • Review fare
           </Text>
         </View>
       </View>

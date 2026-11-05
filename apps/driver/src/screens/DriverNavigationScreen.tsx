@@ -73,6 +73,40 @@ export default function DriverNavigationScreen({
   // Animated values
   const panX = useRef(new Animated.Value(0)).current;
 
+  // The irreversible confirm, shared by the slide gesture and the screen-reader "activate" action (a deliberate focus +
+  // double-tap), so a TalkBack/VoiceOver user is never locked out of it. Re-assigned every render: the PanResponder below
+  // is created once, and calling through this ref keeps the payload's GPS position live instead of the one at mount.
+  const confirmArrivalRef = useRef(() => {});
+  confirmArrivalRef.current = () => {
+    if (isArrivedOnScene) return;
+    // Latch permanently to the end (Irreversible!)
+    Animated.timing(panX, {
+      toValue: maxDragDistance,
+      duration: 150,
+      useNativeDriver: false,
+    }).start(() => {
+      setIsArrivedOnScene(true);
+
+      const payload: ConfirmArrivalScenePayload = {
+        missionId,
+        driverId: driverId ?? "",
+        // The driver's real, live GPS position (see driverPos above) - this is what the server records
+        // as the on-scene arrival location, never a fixed coordinate unrelated to where the driver is.
+        location: driverPos,
+        arrivedAt: new Date().toISOString(),
+      };
+
+      if (onConfirmArrival) {
+        onConfirmArrival(payload);
+      }
+
+      // Open handoff celebration modal after short delay
+      setTimeout(() => {
+        setIsOnSceneModalOpen(true);
+      }, 500);
+    });
+  };
+
   // PanResponder for Irreversible 'Slide to Confirm Arrival on Scene'
   const panResponder = useRef(
     PanResponder.create({
@@ -91,32 +125,7 @@ export default function DriverNavigationScreen({
         const completionRatio = gestureState.dx / maxDragDistance;
 
         if (completionRatio >= 0.8) {
-          // Latch permanently to the end (Irreversible!)
-          Animated.timing(panX, {
-            toValue: maxDragDistance,
-            duration: 150,
-            useNativeDriver: false,
-          }).start(() => {
-            setIsArrivedOnScene(true);
-
-            const payload: ConfirmArrivalScenePayload = {
-              missionId,
-              driverId: driverId ?? "",
-              // The driver's real, live GPS position (see driverPos above) - this is what the server records
-              // as the on-scene arrival location, never a fixed coordinate unrelated to where the driver is.
-              location: driverPos,
-              arrivedAt: new Date().toISOString(),
-            };
-
-            if (onConfirmArrival) {
-              onConfirmArrival(payload);
-            }
-
-            // Open handoff celebration modal after short delay
-            setTimeout(() => {
-              setIsOnSceneModalOpen(true);
-            }, 500);
-          });
+          confirmArrivalRef.current();
         } else {
           // Snap back to origin if released before 80% (prevents accidental triggers)
           Animated.spring(panX, {
@@ -132,7 +141,7 @@ export default function DriverNavigationScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.slate950} />
+      <StatusBar barStyle="light-content" />
 
       {/* TOP EMERGENCY CORRIDOR HEADER */}
       <View style={styles.topHeader}>
@@ -207,12 +216,20 @@ export default function DriverNavigationScreen({
           {strings.sliderAccidentalTapNotice}
         </Text>
 
-        {/* Horizontal Slider Track */}
+        {/* Horizontal Slider Track (one accessible control: screen readers confirm with the activate action) */}
         <View
           style={[
             styles.sliderTrack,
             isArrivedOnScene && styles.sliderTrackConfirmed,
           ]}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={isArrivedOnScene ? strings.sliderConfirmedArrival : strings.sliderPromptArrival}
+          accessibilityState={{ disabled: isArrivedOnScene }}
+          accessibilityActions={[{ name: "activate" }]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === "activate") confirmArrivalRef.current();
+          }}
         >
           {/* Dynamically expanding green background fill */}
           <Animated.View

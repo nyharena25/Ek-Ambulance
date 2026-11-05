@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { Alert } from "../../src/lib/alert";
 import { useRouter, useLocalSearchParams, Redirect } from "expo-router";
 import {
   DriverNavigationScreen,

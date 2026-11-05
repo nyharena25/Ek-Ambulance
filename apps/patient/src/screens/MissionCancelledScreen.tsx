@@ -6,10 +6,11 @@ import {
   StatusBar,
   Pressable,
   Linking,
-  Alert,
 } from "react-native";
+import { Alert } from "../lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { shortMissionRef } from "../services/missionSession.core";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { cancellationStrings } from "../i18n/cancellationStrings";
 
@@ -63,7 +64,7 @@ export default function MissionCancelledScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.topHeader}>
         <Text style={styles.headerTitle}>{strings.screenTitle}</Text>
@@ -102,7 +103,7 @@ export default function MissionCancelledScreen({
             <AppIcon icon={{ set: "ion", name: "close-circle" }} size={16} color={colors.white} style={styles.cancelledBadgeIcon} />
             <Text style={styles.cancelledBadgeText}>{strings.cancelledBadge}</Text>
           </View>
-          {missionId ? <Text style={styles.missionIdText}>{strings.missionIdLabel(missionId)}</Text> : null}
+          {missionId ? <Text style={styles.missionIdText}>{strings.missionIdLabel(shortMissionRef(missionId))}</Text> : null}
           <Text style={styles.cancelledTitle}>{reason === "no_ambulance_available" ? strings.noAmbulanceTitle : strings.cancelledTitle}</Text>
           <Text style={styles.cancelledDescription}>{strings.cancelledDescriptionFor(cancelledBy, reason)}</Text>
           {reason === "no_ambulance_available" && request && (request.requestedAt || request.pickupAddress || request.ambulanceType) ? (

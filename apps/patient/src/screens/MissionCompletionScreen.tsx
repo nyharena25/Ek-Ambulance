@@ -10,7 +10,8 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { colors, typography, spacing, radii, shadows, touchTargets } from "@sahayak/ui";
+import { shortMissionRef } from "../services/missionSession.core";
 import { ItemizedStatutoryFare } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { completionStrings, distanceRowLabel } from "../i18n/completionStrings";
@@ -151,7 +152,7 @@ export default function MissionCompletionScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER */}
       <View style={styles.topHeader}>
@@ -162,7 +163,7 @@ export default function MissionCompletionScreen({
           <View>
             <Text style={styles.headerTitle}>{strings.screenTitle}</Text>
             <Text style={styles.headerMissionId}>
-              {strings.missionIdLabel(missionId)}
+              {strings.missionIdLabel(shortMissionRef(missionId))}
             </Text>
           </View>
         </View>
@@ -505,7 +506,7 @@ export default function MissionCompletionScreen({
               <Switch
                 value={isDeletionRequested}
                 onValueChange={handleToggleDeletion}
-                trackColor={{ false: colors.slate300, true: colors.emergency }}
+                trackColor={{ false: colors.controlBorder, true: colors.emergency }}
                 thumbColor={colors.white}
                 accessibilityRole="switch"
                 accessibilityLabel={strings.deletionToggleLabel}
@@ -533,22 +534,25 @@ export default function MissionCompletionScreen({
           </Text>
         </View>
 
-        {/* ===================================================================
-            4. PRIMARY ACTION BUTTON
-           =================================================================== */}
-        {onReturnHome && (
+      </ScrollView>
+
+      {/* ===================================================================
+          4. PRIMARY ACTION: pinned to the bottom so it is in thumb reach without scrolling past the privacy panel
+         =================================================================== */}
+      {onReturnHome && (
+        <View style={styles.actionDock}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={strings.returnHomeButton}
-            style={styles.returnHomeButton}
+            style={({ pressed }) => [styles.returnHomeButton, pressed && styles.returnHomeButtonPressed]}
             onPress={onReturnHome}
           >
             <Text style={styles.returnHomeButtonText}>
               {strings.returnHomeButton}
             </Text>
           </Pressable>
-        )}
-      </ScrollView>
+        </View>
+      )}
 
       {/* ===================================================================
           DPDP 2025 RULES PREMATURE DELETION CONFIRMATION MODAL
@@ -1202,17 +1206,26 @@ const styles = StyleSheet.create({
   },
 
   // Return Home Button
+  actionDock: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.slate200,
+  },
   returnHomeButton: {
     backgroundColor: colors.slate900,
     borderRadius: radii.xl,
     paddingVertical: spacing.md,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 52,
+    minHeight: touchTargets.emergencyActionSize,
     ...shadows.sm,
   },
+  returnHomeButtonPressed: { backgroundColor: colors.slate800 },
   returnHomeButtonText: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.bold,
     color: colors.white,
   },

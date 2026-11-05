@@ -1,0 +1,83 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="fig82" name="Fig 8.2 Mission lifecycle">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="init" value="" style="ellipse;fillColor=#000000;strokeColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="90" y="40" width="24" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_req" value="requesting" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#FEF9C3;" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_enr" value="en_route" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#E0F2FE;" vertex="1" parent="1">
+          <mxGeometry x="260" y="160" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_scene" value="on_scene" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#E0F2FE;" vertex="1" parent="1">
+          <mxGeometry x="480" y="160" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_trans" value="transporting" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#E0F2FE;" vertex="1" parent="1">
+          <mxGeometry x="700" y="160" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_arr" value="arrived_hospital" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#E0F2FE;" vertex="1" parent="1">
+          <mxGeometry x="920" y="160" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_done" value="completed" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#DCFCE7;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="160" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_canc" value="cancelled" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#FEE2E2;" vertex="1" parent="1">
+          <mxGeometry x="590" y="400" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="t0" value="create_mission&lt;br&gt;MISSION_REQUESTED (seq 1)" style="endArrow=block;html=1;" edge="1" parent="1" source="init" target="s_req">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="t1" value="DRIVER_ACCEPTED" style="endArrow=block;html=1;" edge="1" parent="1" source="s_req" target="s_enr">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="t2" value="DRIVER_ARRIVED" style="endArrow=block;html=1;" edge="1" parent="1" source="s_enr" target="s_scene">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="t3" value="TRANSPORT_STARTED" style="endArrow=block;html=1;" edge="1" parent="1" source="s_scene" target="s_trans">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="t4" value="HOSPITAL_ARRIVED" style="endArrow=block;html=1;" edge="1" parent="1" source="s_trans" target="s_arr">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="t5" value="MISSION_COMPLETED" style="endArrow=block;html=1;" edge="1" parent="1" source="s_arr" target="s_done">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="t6" value="DRIVER_RELEASED (new round)" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;dashed=1;" edge="1" parent="1" source="s_enr" target="s_req">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="325" y="110"/>
+              <mxPoint x="140" y="110"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="t7" value="DRIVER_RELEASED" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;dashed=1;" edge="1" parent="1" source="s_scene" target="s_req">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="545" y="80"/>
+              <mxPoint x="150" y="80"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c1" value="MISSION_CANCELLED&lt;br&gt;(patient | system)" style="endArrow=block;html=1;" edge="1" parent="1" source="s_req" target="s_canc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c2" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="s_enr" target="s_canc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c3" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="s_scene" target="s_canc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c4" value="driver abort" style="endArrow=block;html=1;" edge="1" parent="1" source="s_trans" target="s_canc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c5" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="s_arr" target="s_canc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

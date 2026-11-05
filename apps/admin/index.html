@@ -15,9 +15,20 @@
       table { width: 100%; border-collapse: collapse; background: #fff; }
       th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
       th { font-size: 13px; color: var(--muted); font-weight: 600; }
-      tr.row { cursor: pointer; } tr.row:hover, tr.row:focus { background: #eff6ff; outline: none; }
+      tr.row { cursor: pointer; } tr.row:hover, tr.row:focus { background: #eff6ff; }
+      /* Keyboard focus is always visible (rows, buttons, fields); mouse clicks do not draw the ring. */
+      :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+      tr.row:focus-visible { outline-offset: -3px; }
       button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; min-height: 36px; }
+      button:not(:disabled):hover { filter: brightness(.94); }
       button:disabled { opacity: .5; cursor: not-allowed; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; border: 1px solid; }
+      .badge.pending_verification { color: #92400e; background: #fffbeb; border-color: #f59e0b; }
+      .badge.approved { color: var(--ok); background: #f0fdf4; border-color: #86efac; }
+      .badge.rejected { color: var(--bad); background: #fef2f2; border-color: #fca5a5; }
+      .badge.draft { color: var(--muted); background: #f1f5f9; border-color: #cbd5e1; }
+      .field-error { color: var(--bad); font-weight: 600; margin: 4px 0 0; }
+      textarea[aria-invalid="true"] { border-color: var(--bad); }
       button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
       button.approve { background: var(--ok); border-color: var(--ok); color: #fff; }
       button.reject { background: var(--bad); border-color: var(--bad); color: #fff; }

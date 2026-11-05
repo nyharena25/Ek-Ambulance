@@ -1,6 +1,8 @@
 /**
  * @sahayak/ui - Semantic Color Tokens
- * WCAG AAA Compliant Palette for Emergency Healthcare & Ambulance Fleets
+ * Palette for Emergency Healthcare & Ambulance Fleets.
+ * Contrast ratios in the comments are WCAG 2.x values computed from the hex codes (AA text >= 4.5:1, AAA text >= 7:1,
+ * non-text boundaries >= 3:1). designSystem.test.ts recomputes the text pairs, so a claim cannot drift from the colour.
  */
 
 export const semanticColors = {
@@ -10,7 +12,7 @@ export const semanticColors = {
   emergency: {
     /** Primary Emergency Action / Siren Active (#DC2626 - Red-600) */
     primary: "#DC2626",
-    /** High-Contrast Text on Light Background (#B91C1C - Red-700, 7.1:1 on white - WCAG AAA) */
+    /** High-Contrast Text on Light Background (#B91C1C - Red-700, 6.5:1 on white - WCAG AA) */
     dark: "#B91C1C",
     /** Deep Pressed State / Container Border (#991B1B - Red-800) */
     deep: "#991B1B",
@@ -32,8 +34,8 @@ export const semanticColors = {
       base: "#EF4444", // Red-500: Triage Red
       surface: "#FEF2F2", // Red-50
       border: "#DC2626", // Red-600
-      textAccessible: "#991B1B", // Red-800 (8.9:1 on #FEF2F2 - WCAG AAA)
-      textOnWhite: "#B91C1C", // Red-700 (7.1:1 on White - WCAG AAA)
+      textAccessible: "#991B1B", // Red-800 (7.6:1 on #FEF2F2 - WCAG AAA)
+      textOnWhite: "#B91C1C", // Red-700 (6.5:1 on White - WCAG AA)
       pulseGlow: "rgba(239, 68, 68, 0.45)",
     },
 
@@ -45,8 +47,8 @@ export const semanticColors = {
       base: "#F59E0B", // Amber-500: Triage Yellow
       surface: "#FFFBEB", // Amber-50
       border: "#D97706", // Amber-600 (3.2:1 boundary on white)
-      textAccessible: "#78350F", // Amber-900 (10.4:1 on #FFFBEB - WCAG AAA)
-      textOnWhite: "#B45309", // Amber-700 (7.0:1 on White - WCAG AAA)
+      textAccessible: "#78350F", // Amber-900 (8.8:1 on #FFFBEB - WCAG AAA)
+      textOnWhite: "#B45309", // Amber-700 (5.0:1 on White - WCAG AA)
       pulseGlow: "rgba(245, 158, 11, 0.40)",
     },
 
@@ -58,8 +60,8 @@ export const semanticColors = {
       base: "#10B981", // Emerald-500: Triage Green
       surface: "#ECFDF5", // Emerald-50
       border: "#059669", // Emerald-600
-      textAccessible: "#065F46", // Emerald-800 (9.4:1 on #ECFDF5 - WCAG AAA)
-      textOnWhite: "#047857", // Emerald-700 (7.2:1 on White - WCAG AAA)
+      textAccessible: "#065F46", // Emerald-800 (7.3:1 on #ECFDF5 - WCAG AAA)
+      textOnWhite: "#047857", // Emerald-700 (5.5:1 on White - WCAG AA)
       pulseGlow: "rgba(16, 185, 129, 0.35)",
     },
 
@@ -71,31 +73,34 @@ export const semanticColors = {
       base: "#1E293B", // Slate-800
       surface: "#F1F5F9", // Slate-100
       border: "#475569", // Slate-600
-      textAccessible: "#0F172A", // Slate-900 (18.7:1 on white)
+      textAccessible: "#0F172A", // Slate-900 (17.9:1 on white)
       textOnWhite: "#0F172A",
       pulseGlow: "rgba(30, 41, 59, 0.30)",
     },
   },
 
   // ============================================================================
-  // 3. CLINICAL SURFACE SLATE PALETTE (WCAG AAA HIGH CONTRAST)
+  // 3. CLINICAL SURFACE SLATE PALETTE
   // ============================================================================
   clinicalSurface: {
     /** Ambient Nighttime Deep Backdrop (#020617 - Slate-950) */
     slate950: "#020617",
-    /** Primary High-Contrast Dark Text / Primary Console Surface (#0F172A - Slate-900, 18.7:1 on white) */
+    /** Primary High-Contrast Dark Text / Primary Console Surface (#0F172A - Slate-900, 17.9:1 on white) */
     slate900: "#0F172A",
-    /** Deep Clinical Card / Telemetry Container Surface (#1E293B - Slate-800, 15.2:1 on white) */
+    /** Deep Clinical Card / Telemetry Container Surface (#1E293B - Slate-800, 14.6:1 on white) */
     slate800: "#1E293B",
-    /** Clinical Structural Borders / Elevated Surface (#334155 - Slate-700, 9.6:1 on white) */
+    /** Clinical Structural Borders / Elevated Surface (#334155 - Slate-700, 10.4:1 on white) */
     slate700: "#334155",
-    /** Supporting Telemetry / Secondary Captions (#475569 - Slate-600, 7.0:1 on white - WCAG AAA) */
+    /** Supporting Telemetry / Secondary Captions (#475569 - Slate-600, 7.6:1 on white - WCAG AAA) */
     slate600: "#475569",
-    /** Telemetry Inactive Icons / Hardware Indicators (#64748B - Slate-500) */
+    /** Telemetry Inactive Icons / Hardware Indicators (#64748B - Slate-500, 4.8:1 on white) */
     slate500: "#64748B",
-    /** Muted Boundaries / Secondary Outlines (#94A3B8 - Slate-400) */
+    /** Muted Boundaries / Secondary Outlines (#94A3B8 - Slate-400, 2.6:1 on white: below the 3:1 non-text minimum) */
     slate400: "#94A3B8",
-    /** Structural Dividers / Grid Lines (#CBD5E1 - Slate-300, 3.1:1 non-text boundary) */
+    /**
+     * Structural Dividers / Grid Lines (#CBD5E1 - Slate-300, 1.5:1 on white). Decorative only: below the 3:1 WCAG 1.4.11
+     * needs for a boundary the user must see (an input or card edge). slate500 (4.8:1) meets it.
+     */
     slate300: "#CBD5E1",
     /** Subtle Inactive Dividers (#E2E8F0 - Slate-200) */
     slate200: "#E2E8F0",
@@ -110,17 +115,17 @@ export const semanticColors = {
   // ============================================================================
   status: {
     // Green Verified
-    verified: "#15803D", // Green-700 (7.1:1 on white)
+    verified: "#15803D", // Green-700 (5.0:1 on white - WCAG AA)
     verifiedSurface: "#F0FDF4", // Green-50
     verifiedBorder: "#22C55E", // Green-500
 
     // Blue Statutory & Legal Information
-    statutory: "#1D4ED8", // Blue-700 (7.3:1 on white)
+    statutory: "#1D4ED8", // Blue-700 (6.7:1 on white - WCAG AA)
     statutorySurface: "#EFF6FF", // Blue-50
     statutoryBorder: "#3B82F6", // Blue-500
 
     // Amber Caution & Degradation
-    caution: "#B45309", // Amber-700 (7.0:1 on white)
+    caution: "#B45309", // Amber-700 (5.0:1 on white - WCAG AA)
     cautionSurface: "#FFFBEB", // Amber-50
     cautionBorder: "#D97706", // Amber-600
   },
@@ -165,6 +170,13 @@ export const colors = {
   slate200: semanticColors.clinicalSurface.slate200,
   slate100: semanticColors.clinicalSurface.slate100,
   slate50: semanticColors.clinicalSurface.slate50,
+
+  /**
+   * Edge of a control that has no other visual identity: text inputs, OTP cells, checkboxes, a switch's off track.
+   * WCAG 1.4.11 needs 3:1 against the surrounding surface (slate500: 4.8:1 on white, 4.6:1 on slate50). Decorative card
+   * edges and dividers keep slate300.
+   */
+  controlBorder: semanticColors.clinicalSurface.slate500,
 
   // Base & Status
   white: semanticColors.white,

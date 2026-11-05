@@ -3,14 +3,14 @@ import {
   View,
   Text,
   TextInput,
+  type TextInputInstance,
+  type TextInputKeyPressEvent,
   StyleSheet,
   Pressable,
   ScrollView,
   Platform,
   StatusBar,
   KeyboardAvoidingView,
-  NativeSyntheticEvent,
-  TextInputKeyPressEventData,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
@@ -37,7 +37,7 @@ export default function DriverOtpVerifyScreen({
 
   const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
   const [focusedOtpIndex, setFocusedOtpIndex] = useState<number | null>(null);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const inputRefs = useRef<Array<TextInputInstance | null>>([]);
 
   const [countdown, setCountdown] = useState(30);
   const [isTimerActive, setIsTimerActive] = useState(true);
@@ -89,7 +89,7 @@ export default function DriverOtpVerifyScreen({
   };
 
   const handleOtpKeyPress = (
-    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
+    e: TextInputKeyPressEvent,
     index: number
   ) => {
     if (e.nativeEvent.key === "Backspace") {
@@ -143,7 +143,7 @@ export default function DriverOtpVerifyScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -380,9 +380,11 @@ const styles = StyleSheet.create({
   otpInputRow: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginBottom: spacing.md },
   otpCell: {
     flex: 1,
+    // Inputs keep an intrinsic width otherwise (web): the first cell would fill the row and push the other five off-screen.
+    minWidth: 0,
     height: 58,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.lg,
     backgroundColor: colors.slate50,
     textAlign: "center",

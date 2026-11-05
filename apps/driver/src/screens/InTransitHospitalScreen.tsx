@@ -93,6 +93,38 @@ export default function InTransitHospitalScreen({
   const maxDragDistance = sliderWidth - SLIDER_THUMB_SIZE - SLIDER_TRACK_PADDING * 2;
   const panX = useRef(new Animated.Value(0)).current;
 
+  // Shared by the slide gesture and the screen-reader "activate" action (deliberate focus + double-tap), so the
+  // irreversible confirm has a non-drag path. Re-assigned every render so the payload uses the live GPS position
+  // (the PanResponder below is created once).
+  const confirmHospitalArrivalRef = useRef(() => {});
+  confirmHospitalArrivalRef.current = () => {
+    if (isCompletedAtHospital) return;
+    // Latch permanently to the end (Irreversible!)
+    Animated.timing(panX, {
+      toValue: maxDragDistance,
+      duration: 150,
+      useNativeDriver: false,
+    }).start(() => {
+      setIsCompletedAtHospital(true);
+
+      const arrivalPayload: ConfirmArrivalHospitalPayload = {
+        missionId,
+        driverId: getServerAdapter()?.userId ?? driverId ?? "",
+        location: hospitalTarget ?? driverPos,
+        arrivedAt: new Date().toISOString(),
+      };
+
+      if (onConfirmArrivalHospital) {
+        onConfirmArrivalHospital(arrivalPayload);
+      }
+
+      // Automatically open statutory sign-off form
+      setTimeout(() => {
+        setIsSignOffModalOpen(true);
+      }, 600);
+    });
+  };
+
   // PanResponder for 'Slide to Complete Mission at Hospital ER'
   const panResponder = useRef(
     PanResponder.create({
@@ -111,30 +143,7 @@ export default function InTransitHospitalScreen({
         const completionRatio = gestureState.dx / maxDragDistance;
 
         if (completionRatio >= 0.8) {
-          // Latch permanently to the end (Irreversible!)
-          Animated.timing(panX, {
-            toValue: maxDragDistance,
-            duration: 150,
-            useNativeDriver: false,
-          }).start(() => {
-            setIsCompletedAtHospital(true);
-
-            const arrivalPayload: ConfirmArrivalHospitalPayload = {
-              missionId,
-              driverId: getServerAdapter()?.userId ?? driverId ?? "",
-              location: hospitalTarget ?? driverPos,
-              arrivedAt: new Date().toISOString(),
-            };
-
-            if (onConfirmArrivalHospital) {
-              onConfirmArrivalHospital(arrivalPayload);
-            }
-
-            // Automatically open statutory sign-off form
-            setTimeout(() => {
-              setIsSignOffModalOpen(true);
-            }, 600);
-          });
+          confirmHospitalArrivalRef.current();
         } else {
           // Snap back to origin if released before 80% (prevents accidental triggers)
           Animated.spring(panX, {
@@ -192,7 +201,7 @@ export default function InTransitHospitalScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.slate950} />
+      <StatusBar barStyle="light-content" />
 
       {/* TOP HEADER */}
       <View style={styles.topHeader}>
@@ -251,6 +260,14 @@ export default function InTransitHospitalScreen({
             styles.sliderTrack,
             isCompletedAtHospital && styles.sliderTrackCompleted,
           ]}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={isCompletedAtHospital ? strings.sliderConfirmedComplete : strings.sliderPromptComplete}
+          accessibilityState={{ disabled: isCompletedAtHospital }}
+          accessibilityActions={[{ name: "activate" }]}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === "activate") confirmHospitalArrivalRef.current();
+          }}
         >
           {/* Dynamically expanding background fill */}
           <Animated.View
@@ -485,6 +502,13 @@ export default function InTransitHospitalScreen({
                 <Text style={styles.dpdpNotice}>{strings.dpdpNotice}</Text>
               </View>
 
+              {/* Why the button is disabled, right above it (it used to look tappable and do nothing) */}
+              {!isSignOffComplete && (
+                <Text style={styles.signOffMissingHint} accessibilityLiveRegion="polite">
+                  {strings.signOffMissingHint}
+                </Text>
+              )}
+
               {/* Action Button */}
               <Pressable
                 style={[
@@ -493,6 +517,8 @@ export default function InTransitHospitalScreen({
                 ]}
                 onPress={handleSubmitSignOff}
                 disabled={isSubmittingSignOff || !isSignOffComplete}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: isSubmittingSignOff || !isSignOffComplete, busy: isSubmittingSignOff }}
               >
                 <Text style={styles.submitSignOffBtnText}>
                   {isSubmittingSignOff
@@ -816,7 +842,7 @@ const styles = StyleSheet.create({
   textInput: {
     backgroundColor: colors.white,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: Platform.OS === "ios" ? 10 : 6,
@@ -911,7 +937,14 @@ const styles = StyleSheet.create({
     ...shadows.emergency,
   },
   submitSignOffBtnDisabled: {
-    opacity: 0.7,
+    opacity: 0.45,
+  },
+  signOffMissingHint: {
+    marginBottom: spacing.sm,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.slate700,
+    textAlign: "center",
   },
   submitSignOffBtnText: {
     color: colors.white,

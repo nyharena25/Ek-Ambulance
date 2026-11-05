@@ -23,7 +23,7 @@ import { offerSecondsLeft, type UrgencyTier, type AIS125VehicleType } from "@sah
 import { SupportedLanguage } from "../i18n/driverOnboardingStrings";
 import {
   OFFER_WINDOW_SECONDS,
-  tickOfferCountdown,
+  runOfferCountdown,
   isSwipeAcceptanceComplete,
   isVehicleTierEligible,
 } from "../hooks/dispatchOffer.core";
@@ -114,13 +114,19 @@ export default function IncomingMissionModal({
   // Flashing pulse animation for emergency header
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // Latest props/state for callbacks created once (the PanResponder) or effects that must not restart on every parent
+  // render: offer.tsx passes inline onTimeout/onAccept, so depending on them restarted the countdown and progress bar.
+  const latest = useRef({ onTimeout, onAccept, isAccepted, isTierEligible });
+  latest.current = { onTimeout, onAccept, isAccepted, isTierEligible };
+  const accepting = useRef(false);
+
   // 15-second countdown timer effect
   useEffect(() => {
     if (!visible || isAccepted) return;
 
     // Rule 11: with a server expiry the window is whatever is left of it; the local 15 s is only the no-server fallback.
-    const windowSeconds = expiresAt ? offerSecondsLeft(expiresAt, Date.now(), clockOffsetMs) : OFFER_WINDOW_SECONDS;
-    setSecondsLeft(windowSeconds);
+    const secondsAt = (fallback: number) => (expiresAt ? offerSecondsLeft(expiresAt, Date.now(), clockOffsetMs) : fallback);
+    const windowSeconds = secondsAt(OFFER_WINDOW_SECONDS);
     timerProgressAnim.setValue(1);
 
     // Smooth animation from 1 to 0 over the same window the numeral counts down
@@ -146,55 +152,65 @@ export default function IncomingMissionModal({
       ])
     ).start();
 
-    const interval = setInterval(() => {
-      setSecondsLeft((prev) => {
-        // Recomputed from the server expiry each tick, so a suspended JS thread cannot leave a stale "8 s" on screen.
-        const next = expiresAt ? offerSecondsLeft(expiresAt, Date.now(), clockOffsetMs) : tickOfferCountdown(prev).secondsLeft;
-        const expired = prev > 0 && next === 0;
-        if (expired) {
-          clearInterval(interval);
-          if (onTimeout) onTimeout();
-        }
-        return next;
-      });
-    }, 1000);
+    // Recomputed from the server expiry each tick, so a suspended JS thread cannot leave a stale "8 s" on screen.
+    const stopCountdown = runOfferCountdown({
+      secondsLeft: secondsAt,
+      onTick: setSecondsLeft,
+      onExpire: () => latest.current.onTimeout?.(),
+      setInterval: (fn, ms) => setInterval(fn, ms),
+      clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
+    });
 
     return () => {
-      clearInterval(interval);
+      stopCountdown();
       timerProgressAnim.stopAnimation();
       pulseAnim.stopAnimation();
     };
-  }, [visible, isAccepted, onTimeout]);
+  }, [visible, isAccepted, expiresAt, clockOffsetMs]);
 
-  // PanResponder for Swipe-to-Accept Slider (Accidental-Tap Prevention)
+  // Accept, shared by the swipe and the screen-reader "activate" action (deliberate focus + double-tap), so a TalkBack /
+  // VoiceOver user can take an offer too. Re-assigned every render because the PanResponder below is created once;
+  // `accepting` stops a second activation during the 150 ms slide from accepting twice.
+  const acceptRef = useRef(() => {});
+  const acceptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (acceptTimer.current) clearTimeout(acceptTimer.current);
+  }, []);
+  acceptRef.current = () => {
+    if (accepting.current || isAccepted || !isTierEligible) return;
+    accepting.current = true;
+    Animated.timing(panX, {
+      toValue: maxDragDistance,
+      duration: 150,
+      useNativeDriver: false,
+    }).start(() => {
+      setIsAccepted(true);
+      acceptTimer.current = setTimeout(() => {
+        latest.current.onAccept?.(missionId);
+      }, 600);
+    });
+  };
+
+  // PanResponder for Swipe-to-Accept Slider (Accidental-Tap Prevention). Created once, so it reads `latest`, never
+  // the first render's eligibility.
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => isTierEligible,
+      onStartShouldSetPanResponder: () => latest.current.isTierEligible,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        isTierEligible && Math.abs(gestureState.dx) > 5,
+        latest.current.isTierEligible && Math.abs(gestureState.dx) > 5,
       onPanResponderGrant: () => {
         // Driver grabbed slider thumb
       },
       onPanResponderMove: (_, gestureState) => {
-        if (isAccepted || !isTierEligible) return;
+        if (latest.current.isAccepted || !latest.current.isTierEligible) return;
         const clampedX = Math.max(0, Math.min(gestureState.dx, maxDragDistance));
         panX.setValue(clampedX);
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (isAccepted) return;
+        if (latest.current.isAccepted) return;
 
-        if (isTierEligible && isSwipeAcceptanceComplete(gestureState.dx, maxDragDistance)) {
-          // Trigger acceptance!
-          Animated.timing(panX, {
-            toValue: maxDragDistance,
-            duration: 150,
-            useNativeDriver: false,
-          }).start(() => {
-            setIsAccepted(true);
-            setTimeout(() => {
-              if (onAccept) onAccept(missionId);
-            }, 600);
-          });
+        if (latest.current.isTierEligible && isSwipeAcceptanceComplete(gestureState.dx, maxDragDistance)) {
+          acceptRef.current();
         } else {
           // Snap back to origin if released prematurely (cancelling accidental swipes)
           Animated.spring(panX, {
@@ -227,7 +243,7 @@ export default function IncomingMissionModal({
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.emergencyDeep} />
+        <StatusBar barStyle="light-content" />
 
         {/* TOP EMERGENCY FLASHER BANNER */}
         <Animated.View
@@ -509,6 +525,14 @@ export default function IncomingMissionModal({
               isAccepted && styles.sliderTrackAccepted,
               !isTierEligible && styles.sliderTrackDisabled,
             ]}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={isAccepted ? strings.sliderConfirmed : strings.sliderTrackPrompt}
+            accessibilityState={{ disabled: isAccepted || !isTierEligible }}
+            accessibilityActions={[{ name: "activate" }]}
+            onAccessibilityAction={(e) => {
+              if (e.nativeEvent.actionName === "activate") acceptRef.current();
+            }}
           >
             {/* Background Revealing Fill */}
             <Animated.View

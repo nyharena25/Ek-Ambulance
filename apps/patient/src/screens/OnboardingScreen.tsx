@@ -51,7 +51,7 @@ export default function OnboardingScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* PERSISTENT BILINGUAL HEADER */}
       <View style={styles.header}>

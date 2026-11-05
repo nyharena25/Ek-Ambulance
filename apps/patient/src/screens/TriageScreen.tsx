@@ -88,7 +88,7 @@ export default function TriageScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER: Navigation, Title & Persistent Bilingual Toggle */}
       <View style={styles.header}>
@@ -104,15 +104,15 @@ export default function TriageScreen({
               <AppIcon icon={{ set: "ion", name: "arrow-back" }} size={20} style={styles.backArrow} />
             </Pressable>
           )}
-          <View>
-            <Text style={styles.headerTitle}>{strings.headerTitle}</Text>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{strings.headerTitle}</Text>
             <View style={styles.protocolBadgeRow}>
               <View style={styles.protocolBadge}>
-                <Text style={styles.protocolBadgeText}>
+                <Text style={styles.protocolBadgeText} numberOfLines={1}>
                   {strings.protocolBadge}
                 </Text>
               </View>
-              <Text style={styles.speedNoticeText}>{strings.speedNotice}</Text>
+              <Text style={styles.speedNoticeText} numberOfLines={1}>{strings.speedNotice}</Text>
             </View>
           </View>
         </View>
@@ -167,12 +167,8 @@ export default function TriageScreen({
         </View>
       </View>
 
-      {/* DYNAMIC TOP URGENCY TIER BANNER (only once a symptom is chosen) */}
-      {!triageResult ? (
-        <View style={[styles.urgencyTierBanner, { backgroundColor: colors.white, borderColor: colors.slate300 }]}>
-          <Text style={styles.rationaleText}>{strings.selectComplaintPrompt}</Text>
-        </View>
-      ) : (
+      {/* DYNAMIC TOP URGENCY TIER BANNER (only once a symptom is chosen; until then the symptom list starts at the top) */}
+      {triageResult && (
       <View
         style={[
           styles.urgencyTierBanner,
@@ -236,9 +232,7 @@ export default function TriageScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <DescribeEmergencyPanel language={language} onExtracted={handleExtracted} authToken={authToken} />
-
-        {/* SECTION 1: PRIMARY COMPLAINTS */}
+        {/* SECTION 1: PRIMARY COMPLAINTS (one tap - first on screen, in thumb reach) */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionHeading}>{strings.complaintsHeading}</Text>
           <Text style={styles.sectionSubheading}>
@@ -526,6 +520,9 @@ export default function TriageScreen({
             </View>
           </View>
         )}
+
+        {/* OPTIONAL: free-text description, after the one-tap list so it never pushes the symptoms below the fold */}
+        <DescribeEmergencyPanel language={language} onExtracted={handleExtracted} authToken={authToken} />
       </ScrollView>
 
       {/* PERSISTENT BOTTOM ACTION DOCK */}
@@ -546,11 +543,13 @@ export default function TriageScreen({
         >
           <View style={styles.confirmButtonContent}>
             <Text style={styles.confirmDispatchButtonText}>
-              {triageResult ? strings.confirmButtonText(triageResult.recommendedCareLevel) : strings.selectComplaintPrompt}
+              {triageResult ? strings.confirmButtonText(triageResult.recommendedCareLevel) : strings.selectSymptomCta}
             </Text>
-            <Text style={styles.confirmDispatchButtonSubtitle}>
-              {strings.confirmButtonSubtitle}
-            </Text>
+            {triageResult && (
+              <Text style={styles.confirmDispatchButtonSubtitle}>
+                {strings.confirmButtonSubtitle}
+              </Text>
+            )}
           </View>
           <AppIcon icon={{ set: "ion", name: "arrow-forward" }} size={22} style={styles.confirmArrowText} />
         </Pressable>
@@ -595,6 +594,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.slate900,
   },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: spacing.sm,
+  },
   headerTitle: {
     flexShrink: 1,
     fontSize: typography.fontSizes.base,
@@ -621,6 +625,7 @@ const styles = StyleSheet.create({
     color: colors.slate800,
   },
   speedNoticeText: {
+    flexShrink: 1,
     fontSize: 11,
     color: colors.slate600,
     fontWeight: typography.fontWeights.medium,

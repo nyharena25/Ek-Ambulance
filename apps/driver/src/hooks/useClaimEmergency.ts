@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { Alert } from "../lib/alert";
 import { router } from "expo-router";
 import type { BoardEmergency } from "@sahayak/domain";
 import { getServerAdapter, useDriverLifecycleStore } from "../state/driverLifecycle.store";

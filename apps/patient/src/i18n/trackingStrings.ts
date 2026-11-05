@@ -36,6 +36,8 @@ export interface TrackingTranslation {
   stateStepEnRoute: string;
   stateStepArrived: string;
   activeStatusBanner: string;
+  /** Status line once the driver has reported arrival at the pickup. */
+  arrivedStatusBanner: string;
 
 
   // Ambulance Card
@@ -87,6 +89,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     stateStepEnRoute: "En Route to Patient",
     stateStepArrived: "Arrived on Scene",
     activeStatusBanner: "Your ambulance is on its way to your pickup point. Stay where you are if it is safe.",
+    arrivedStatusBanner: "The crew is at your pickup point and coming to you. Keep the door and path clear.",
 
     crewSize: (count) => `Crew on board: ${count}`,
 
@@ -304,6 +307,7 @@ export const trackingStrings: Record<SupportedLanguage, TrackingTranslation> = {
     stateStepEnRoute: "मरीज की ओर अग्रसर",
     stateStepArrived: "घटनास्थल पर पहुंची",
     activeStatusBanner: "आपकी एम्बुलेंस पिकअप स्थल की ओर आ रही है। सुरक्षित हो तो वहीं रहें।",
+    arrivedStatusBanner: "टीम आपके पिकअप स्थल पर है और आपके पास आ रही है। दरवाज़ा और रास्ता खाली रखें।",
 
     crewSize: (count) => `टीम में लोग: ${count}`,
 

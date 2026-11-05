@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TextInput,
+  type TextInputInstance,
   StyleSheet,
   Pressable,
   StatusBar,
@@ -64,7 +65,7 @@ export default function PickupLocationScreen({
   // Address: real reverse-geocoded text, or the formatted coordinates until/unless geocoding succeeds.
   const [currentAddress, setCurrentAddress] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
-  const searchInputRef = useRef<TextInput>(null);
+  const searchInputRef = useRef<TextInputInstance | null>(null);
   const dragTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Search query & suggestion dropdown
@@ -222,7 +223,7 @@ export default function PickupLocationScreen({
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER: Back, Title, & Persistent Bilingual Toggle */}
       <View style={styles.header}>
@@ -610,7 +611,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: 48,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
   },
   searchIcon: {
     fontSize: 16,

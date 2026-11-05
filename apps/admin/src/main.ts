@@ -51,6 +51,24 @@ function h(tag: string, props: Record<string, unknown> = {}, ...children: Child[
   return el;
 }
 
+/** Keyboard activation for a focusable row that acts as a button: Enter and Space, like a native button. */
+const onActivateKey = (fn: () => void) => (e: KeyboardEvent) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fn();
+  }
+};
+
+/** Runs an async action with its buttons disabled, so a double click never sends twice (an SMS, a decision). */
+async function busy<T>(buttons: HTMLElement[], run: () => Promise<T>): Promise<T> {
+  for (const b of buttons) (b as HTMLButtonElement).disabled = true;
+  try {
+    return await run();
+  } finally {
+    for (const b of buttons) if (b.isConnected) (b as HTMLButtonElement).disabled = false;
+  }
+}
+
 const root = document.getElementById("app")!;
 const render = (...nodes: Child[]) => root.replaceChildren(...(nodes.filter(Boolean) as (Node | string)[]));
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
@@ -77,29 +95,33 @@ function signIn(message = pendingMessage) {
   pendingMessage = undefined;
   const phone = h("input", { id: "phone", type: "tel", placeholder: "+919800000000", autocomplete: "tel", required: true }) as HTMLInputElement;
   const status = h("p", { class: "error", role: "alert" }, message ?? "");
+  const send = h("button", { class: "primary", type: "submit" }, "Send code");
   const form = h("form", {
     onsubmit: async (e: Event) => {
       e.preventDefault();
       status.textContent = "";
-      const { error } = await db.auth.signInWithOtp({ phone: phone.value.trim(), options: { channel: "sms", shouldCreateUser: false } });
+      const { error } = await busy([send], () =>
+        db.auth.signInWithOtp({ phone: phone.value.trim(), options: { channel: "sms", shouldCreateUser: false } }));
       if (error) status.textContent = error.message;
       else verify(phone.value.trim());
     },
-  }, h("label", { for: "phone" }, "Staff phone number"), phone, " ", h("button", { class: "primary", type: "submit" }, "Send code"));
+  }, h("label", { for: "phone" }, "Staff phone number"), phone, " ", send);
   render(header(undefined), h("main", {}, h("div", { class: "card" }, form, status)));
 }
 
 function verify(phone: string) {
   const code = h("input", { id: "otp", inputmode: "numeric", autocomplete: "one-time-code", required: true }) as HTMLInputElement;
   const status = h("p", { class: "error", role: "alert" });
+  const submit = h("button", { class: "primary", type: "submit" }, "Verify");
   const form = h("form", {
     onsubmit: async (e: Event) => {
       e.preventDefault();
-      const { error } = await db.auth.verifyOtp({ phone, token: code.value.trim(), type: "sms" });
+      status.textContent = "";
+      const { error } = await busy([submit], () => db.auth.verifyOtp({ phone, token: code.value.trim(), type: "sms" }));
       if (error) status.textContent = error.message;
       // success is picked up by onAuthStateChange
     },
-  }, h("label", { for: "otp" }, `Code sent to ${phone}`), code, " ", h("button", { class: "primary", type: "submit" }, "Verify"));
+  }, h("label", { for: "otp" }, `Code sent to ${phone}`), code, " ", submit);
   render(header(undefined), h("main", {}, h("div", { class: "card" }, form, status)));
   code.focus();
 }
@@ -125,21 +147,24 @@ async function list(phone: string) {
   const res = await listApplications(db, filter);
   if (!res.ok) return body.replaceChildren(h("p", { class: "error", role: "alert" }, describeError(res.error)));
   if (res.data.length === 0) return body.replaceChildren(h("p", { class: "muted" }, "No applications with this status."));
-  body.replaceChildren(h("table", {},
+  body.replaceChildren(h("div", { class: "scroll" }, h("table", {},
     h("thead", {}, h("tr", {}, ...["Applicant", "Phone", "Status", "Submitted", "Required docs", "Vehicle type", "Zone", "Reference"].map((t) => h("th", {}, t)))),
     h("tbody", {}, ...res.data.map((a) => {
       const open = () => detail(phone, a.driverId);
-      return h("tr", { class: "row", tabindex: 0, onclick: open, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && open() },
+      return h("tr", { class: "row", tabindex: 0, "aria-label": `Open application: ${a.fullName ?? a.phone ?? a.driverId}`, onclick: open, onkeydown: onActivateKey(open) },
         h("td", {}, a.fullName ?? h("span", { class: "muted" }, "Name not provided")),
         h("td", {}, orDash(a.phone)),
-        h("td", {}, STATUS_LABEL[a.kycStatus] ?? a.kycStatus),
+        h("td", {}, statusBadge(a.kycStatus)),
         h("td", {}, fmtDate(a.submittedAt)),
         h("td", { class: a.requiredUploaded < a.requiredTotal ? "missing" : "" }, `${a.requiredUploaded} / ${a.requiredTotal}`, a.documentCount > a.requiredUploaded ? ` (+${a.documentCount - a.requiredUploaded} other)` : ""),
         h("td", {}, a.ais125Type),
         h("td", {}, orDash(a.serviceZone)),
         h("td", {}, orDash(a.kycReference)));
-    }))));
+    })))));
 }
+
+/** Status as text in a coloured pill: the colour helps scanning, the words carry the meaning. */
+const statusBadge = (s: string) => h("span", { class: `badge ${s}` }, STATUS_LABEL[s] ?? s);
 
 // ---------------------------------------------------------------------------
 // Detail + decision
@@ -166,7 +191,7 @@ async function detail(phone: string, driverId: string, notice?: string) {
           h("td", {}, orDash(d.mimeType)),
           h("td", {}, d.status, d.rejectionReason ? ` — ${d.rejectionReason}` : ""),
           h("td", {}, fmtDate(d.uploadedAt)),
-          h("td", {}, h("button", { onclick: async () => {
+          h("td", {}, h("button", { "aria-label": `Open ${d.slot} document`, onclick: async () => {
             // Open the tab synchronously (popup blockers), then point it at the 60-second signed URL.
             const tab = window.open("", "_blank");
             const url = await documentUrl(db, d.storagePath);
@@ -176,25 +201,39 @@ async function detail(phone: string, driverId: string, notice?: string) {
       }),
       ...missing.map((s) => h("tr", {}, h("td", {}, s, " *"), h("td", { class: "missing", colspan: 6 }, "Required document not uploaded")))));
 
-  const reason = h("textarea", { id: "reason", maxlength: 500 }) as HTMLTextAreaElement;
+  const reasonError = h("p", { id: "reason-error", class: "field-error", role: "alert" });
+  const reason = h("textarea", { id: "reason", maxlength: 500, "aria-describedby": "reason-error" }) as HTMLTextAreaElement;
+  reason.addEventListener("input", () => { reasonError.textContent = ""; reason.removeAttribute("aria-invalid"); });
   const status = h("p", { role: "alert", class: notice ? "ok" : "" }, notice ?? "");
+  const who = a.fullName ?? a.phone ?? a.driverId;
+  const approveBtn = h("button", { class: "approve" }, "Approve");
+  const rejectBtn = h("button", { class: "reject" }, "Reject");
   const decide = async (action: "approve" | "reject") => {
-    if (action === "approve" && !confirm(`Approve ${a.fullName ?? a.phone ?? a.driverId}? The driver becomes verified and can go online.`)) return;
+    if (action === "reject" && !reason.value.trim()) {
+      // Caught here, at the field, instead of after a round trip and below the buttons.
+      reason.setAttribute("aria-invalid", "true");
+      reasonError.textContent = "Enter a rejection reason. The driver sees it and needs it to fix the application.";
+      reason.focus();
+      return;
+    }
+    if (action === "approve" && !confirm(`Approve ${who}? The driver becomes verified and can go online.`)) return;
+    if (action === "reject" && !confirm(`Reject ${who}? The driver sees this reason:\n\n${reason.value.trim()}`)) return;
     status.className = "";
     status.textContent = "Saving…";
-    const r = action === "approve" ? await approveApplication(db, a.driverId) : await rejectApplication(db, a.driverId, reason.value);
+    const r = await busy([approveBtn, rejectBtn], () =>
+      action === "approve" ? approveApplication(db, a.driverId) : rejectApplication(db, a.driverId, reason.value));
     if (r.ok) return detail(phone, a.driverId, action === "approve" ? "Application approved." : "Application rejected.");
     status.className = "error";
     status.textContent = describeError(r.error);
   };
+  approveBtn.addEventListener("click", () => void decide("approve"));
+  rejectBtn.addEventListener("click", () => void decide("reject"));
 
   const decision = canDecide(a.kycStatus)
     ? h("div", { class: "card" }, h("h2", {}, "Decision"),
         missing.length ? h("p", { class: "missing" }, `Missing required documents: ${missing.join(", ")}`) : null,
-        h("label", { for: "reason" }, "Rejection reason (required to reject; shown to the driver)"), reason,
-        h("div", { class: "row-actions" },
-          h("button", { class: "approve", onclick: () => decide("approve") }, "Approve"),
-          h("button", { class: "reject", onclick: () => decide("reject") }, "Reject")),
+        h("label", { for: "reason" }, "Rejection reason (required to reject; shown to the driver)"), reason, reasonError,
+        h("div", { class: "row-actions" }, approveBtn, rejectBtn),
         status)
     : h("div", { class: "card" }, h("p", { class: "muted" }, `This application is ${STATUS_LABEL[a.kycStatus] ?? a.kycStatus} and cannot be decided now.`), status);
 
@@ -215,7 +254,7 @@ async function detail(phone: string, driverId: string, notice?: string) {
       ["VIN / chassis", a.vehicle.vin], ["AIS-125 type", a.vehicle.ais125Type],
       ["Equipment attested", Array.isArray(a.vehicle.equipmentAttested) ? a.vehicle.equipmentAttested.join(", ") : JSON.stringify(a.vehicle.equipmentAttested)],
     ]) : h("p", { class: "muted" }, "No active vehicle on file.")),
-    h("div", { class: "card" }, h("h2", {}, "Documents"), h("p", { class: "muted" }, "* required for submission"), docs),
+    h("div", { class: "card" }, h("h2", {}, "Documents"), h("p", { class: "muted" }, "* required for submission"), h("div", { class: "scroll" }, docs)),
     decision,
     operations(a.driverId)));
 }
@@ -293,7 +332,7 @@ function operations(driverId: string): HTMLElement {
       table(["Date", "Accepted", "Completed", "Cancelled", "Released", "Distance", "Final fare", "Avg completed duration", "Recorded time", "First activity", "Last activity"],
         t.days.map((d) => {
           const open = () => { preset.value = "custom"; setRange({ from: d.date!, to: d.date! }); };
-          return h("tr", { class: "row", tabindex: 0, onclick: open, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && open() },
+          return h("tr", { class: "row", tabindex: 0, "aria-label": `Show ${d.date}`, onclick: open, onkeydown: onActivateKey(open) },
           h("td", {}, d.date!), h("td", { class: "num" }, String(d.accepted)), h("td", { class: "num" }, String(d.completed)),
           h("td", { class: "num" }, String(d.cancelled)), h("td", { class: "num" }, String(d.released)), h("td", { class: "num" }, fmtKm(d.distanceKm)),
           h("td", { class: "num" }, fmtInr(d.finalFareInr)), h("td", { class: "num" }, avgDuration(d)), h("td", { class: "num" }, fmtDuration(d.recordedTimeS)),
@@ -335,12 +374,14 @@ function missionRows(m: DriverMission): Node[] {
   const total = missionDurations(m).at(-1)!.seconds;
   const detailCell = h("td", { colspan: 12 });
   const detailRow = h("tr", { class: "expand", hidden: true }, detailCell);
+  let summaryRow: HTMLElement;
   const toggle = () => {
     if (!detailCell.firstChild) detailCell.append(lifecycle(m));
     detailRow.hidden = !detailRow.hidden;
+    summaryRow.setAttribute("aria-expanded", String(!detailRow.hidden));
   };
   const outcome = OUTCOME_LABEL[m.outcome] + (m.cancelledBy ? ` (by ${m.cancelledBy})` : "");
-  return [h("tr", { class: "row", tabindex: 0, onclick: toggle, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && toggle() },
+  return [summaryRow = h("tr", { class: "row", tabindex: 0, "aria-expanded": "false", onclick: toggle, onkeydown: onActivateKey(toggle) },
     h("td", {}, fmtIst(m.acceptedAt)), h("td", {}, m.displayRef), h("td", {}, m.vehicleType),
     h("td", {}, orDash(m.pickupAddress)), h("td", {}, orDash(m.destination)),
     h("td", {}, fmtIst(m.onSceneAt)), h("td", {}, fmtIst(m.transportAt)), h("td", {}, outcome),

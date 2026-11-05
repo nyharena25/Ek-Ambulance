@@ -20,7 +20,8 @@ export default function OtpVerifyRoute() {
         // the application form or the verification screen from it.
         router.replace("/");
       }}
-      onChangeNumber={() => router.back()}
+      // Opened directly (no history): Back and "Change Number" must still reach the phone screen.
+      onChangeNumber={() => (router.canGoBack() ? router.back() : router.replace("/(auth)/phone-entry"))}
     />
   );
 }

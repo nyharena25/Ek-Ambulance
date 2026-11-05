@@ -41,6 +41,8 @@ export interface TriageTranslation {
   tierAssessmentTitle: string;
   careLevelPrefix: string;
   selectComplaintPrompt: string;
+  /** Short label for the disabled action button before a symptom is chosen. */
+  selectSymptomCta: string;
   goldenHourActiveBanner: string;
 
   // Actions
@@ -129,6 +131,7 @@ export const triageStrings: Record<SupportedLanguage, TriageTranslation> = {
     tierAssessmentTitle: "Assessed Urgency Tier",
     careLevelPrefix: "Mandatory Care Level",
     selectComplaintPrompt: "Choose the main symptom below (or describe it) to see the care level.",
+    selectSymptomCta: "Choose a symptom to continue",
     goldenHourActiveBanner: "GOLDEN HOUR PROTOCOL ACTIVE • HIGH PRIORITY DISPATCH",
 
     confirmButtonText: (careLevel: string) =>
@@ -162,6 +165,7 @@ export const triageStrings: Record<SupportedLanguage, TriageTranslation> = {
     tierAssessmentTitle: "निर्धारित आपातकालीन स्तर",
     careLevelPrefix: "अनिवार्य एंबुलेंस स्तर",
     selectComplaintPrompt: "देखभाल स्तर देखने के लिए नीचे मुख्य लक्षण चुनें (या बताएं)।",
+    selectSymptomCta: "आगे बढ़ने के लिए लक्षण चुनें",
     goldenHourActiveBanner: "गोल्डन ऑवर प्रोटोकॉल सक्रिय • सर्वोच्च प्राथमिकता",
 
     confirmButtonText: (careLevel: string) =>

@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TextInput,
+  type TextInputInstance,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -74,7 +75,7 @@ export default function PhoneAuthScreen({
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
   const [otpFocused, setOtpFocused] = useState(false);
-  const otpRef = useRef<TextInput | null>(null);
+  const otpRef = useRef<TextInputInstance | null>(null);
   // Fields stay editable while a request runs (toggling `editable` blurs the input and drops the Android keyboard);
   // this ref keeps a second submit out instead, so a skipped duplicate is never mistaken for a rejected code.
   const submitting = useRef(false);
@@ -111,7 +112,8 @@ export default function PhoneAuthScreen({
 
   // Android back on the code step returns to the number, it does not leave sign-in.
   useEffect(() => {
-    if (step !== "otp") return;
+    // Android-only API: on web it logs an error on every render.
+    if (step !== "otp" || Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       backToPhone();
       return true;
@@ -196,7 +198,7 @@ export default function PhoneAuthScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -767,7 +769,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 56,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.lg,
     paddingHorizontal: spacing.base,
     fontSize: typography.fontSizes.xl,
@@ -852,7 +854,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 58,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.lg,
     backgroundColor: colors.slate50,
     justifyContent: "center",

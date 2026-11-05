@@ -42,6 +42,8 @@ export interface DriverTransportTranslation {
   dpdpNotice: string;
 
   btnSubmitSignOff: string;
+  /** Shown above the disabled sign-off button: what is still missing. */
+  signOffMissingHint: string;
   btnSubmitting: string;
 
   // Statutory Mission Summary Receipt (shown after sign-off, before shift return)
@@ -96,6 +98,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
       "DPDP Act 2023 Compliant: Patient EMR and GPS telemetry are encrypted and archived under statutory medical records retention policies.",
 
     btnSubmitSignOff: "Submit Statutory Sign-Off & View Receipt",
+    signOffMissingHint: "Enter the physician's name, registration number and department to submit.",
     btnSubmitting: "Recording Sign-Off...",
     receiptTitle: "Statutory Mission Summary Receipt",
     receiptSubtitle: "Review the completed mission record before returning to shift standby.",
@@ -145,6 +148,7 @@ export const driverTransportStrings: Record<SupportedLanguage, DriverTransportTr
       "DPDP अधिनियम 2023 अनुपालित: मरीज का EMR और जीपीएस टेलीमेट्री वैधानिक रिकॉर्ड नीति के तहत एन्क्रिप्टेड और सुरक्षित है।",
 
     btnSubmitSignOff: "वैधानिक साइन-ऑफ जमा करें एवं रसीद देखें",
+    signOffMissingHint: "जमा करने के लिए डॉक्टर का नाम, पंजीकरण संख्या और विभाग भरें।",
     btnSubmitting: "साइन-ऑफ दर्ज हो रहा है...",
     receiptTitle: "वैधानिक मिशन सारांश रसीद",
     receiptSubtitle: "शिफ्ट स्टैंडबाय पर लौटने से पहले पूर्ण मिशन रिकॉर्ड की समीक्षा करें।",

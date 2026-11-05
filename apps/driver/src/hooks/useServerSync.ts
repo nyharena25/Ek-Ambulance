@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, AppState } from "react-native";
+import { AppState } from "react-native";
+import { Alert } from "../lib/alert";
 import { router } from "expo-router";
 import type { DriverLifecycleState } from "@sahayak/domain";
 import type { Session } from "@supabase/supabase-js";

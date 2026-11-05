@@ -69,7 +69,7 @@ export default function DriverPhoneEntryScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -301,9 +301,12 @@ const styles = StyleSheet.create({
   countryCodeText: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.bold, color: colors.slate900 },
   phoneTextInput: {
     flex: 1,
+    // Without it the input keeps its intrinsic width (web: ~20ch at this font size), overflows the row, and autoFocus
+    // scrolls the whole form sideways, clipping its left edge.
+    minWidth: 0,
     height: 56,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.lg,
     paddingHorizontal: spacing.base,
     fontSize: typography.fontSizes.xl,

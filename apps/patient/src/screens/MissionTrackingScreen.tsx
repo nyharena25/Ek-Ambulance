@@ -7,10 +7,11 @@ import {
   Pressable,
   ScrollView,
   Linking,
-  Alert,
 } from "react-native";
+import { Alert } from "../lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, semanticColors, typography, spacing, radii, shadows } from "@sahayak/ui";
+import { shortMissionRef } from "../services/missionSession.core";
 import { AIS125VehicleType, TriageSymptomFlag, type GeoPoint } from "@sahayak/domain";
 import { SupportedLanguage } from "../i18n/onboardingStrings";
 import { trackingStrings } from "../i18n/trackingStrings";
@@ -144,7 +145,7 @@ export default function MissionTrackingScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER */}
       <View style={styles.topHeader}>
@@ -163,7 +164,7 @@ export default function MissionTrackingScreen({
           <View>
             <Text style={styles.headerTitle}>{strings.screenTitle}</Text>
             <Text style={styles.headerMissionId}>
-              {strings.missionIdLabel(missionId)}
+              {strings.missionIdLabel(shortMissionRef(missionId))}
             </Text>
           </View>
         </View>
@@ -390,7 +391,7 @@ export default function MissionTrackingScreen({
             <View style={styles.stateNoticeBanner}>
               <AppIcon icon={{ set: "mci", name: "car-emergency" }} size={16} color={colors.slate700} style={styles.stateNoticeIcon} />
               <Text style={styles.stateNoticeText}>
-                {strings.activeStatusBanner}
+                {driverHasArrived ? strings.arrivedStatusBanner : strings.activeStatusBanner}
               </Text>
             </View>
           </View>

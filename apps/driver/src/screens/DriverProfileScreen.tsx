@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert } from "../lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, radii, spacing, touchTargets, typography } from "@sahayak/ui";
 import { AppIcon } from "../components";
@@ -409,7 +410,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: typography.fontSizes.base, fontWeight: typography.fontWeights.bold, color: colors.slate900 },
   field: { gap: 6 },
   label: { fontSize: typography.fontSizes.xs, fontWeight: typography.fontWeights.semibold, color: colors.slate700 },
-  input: { minHeight: touchTargets.minTargetSize, borderWidth: 1.5, borderColor: colors.slate300, borderRadius: radii.md, paddingHorizontal: spacing.md, fontSize: typography.fontSizes.base, color: colors.slate900, backgroundColor: colors.slate50 },
+  input: { minHeight: touchTargets.minTargetSize, borderWidth: 1.5, borderColor: colors.controlBorder, borderRadius: radii.md, paddingHorizontal: spacing.md, fontSize: typography.fontSizes.base, color: colors.slate900, backgroundColor: colors.slate50 },
   inputOff: { backgroundColor: colors.slate100, color: colors.slate600 },
   inputError: { borderColor: colors.triageRed },
   error: { fontSize: typography.fontSizes.xs, lineHeight: typography.lineHeights.xs, color: colors.triageRedText },

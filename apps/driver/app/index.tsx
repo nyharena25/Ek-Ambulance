@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Alert } from "../src/lib/alert";
 import { colors, radii, spacing, typography } from "@sahayak/ui";
 import { driverKycGate } from "../src/hooks/otpAuth.core";
 import { useDriverAuthStore } from "../src/state/driverAuth.store";

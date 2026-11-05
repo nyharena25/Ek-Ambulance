@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { Alert, AppState, View } from "react-native";
+import { AppState, View } from "react-native";
+import { Alert } from "../src/lib/alert";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";

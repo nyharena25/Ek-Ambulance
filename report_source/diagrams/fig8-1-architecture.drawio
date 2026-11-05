@@ -1,0 +1,101 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="fig81" name="Fig 8.1 Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="zoneClients" value="Untrusted clients" style="rounded=1;dashed=1;fillColor=#FEF2F2;strokeColor=#DC2626;verticalAlign=top;fontStyle=1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="10" y="10" width="190" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="patient" value="Patient app&lt;br&gt;Expo / React Native" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="30" y="50" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="driver" value="Driver app&lt;br&gt;Expo / React Native" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="30" y="150" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="staff" value="Staff console&lt;br&gt;Vite + TypeScript" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="30" y="250" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="kong" value="&lt;b&gt;Kong 3.9&lt;/b&gt; (DB-less)&lt;br&gt;route allow-list&lt;br&gt;per-IP rate limits" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0369A1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="140" width="160" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="token" value="&lt;b&gt;Token service&lt;/b&gt;&lt;br&gt;JWT verify · scope via RLS&lt;br&gt;publish proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0369A1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="300" width="160" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="zoneSupabase" value="Supabase — AWS ap-south-1 (trusted)" style="rounded=1;dashed=1;fillColor=#F0FDF4;strokeColor=#15803D;verticalAlign=top;fontStyle=1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="490" y="10" width="340" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="auth" value="GoTrue&lt;br&gt;phone OTP" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="510" y="50" width="140" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="rest" value="PostgREST&lt;br&gt;/rest/v1/rpc" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="50" width="140" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="pg" value="&lt;b&gt;PostgreSQL 17 + PostGIS&lt;/b&gt;&lt;br&gt;SECURITY DEFINER RPCs · RLS&lt;br&gt;missions · dispatch_waves&lt;br&gt;mission_events (append-only)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=12;fillColor=#DCFCE7;strokeColor=#15803D;" vertex="1" parent="1">
+          <mxGeometry x="510" y="120" width="300" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="cron" value="pg_cron&lt;br&gt;dispatch_tick 5 s" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="510" y="265" width="95" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="net" value="pg_net&lt;br&gt;async HTTP" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="615" y="265" width="90" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="vault" value="Vault · Storage&lt;br&gt;(private KYC bucket)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="715" y="265" width="100" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf" value="&lt;b&gt;Centrifugo v5&lt;/b&gt;&lt;br&gt;mission:{id} · driver:{id}:offers&lt;br&gt;history + recovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#A16207;" vertex="1" parent="1">
+          <mxGeometry x="510" y="400" width="210" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="redis" value="Redis 7&lt;br&gt;engine" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=8;" vertex="1" parent="1">
+          <mxGeometry x="750" y="400" width="80" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="HTTPS + JWT" style="endArrow=block;html=1;" edge="1" parent="1" source="patient" target="kong">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="driver" target="kong">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="staff" target="kong">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="/auth/v1" style="endArrow=block;html=1;" edge="1" parent="1" source="kong" target="auth">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="/rest/v1" style="endArrow=block;html=1;" edge="1" parent="1" source="kong" target="rest">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="rest" target="pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="/realtime/token" style="endArrow=block;html=1;" edge="1" parent="1" source="kong" target="token">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="RLS-checked read" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="token" target="rest">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="cron" target="pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" value="trigger" style="endArrow=block;html=1;" edge="1" parent="1" source="pg" target="net">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" value="POST /api/publish" style="endArrow=block;html=1;" edge="1" parent="1" source="net" target="cf">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12" value="" style="endArrow=none;html=1;" edge="1" parent="1" source="cf" target="redis">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13" value="WSS: lifecycle, offers" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="cf" target="driver">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="105" y="435"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" value="publish proxy (GPS)" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="cf" target="token">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

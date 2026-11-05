@@ -10,8 +10,8 @@ import {
   StatusBar,
   Modal,
   ActivityIndicator,
-  Alert,
 } from "react-native";
+import { Alert } from "../lib/alert";
 import * as DocumentPicker from "expo-document-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
@@ -947,7 +947,7 @@ export default function DriverOnboardingScreen({
     const approved = realKycStatus === "approved";
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+        <StatusBar barStyle="dark-content" />
         <View style={[styles.stepContentContainer, { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.xl }]}>
           <AppIcon
             icon={{ set: "ion", name: approved ? "checkmark-circle" : "time" }}
@@ -990,7 +990,7 @@ export default function DriverOnboardingScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP NAVBAR & STATUTORY HEADER */}
       <View style={styles.topHeader}>
@@ -1596,7 +1596,7 @@ const styles = StyleSheet.create({
   textInput: {
     backgroundColor: colors.white,
     borderWidth: 1.5,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.md,
     paddingHorizontal: spacing.base,
     paddingVertical: Platform.OS === "ios" ? 14 : 10,
@@ -1745,7 +1745,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     backgroundColor: colors.slate50,
     borderWidth: 1,
-    borderColor: colors.slate300,
+    borderColor: colors.controlBorder,
     borderRadius: radii.md,
     padding: spacing.md,
   },

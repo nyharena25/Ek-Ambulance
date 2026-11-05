@@ -7,10 +7,10 @@ import {
   Pressable,
   Linking,
   Modal,
-  Alert,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
+import { Alert } from "../lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@sahayak/ui";
 import { formatBoardTimer, type AIS125VehicleType } from "@sahayak/domain";
@@ -108,7 +108,7 @@ export default function ActiveMatchingScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* TOP HEADER */}
       <View style={styles.topHeader}>

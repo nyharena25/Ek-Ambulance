@@ -42,6 +42,10 @@ export interface DriverStandbyTranslation {
 
   documentsButton: string;
   waitingForGps: string;
+  gpsNoFix: string;
+  gpsPermissionDenied: string;
+  gpsServicesOff: string;
+  openSettings: string;
   kycStatus: Record<string, string>;
   presenceRefused: string;
 }
@@ -103,6 +107,10 @@ export const driverStandbyStrings: Record<SupportedLanguage, DriverStandbyTransl
     offlineModalCancelBtn: "Remain Online",
     documentsButton: "Application & KYC",
     waitingForGps: "Waiting for your GPS location…",
+    gpsNoFix: "Waiting for a GPS fix - try again in a moment.",
+    gpsPermissionDenied: "Location permission is off. Allow location for Sahayak Driver in Settings, then tap Go Online.",
+    gpsServicesOff: "Location is turned off on this phone. Turn it on, then tap Go Online.",
+    openSettings: "Settings",
     kycStatus: { draft: "KYC not submitted", pending_verification: "KYC under review", approved: "KYC approved", rejected: "KYC rejected" },
     presenceRefused: "Could not go online.",
   },
@@ -163,6 +171,10 @@ export const driverStandbyStrings: Record<SupportedLanguage, DriverStandbyTransl
     offlineModalCancelBtn: "ऑनलाइन बने रहें",
     documentsButton: "आवेदन और KYC",
     waitingForGps: "आपकी GPS लोकेशन की प्रतीक्षा है…",
+    gpsNoFix: "स्थान की पुष्टि होने की प्रतीक्षा करें, फिर पुनः प्रयास करें।",
+    gpsPermissionDenied: "स्थान अनुमति बंद है। सेटिंग्स में Sahayak Driver को स्थान की अनुमति दें, फिर ऑनलाइन जाएं दबाएं।",
+    gpsServicesOff: "इस फ़ोन पर लोकेशन बंद है। इसे चालू करें, फिर ऑनलाइन जाएं दबाएं।",
+    openSettings: "सेटिंग्स",
     kycStatus: { draft: "KYC जमा नहीं", pending_verification: "KYC समीक्षा में", approved: "KYC स्वीकृत", rejected: "KYC अस्वीकृत" },
     presenceRefused: "ऑनलाइन नहीं हो सके। फिर कोशिश करें।",
   },
